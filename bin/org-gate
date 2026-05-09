@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage: org-gate <owner/repo>
+# Checks if the org slot is available for pushing a PR.
+
+repo="${1:?Usage: org-gate <owner/repo>}"
+org="${repo%%/*}"
+drip_dir="$HOME/.sweep/drip-queue"
+now=$(date +%s)
+cutoff_recent=$((now - 72 * 3600))   # 72h for open/pushed
+cutoff_hostile=$((now - 7 * 86400))  # 7d for rejection detection
+
+repos_checked='[]'
+open_or_recent='[]'
+hostile_signals='[]'
+
+for queue in "$drip_dir/${org}"-*.jsonl; do
+  [ -f "$queue" ] || continue
+  sibling=$(basename "$queue" .jsonl | sed "s/-/\//")
+  repos_checked=$(echo "$repos_checked" | jq --arg r "$sibling" '. + [$r]')
+
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    status=$(echo "$line" | jq -r '.status // empty')
+    ts=$(echo "$line" | jq -r '.ts // empty')
+    pr_url=$(echo "$line" | jq -r '.pr_url // empty')
+
+    [ -z "$ts" ] && continue
+    entry_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$ts" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%S" "${ts%Z}" +%s 2>/dev/null || echo 0)
+
+    case "$status" in
+      open|pushed)
+        if [ "$entry_epoch" -ge "$cutoff_recent" ]; then
+          open_or_recent=$(echo "$open_or_recent" | jq \
+            --arg r "$sibling" --arg s "$status" --arg t "$ts" --arg u "$pr_url" \
+            '. + [{repo: $r, status: $s, ts: $t, pr_url: $u}]')
+        fi
+        ;;
+      closed)
+        if [ "$entry_epoch" -ge "$cutoff_hostile" ]; then
+          merged=$(echo "$line" | jq -r '.merged // false')
+          if [ "$merged" = "false" ] || [ "$merged" = "null" ]; then
+            hostile_signals=$(echo "$hostile_signals" | jq \
+              --arg r "$sibling" --arg t "$ts" --arg u "$pr_url" \
+              '. + [{repo: $r, closed_at: $t, pr_url: $u}]')
+          fi
+        fi
+        ;;
+    esac
+  done < "$queue"
+done
+
+open_count=$(echo "$open_or_recent" | jq 'length')
+hostile_count=$(echo "$hostile_signals" | jq 'length')
+
+if [ "$hostile_count" -ge 2 ]; then
+  verdict="hostile"
+  blocker="$hostile_count PRs closed without merge across org in last 7d"
+elif [ "$open_count" -ge 1 ]; then
+  verdict="blocked"
+  blocker=$(echo "$open_or_recent" | jq -r '.[0] | "\(.repo) \(.status) at \(.ts)"')
+else
+  verdict="clear"
+  blocker=""
+fi
+
+jq -n \
+  --arg org "$org" \
+  --argjson repos "$repos_checked" \
+  --argjson open "$open_or_recent" \
+  --argjson hostile "$hostile_signals" \
+  --arg verdict "$verdict" \
+  --arg blocker "$blocker" \
+  '{org: $org, repos_checked: $repos, open_or_recent: $open, hostile_signals: $hostile, verdict: $verdict, blocker: $blocker}'

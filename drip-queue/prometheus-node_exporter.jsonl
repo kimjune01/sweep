@@ -1,0 +1,2 @@
+{"repo":"prometheus/node_exporter","branch":"fix/thermal-zone-error-handling","issue":2980,"title":"collector/thermal_zone: handle per-zone read errors gracefully","status":"ready","created":"2026-05-09"}
+{"ts":"2026-05-10T01:45:00Z","repo":"prometheus/node_exporter","branch":"fix/thermal-zone-error-handling","issue":2980,"status":"pushed","pr_url":"https://github.com/prometheus/node_exporter/pull/3652"}

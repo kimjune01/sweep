@@ -1,0 +1,1 @@
+{"repo":"grafana/pyroscope","branch":"fix-tls-distributor-ingester","issue":4585,"created":"2026-05-09T00:00:00Z","commit":"93de26e22","title":"Fix TLS support in distributor-to-ingester connections"}

@@ -1,0 +1,2 @@
+{"repo":"dlvhdr/gh-dash","branch":"fix/default-confirmation-to-no","issue":596,"title":"fix: default confirmation prompts to No instead of Yes","commit":"b145b00","status":"ready","created":"2026-05-09"}
+{"ts":"2026-05-10T02:00:00Z","repo":"dlvhdr/gh-dash","branch":"fix/default-confirmation-to-no","issue":596,"status":"pushed","pr_url":"https://github.com/dlvhdr/gh-dash/pull/868"}

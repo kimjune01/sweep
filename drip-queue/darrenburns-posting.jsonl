@@ -1,0 +1,1 @@
+{"repo": "darrenburns/posting", "branch": "fix-curl-import-cookies", "issue": 309, "title": "fix: curl import fails when --cookie, --location, or --proxy flags appear before URL", "local_path": "/Users/junekim/Documents/posting"}

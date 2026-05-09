@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage: body-count <owner/repo> <issue-number>
+# Counts closed-unmerged PRs for an issue. Detects bot magnets.
+
+repo="${1:?Usage: body-count <owner/repo> <issue-number>}"
+issue="${2:?Usage: body-count <owner/repo> <issue-number>}"
+
+prs=$(gh pr list --repo "$repo" --search "$issue" --state closed \
+  --json number,author,mergedAt --limit 100)
+
+authors=$(echo "$prs" | jq -r '[.[] | select(.mergedAt == null) | .author.login] | unique')
+count=$(echo "$authors" | jq 'length')
+
+if [ "$count" -ge 3 ]; then
+  verdict="skip"
+elif [ "$count" -ge 1 ]; then
+  verdict="caution"
+else
+  verdict="clear"
+fi
+
+jq -n \
+  --argjson issue "$issue" \
+  --arg repo "$repo" \
+  --argjson count "$count" \
+  --argjson authors "$authors" \
+  --arg verdict "$verdict" \
+  '{issue: $issue, repo: $repo, closed_unmerged: $count, authors: $authors, verdict: $verdict}'

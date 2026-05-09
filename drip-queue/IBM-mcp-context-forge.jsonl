@@ -1,0 +1,1 @@
+{"repo":"IBM/mcp-context-forge","branch":"fix/otel-insecure-setting-4644","issue":4644,"title":"fix: implement OTEL_EXPORTER_OTLP_INSECURE configuration setting","status":"ready","commit":"bffce28b1","created":"2026-05-09"}

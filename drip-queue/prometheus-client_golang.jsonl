@@ -1,0 +1,2 @@
+{"repo":"prometheus/client_golang","branch":"add-registry-sorting-option","issue":483,"timestamp":"2026-05-09T10:25:00Z"}
+{"ts":"2026-05-10T00:23:00Z","repo":"prometheus/client_golang","branch":"add-registry-sorting-option","issue":483,"status":"held","reason":"issue #483 stale-closed by bot, not maintainer. Comment to reopen before PR."}

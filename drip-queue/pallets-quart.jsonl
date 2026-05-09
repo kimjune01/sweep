@@ -1,0 +1,2 @@
+{"repo": "pallets/quart", "fork": "kimjune01/quart", "branch": "fix-anystr-typing", "issue": 451, "title": "Replace AnyStr with str | bytes union type", "commit": "a4c290a", "files_changed": 8, "additions": 16, "deletions": 23, "competing_pr": 452, "competing_pr_age_months": 6, "competing_pr_reviews": 0, "maintainer": "davidism", "hypothesis": "H2-stale-pr", "created": "2026-05-09T03:30:00Z"}
+{"ts":"2026-05-10T00:30:00Z","repo":"pallets/quart","branch":"fix-anystr-typing","issue":451,"status":"pushed","pr_url":"https://github.com/pallets/quart/pull/464"}

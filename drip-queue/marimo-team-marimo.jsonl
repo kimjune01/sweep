@@ -1,0 +1,9 @@
+{
+  "repo": "marimo-team/marimo",
+  "fork": "kimjune01/marimo",
+  "branch": "fix-query-params-popstate",
+  "issue": 4153,
+  "title": "fix: sync query_params on browser navigation",
+  "description": "Fixes query_params not updating when users navigate with browser back/forward buttons. Completes the WIP branch ms/sync-back-query-params by implementing proper state synchronization that re-runs dependent cells when URL changes externally.",
+  "timestamp": "2026-05-09T09:00:00Z"
+}

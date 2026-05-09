@@ -16,3 +16,127 @@
 {"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "pallets/click", "status": "pending_review", "hypothesis": "H3 \u2014 0.1h median review, drip pacing testbed"}
 {"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "antonmedv/fx", "status": "pending_review", "hypothesis": "H2/H5 \u2014 solo maintainer, 7/10 external merge, 24h turnaround"}
 {"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "open-webui/open-webui", "status": "pending_review", "hypothesis": "H4 \u2014 AI-friendly policy, same-day merges, tests framing from opposite direction"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "astral-sh/ruff", "status": "ready"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "python/mypy", "status": "ready"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "nodejs/node", "status": "monitoring", "reason": "only issue blocked by competing PR #63162"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "microsoft/TypeScript", "status": "ready"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "marimo-team/marimo", "status": "ready"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "pallets/click", "status": "pending_review", "hypothesis": "H3 — 0.1h median review, drip pacing testbed"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "antonmedv/fx", "status": "pending_review", "hypothesis": "H2/H5 — solo maintainer, 7/10 external merge, 24h turnaround"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "pyro-ppl/numpyro", "status": "pending_review", "hypothesis": "H0/H1/H5 — 90% external merge, doc checklist, fastest path to outcomes"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "IBM/mcp-cli", "status": "pending_review", "hypothesis": "H2 — merged PR exists, nonzero standing, 18 open issues"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "prometheus/prometheus", "status": "pending_review", "hypothesis": "H2/H5 — CNCF institutional governance, team-maintained, daily merges"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "excalidraw/excalidraw", "status": "pending_review", "hypothesis": "H1 — TS application (not devtool), 30% external merge, active review"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "influxdata/telegraf", "status": "pending_review", "hypothesis": "H4 — hard CLA ban on AI code, Go, help-wanted issues"}
+{"ts": "2026-05-09T08:00:00Z", "action": "add", "repo": "python-attrs/attrs", "status": "pending_review", "hypothesis": "H4 — permanent ban for DoS-by-slop, no LLM co-authors, Python"}
+{"ts": "2026-05-09T12:00:00Z", "action": "triage", "repo": "google-gemini/gemini-cli", "status": "triaged"}
+{"ts": "2026-05-09T12:00:00Z", "action": "triage", "repo": "withastro/prettier-plugin-astro", "status": "triaged"}
+{"ts": "2026-05-09T12:00:00Z", "action": "triage", "repo": "mvdan/sh", "status": "triaged"}
+{"ts": "2026-05-09T12:00:00Z", "action": "triage", "repo": "astral-sh/ruff", "status": "triaged"}
+{"ts": "2026-05-09T12:00:00Z", "action": "triage", "repo": "python/mypy", "status": "triaged"}
+{"ts": "2026-05-09T12:00:00Z", "action": "triage", "repo": "microsoft/TypeScript", "status": "triaged"}
+{"ts": "2026-05-09T12:00:00Z", "action": "triage", "repo": "marimo-team/marimo", "status": "triaged"}
+{"ts": "2026-05-09T12:00:00Z", "action": "promote", "repo": "pallets/click", "status": "ready", "hypothesis": "H3 — 0.1h median review, drip pacing testbed"}
+{"ts": "2026-05-09T12:00:00Z", "action": "promote", "repo": "antonmedv/fx", "status": "ready", "hypothesis": "H2/H5 — solo maintainer, 7/10 external merge, 24h turnaround"}
+{"ts": "2026-05-09T12:00:00Z", "action": "promote", "repo": "open-webui/open-webui", "status": "ready", "hypothesis": "H4 — AI-friendly policy, same-day merges"}
+{"ts": "2026-05-09T12:00:00Z", "action": "promote", "repo": "pyro-ppl/numpyro", "status": "ready", "hypothesis": "H0/H1/H5 — 90% external merge, doc checklist"}
+{"ts": "2026-05-09T12:00:00Z", "action": "promote", "repo": "IBM/mcp-cli", "status": "ready", "hypothesis": "H2 — 3 merged PRs, 18 open issues"}
+{"ts": "2026-05-09T12:00:00Z", "action": "promote", "repo": "prometheus/prometheus", "status": "ready", "hypothesis": "H2/H5 — CNCF institutional governance"}
+{"ts": "2026-05-09T12:00:00Z", "action": "promote", "repo": "excalidraw/excalidraw", "status": "ready", "hypothesis": "H1 — TS application, 30% external merge"}
+{"ts": "2026-05-09T12:00:00Z", "action": "evict", "repo": "python-attrs/attrs", "status": "evicted", "reason": "0 labeled issues, hostile AI policy, no actionable items"}
+{"ts": "2026-05-09T12:30:00Z", "action": "triage", "repo": "pallets/click", "status": "triaged"}
+{"ts": "2026-05-09T12:30:00Z", "action": "triage", "repo": "antonmedv/fx", "status": "triaged"}
+{"ts": "2026-05-09T12:30:00Z", "action": "triage", "repo": "open-webui/open-webui", "status": "triaged"}
+{"ts": "2026-05-09T12:30:00Z", "action": "triage", "repo": "pyro-ppl/numpyro", "status": "triaged"}
+{"ts": "2026-05-09T12:30:00Z", "action": "triage", "repo": "IBM/mcp-cli", "status": "triaged"}
+{"ts": "2026-05-09T12:30:00Z", "action": "triage", "repo": "prometheus/prometheus", "status": "triaged"}
+{"ts": "2026-05-09T12:30:00Z", "action": "triage", "repo": "excalidraw/excalidraw", "status": "triaged"}
+{"ts": "2026-05-09T18:00:00Z", "action": "evict", "repo": "influxdata/telegraf", "status": "evicted", "reason": "hard CLA ban on AI-generated code"}
+{"ts":"2026-05-09T18:10:00Z","action":"add","repo":"anchore/syft","status":"pending_review","hypothesis":"H0/H3 — 57 good-first-issues, 1h external merges, Go, DCO sign-off"}
+{"ts":"2026-05-09T18:10:00Z","action":"add","repo":"astral-sh/uv","status":"pending_review","hypothesis":"H1 — ruff ecosystem pair, same maintainers, 435 open bugs, Rust"}
+{"ts":"2026-05-09T18:30:00Z","action":"note","repo":"astral-sh/ruff","note":"#16519 blocked by competing PR #20880 (danparizher, Oct 2025, maintainer review active). Do not push duplicate."}
+{"ts":"2026-05-09T20:00:00Z","action":"promote","repo":"anchore/syft","status":"ready","hypothesis":"H0/H3 — 57 good-first-issues, Go, DCO sign-off"}
+{"ts":"2026-05-09T20:00:00Z","action":"promote","repo":"astral-sh/uv","status":"ready","hypothesis":"H1 — ruff ecosystem pair, same maintainers, 435+ open bugs, Rust"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"oxc-project/oxc","status":"ready","hypothesis":"H1/H6 — umbrella lint-rule-port issues, Rust, external-merge-daily, 21K stars"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"thanos-io/thanos","status":"ready","hypothesis":"H2/H5 — CNCF Go, prometheus adjacent, 5 good-first-issues, external-merge-daily"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"open-telemetry/opentelemetry-collector","status":"ready","hypothesis":"H2/H5 — CNCF Go, OTel standard, 4 good-first-issues, institutional governance"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"pylint-dev/pylint","status":"ready","hypothesis":"H3 — PyCQA ecosystem, 5 good-first-issues, complementary to ruff/mypy"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"blackjax-devs/blackjax","status":"ready","hypothesis":"H0/H1 — JAX Bayesian inference, 4 help-wanted algorithm implementations, numpyro adjacent, 6 open PRs"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"pymc-devs/pymc","status":"ready","hypothesis":"H0/H1 — probabilistic programming, 5 help-wanted, numpyro adjacent, 9.6K stars"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"tracel-ai/burn","status":"ready","hypothesis":"H1/H6 — Rust ML framework, 5 good-first-issues, only 7 open PRs, 15K stars"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"dlvhdr/gh-dash","status":"ready","hypothesis":"H2/H5 — Go TUI, Bubble Tea, solo maintainer, 11 open PRs, 11.5K stars"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"PyCQA/bandit","status":"ready","hypothesis":"H3 — Python security linter, PyCQA ecosystem, 2 good-first-issues, bug-fix domain"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"tach-org/tach","status":"ready","hypothesis":"H2/H5 — Python/Rust architecture linter, 2 good-first-issues, 6 open PRs, low competition"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"kubernetes/kube-state-metrics","status":"ready","hypothesis":"H2/H5 — CNCF Go, Kubernetes, 5 good-first-issues, prometheus adjacent"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"grafana/pyroscope","status":"ready","hypothesis":"H2/H3 — Grafana ecosystem, Go, 5 good-first-issues, continuous profiling"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"darrenburns/posting","status":"ready","hypothesis":"H2/H5 — Python TUI, Textual, solo maintainer, 8 open PRs, 11.9K stars"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"vectordotdev/vector","status":"ready","hypothesis":"H1/H4 — Rust observability pipeline, 5 good-first-issues, Datadog-backed, 21.8K stars"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"EnzymeAD/Enzyme","status":"ready","hypothesis":"H0/H6 — LLVM/MLIR autodiff, 5 good-first-issues, ML compiler adjacent, academic"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "gleam-lang/gleam", "status": "ready", "stars": 21425, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "openbao/openbao", "status": "ready", "stars": 6022, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "flux-rs/flux", "status": "ready", "stars": 855, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "prowler-cloud/prowler", "status": "ready", "stars": 13758, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "GraphiteEditor/Graphite", "status": "ready", "stars": 25582, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "kubescape/kubescape", "status": "ready", "stars": 11379, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "cri-o/cri-o", "status": "ready", "stars": 5609, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "tuono-labs/tuono", "status": "ready", "stars": 1121, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "ankitects/anki", "status": "ready", "stars": 27853, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "goharbor/harbor", "status": "ready", "stars": 28452, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "apache/datafusion-ballista", "status": "ready", "stars": 2027, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "vllm-project/vllm", "status": "ready", "stars": 79467, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "k0sproject/k0s", "status": "ready", "stars": 6092, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "oauth2-proxy/oauth2-proxy", "status": "ready", "stars": 14362, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "jacksontj/promxy", "status": "ready", "stars": 1303, "source": "label_search"}
+{"ts": "2026-05-09T09:57:00Z", "repo": "zulip/zulip", "status": "ready", "stars": 25159, "source": "label_search"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"ggml-org/llama.cpp","status":"ready","hypothesis":"H1/H6 — C++ LLM inference, 109K stars, 10 good-first-issues, external merge daily, fast merge velocity"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"pola-rs/polars","status":"ready","hypothesis":"H1 — Rust+Python dataframe, 38K stars, 6 good-first-issues, external merge daily"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"godotengine/godot","status":"ready","hypothesis":"H6 — C++ game engine, 110K stars, unit test tracker, external merge daily"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"streamlit/streamlit","status":"ready","hypothesis":"H3 — Python+TS data app, 45K stars, 10 good-first-issues, mechanical UI fixes"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"aquasecurity/trivy","status":"ready","hypothesis":"H2/H5 — Go security scanner, 35K stars, 4 good-first-issues, external merge weekly"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"pytorch/pytorch","status":"ready","hypothesis":"H3/H6 — Python ML framework, 100K stars, docathon-2026 RST-to-MyST conversions, self-assignable"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"oven-sh/bun","status":"ready","hypothesis":"H1 — Zig JS runtime, 90K stars, 5 good-first-issues (node compat stubs), external merge"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"grafana/grafana","status":"ready","hypothesis":"H2/H5 — TS/Go observability, 74K stars, 5 good-first-issues, Grafana ecosystem pair with pyroscope"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"apache/superset","status":"ready","hypothesis":"H2/H5 — TS/Python data viz, 73K stars, 5 good-first-issues, Apache governance, external merge daily"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"sharkdp/bat","status":"ready","hypothesis":"H2/H5 — Rust CLI tool, 59K stars, 3 good-first-issues, solo maintainer, external merge weekly"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"louislam/uptime-kuma","status":"ready","hypothesis":"H2/H5 — JS monitoring, 86K stars, 5 good-first-issues, solo maintainer fast review"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"immich-app/immich","status":"ready","hypothesis":"H1 — TS/Dart photo management, 100K stars, 5 good-first-issues, external merge daily"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"storybookjs/storybook","status":"ready","hypothesis":"H1 — TS UI testing, 90K stars, 5 good-first-issues, external merge weekly"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"pingcap/tidb","status":"ready","hypothesis":"H2/H5 — Go database, 40K stars, 5 good-first-issues, MEMBER-opened, external merge daily"}
+{"ts":"2026-05-09T22:30:00Z","action":"add","repo":"litestar-org/litestar","status":"ready","hypothesis":"H3 — Python web framework, 8K stars, 10 good-first-issues, low competition"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"IBM/mcp-context-forge","status":"pending_review","hypothesis":"H2 — same org as 3-merge mcp-cli, MCP gateway, 20 open bugs"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"pyro-ppl/pyro","status":"pending_review","hypothesis":"H0/H1 — same org as numpyro, 11 good-first-issues, PPL domain transfer"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"astral-sh/ty","status":"pending_review","hypothesis":"H1/H2 — same org as ruff/uv, 15 help-wanted, Rust type checker"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"prometheus/client_golang","status":"pending_review","hypothesis":"H2/H3 — same org as prometheus, 5 good-first-issues, Go lib, 50% ext merge"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"prometheus/node_exporter","status":"pending_review","hypothesis":"H2 — same prometheus org, 3 good-first-issues, Go, accepted label"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"pallets/jinja","status":"pending_review","hypothesis":"H3 — same org+maintainer as click, 9 bugs, Python templates, 35% ext merge"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"pallets/quart","status":"pending_review","hypothesis":"H3 — same pallets org, 83% external merge rate, async Python, 10 bugs"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"VictoriaMetrics/VictoriaMetrics","status":"pending_review","hypothesis":"H2 — prometheus-compatible monitoring, Go, 4 good-first-issues, 39% ext merge"}
+{"ts":"2026-05-09T21:00:00Z","action":"add","repo":"google-gemini/gemini-cli-action","status":"pending_review","hypothesis":"H2 — same org as gemini-cli (1 merge), GitHub Action, TS, 7 issues"}
+{"ts":"2026-05-09T22:00:00Z","action":"promote","repo":"IBM/mcp-context-forge","status":"ready"}
+{"ts":"2026-05-09T22:00:00Z","action":"promote","repo":"pyro-ppl/pyro","status":"ready"}
+{"ts":"2026-05-09T22:00:00Z","action":"promote","repo":"astral-sh/ty","status":"ready"}
+{"ts":"2026-05-09T22:00:00Z","action":"promote","repo":"prometheus/client_golang","status":"ready"}
+{"ts":"2026-05-09T22:00:00Z","action":"promote","repo":"prometheus/node_exporter","status":"ready"}
+{"ts":"2026-05-09T22:00:00Z","action":"promote","repo":"pallets/jinja","status":"ready"}
+{"ts":"2026-05-09T22:00:00Z","action":"promote","repo":"pallets/quart","status":"ready"}
+{"ts":"2026-05-09T22:00:00Z","action":"promote","repo":"google-gemini/gemini-cli-action","status":"ready"}
+{"ts":"2026-05-09T22:00:00Z","action":"promote","repo":"VictoriaMetrics/VictoriaMetrics","status":"ready"}
+{"ts":"2026-05-09T17:00:00Z","action":"note","repo":"sharkdp/bat","note":"PR #3734 MERGED by keith-hall (COLLABORATOR). First merge from bat. 12min review-to-merge."}
+{"ts":"2026-05-09T17:00:00Z","action":"evict","repo":"pallets/click","status":"evicted","reason":"PR #3414 closed without review by davidism, bulk-close of all pallets PRs"}
+{"ts":"2026-05-09T17:00:00Z","action":"evict","repo":"pallets/jinja","status":"evicted","reason":"PR #2166 closed without review by davidism, bulk-close of all pallets PRs"}
+{"ts":"2026-05-09T17:00:00Z","action":"evict","repo":"pallets/quart","status":"evicted","reason":"PR #464 closed without review by davidism, bulk-close of all pallets PRs"}
+{"ts":"2026-05-09T17:00:00Z","action":"note","repo":"litestar-org/litestar","note":"PR #4755 CHANGES_REQUESTED by provinzkraut: opt key is not static, can be configured dynamically"}
+{"ts":"2026-05-09T17:00:00Z","action":"note","repo":"pyro-ppl/numpyro","note":"PR #2188 CHANGES_REQUESTED by Qazalbash: use frac not tfrac, add equation, mention jax.scipy.stats"}
+{"ts":"2026-05-09T17:05:00Z","action":"evict","repo":"google-gemini/gemini-cli-action","status":"evicted","reason":"repo archived 2025-08-05, superseded by google-github-actions/run-gemini-cli"}
+{"ts":"2026-05-09T17:15:00Z","action":"triage","repo":"IBM/mcp-context-forge","status":"triaged"}
+{"ts":"2026-05-09T17:25:00Z","action":"note","repo":"litestar-org/litestar","note":"PR #4755 revision pushed: dynamic exclude_opt_key via middleware inspection. 12 security + 239 OpenAPI tests pass."}
+{"ts":"2026-05-09T17:35:00Z","action":"triage","repo":"oxc-project/oxc","status":"triaged"}
+{"ts":"2026-05-09T17:40:00Z","action":"note","repo":"open-webui/open-webui","note":"No viable bug fix candidate. #5975 has competing PR #21819 stalled on screen recording requirement. #19225 is complex race condition. Demote to monitoring."}
+{"ts":"2026-05-09T17:45:00Z","action":"triage","repo":"marimo-team/marimo","status":"triaged"}
+{"ts":"2026-05-09T17:50:00Z","action":"triage","repo":"PyCQA/bandit","status":"triaged"}
+{"ts":"2026-05-09T17:55:00Z","action":"triage","repo":"tach-org/tach","status":"triaged"}
+{"ts":"2026-05-09T18:00:00Z","action":"triage","repo":"darrenburns/posting","status":"triaged"}
+{"ts":"2026-05-09T18:00:00Z","action":"triage","repo":"anchore/syft","status":"triaged"}
+{"ts":"2026-05-09T18:00:00Z","action":"triage","repo":"vectordotdev/vector","status":"triaged"}
+{"ts":"2026-05-09T18:05:00Z","action":"triage","repo":"excalidraw/excalidraw","status":"triaged"}
+{"ts":"2026-05-09T18:05:00Z","action":"triage","repo":"grafana/pyroscope","status":"triaged"}

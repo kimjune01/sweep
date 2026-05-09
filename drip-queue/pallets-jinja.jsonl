@@ -1,0 +1,2 @@
+{"repo":"pallets/jinja","issue":2118,"branch":"fix-slice-fill-even-divisible","title":"fix slice filter appending fill_with when items divide evenly","status":"ready","created":"2026-05-09"}
+{"ts":"2026-05-09T22:30:00Z","repo":"pallets/jinja","branch":"fix-slice-fill-even-divisible","issue":2118,"status":"pushed","pr_url":"https://github.com/pallets/jinja/pull/2166"}

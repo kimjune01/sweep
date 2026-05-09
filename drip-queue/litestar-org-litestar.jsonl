@@ -1,0 +1,2 @@
+{"repo":"litestar-org/litestar","issue":3013,"branch":"fix/3013-security-exclude-openapi","title":"fix(openapi): set security=[] for routes excluded from auth","status":"ready","created":"2026-05-09"}
+{"ts":"2026-05-09T23:30:00Z","repo":"litestar-org/litestar","branch":"fix/3013-security-exclude-openapi","issue":3013,"status":"pushed","pr_url":"https://github.com/litestar-org/litestar/pull/4755"}

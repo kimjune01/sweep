@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage: pr-status <owner/repo> <pr-number> [pr-number...]
+# Batch check PR states with close actor and comment counts.
+
+repo="${1:?Usage: pr-status <owner/repo> <pr-number> [...]}"
+shift
+
+results='[]'
+
+for pr in "$@"; do
+  pr_data=$(gh api "repos/$repo/pulls/$pr" \
+    --jq '{number: .number, state: .state, merged: (.merged_at != null), merged_at: .merged_at, closed_at: .closed_at, comments: .comments, review_comments: .review_comments}' 2>/dev/null) || continue
+
+  closed_by=$(gh api "repos/$repo/issues/$pr/events" \
+    --jq '[.[] | select(.event == "closed")] | last | .actor.login // "unknown"' 2>/dev/null) || closed_by="unknown"
+
+  results=$(echo "$results" | jq \
+    --argjson pr_data "$pr_data" \
+    --arg closed_by "$closed_by" \
+    '. + [$pr_data + {closed_by: $closed_by}]')
+done
+
+jq -n --argjson prs "$results" '{prs: $prs}'
