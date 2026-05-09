@@ -1,0 +1,2 @@
+{"ts":"2026-05-08T22:30:00Z","action":"enqueue","branch":"matvec-test-and-fix","title":"fix MATVEC: reject equal-range elementwise reduces","body":"","status":"rejected","reason":"PR #16116 closed, geohot last warning"}
+{"ts":"2026-05-08T22:30:00Z","action":"enqueue","branch":"ptx-test-and-fix","title":"fix beam cache: include optimization env vars in cache key","body":"","status":"rejected","reason":"PR #16117 closed, test didn't fail on master"}

@@ -1,0 +1,19 @@
+{
+  "repos": [
+    {"repo": "tinygrad/tinygrad", "status": "triaged", "added": "2026-05-08", "cooldown_until": "2026-05-22"},
+    {"repo": "withastro/astro", "status": "dormant", "added": "2026-05-09"},
+    {"repo": "withastro/compiler", "status": "triaged", "added": "2026-05-09"},
+    {"repo": "google-gemini/gemini-cli", "status": "ready", "added": "2026-05-08"},
+    {"repo": "python/cpython", "status": "pending_schema", "added": "2026-05-08"},
+    {"repo": "faster-cpython/ideas", "status": "pending_schema", "added": "2026-05-08"},
+    {"repo": "SoarGroup/Soar", "status": "pending_schema", "added": "2026-05-08"},
+    {"repo": "Aider-AI/aider", "status": "ready", "added": "2026-05-09"},
+    {"repo": "withastro/prettier-plugin-astro", "status": "pending_schema", "added": "2026-05-09"},
+    {"repo": "mvdan/sh", "status": "pending_review", "added": "2026-05-09"},
+    {"repo": "astral-sh/ruff", "status": "pending_review", "added": "2026-05-09"},
+    {"repo": "python/mypy", "status": "pending_review", "added": "2026-05-09"},
+    {"repo": "nodejs/node", "status": "pending_review", "added": "2026-05-09"},
+    {"repo": "microsoft/TypeScript", "status": "pending_review", "added": "2026-05-09"},
+    {"repo": "marimo-team/marimo", "status": "pending_review", "added": "2026-05-09"}
+  ]
+}

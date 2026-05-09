@@ -1,0 +1,3 @@
+{"ts":"2026-05-09T07:00:00Z","key":"review_cadence","value":"slow","reason":"retro: same maintainers as withastro/compiler (Princesseuh, matthewp). External contributors wait 1-5 weeks."}
+{"ts":"2026-05-09T07:00:00Z","key":"effort_level","value":"medium_high","reason":"retro: #308 is architectural (JSX vs HTML whitespace mismatch at embed/print boundary). 2-4 day fix, not a quick win."}
+{"ts":"2026-05-09T07:00:00Z","key":"active_maintainers","value":["Princesseuh","matthewp"],"reason":"retro: same as withastro/compiler."}
