@@ -79,7 +79,12 @@ def badge(s):
     return f'<span style="background:{c};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">{htmlmod.escape(s)}</span>'
 
 def gather():
-    repos = rj(f"{SWEEP}/repos.json").get("repos", [])
+    # Read repos.jsonl (append-only, last-action-wins per repo)
+    raw = rjl(f"{SWEEP}/repos.jsonl")
+    by_repo = {}
+    for entry in raw:
+        by_repo[entry.get("repo", "")] = entry
+    repos = [{"repo": k, **v} for k, v in by_repo.items() if v.get("action") != "evict"]
     retro_params = {}
     for f in glob.glob(f"{SWEEP}/retro/*.jsonl"):
         k = os.path.basename(f).replace(".jsonl","")

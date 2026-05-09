@@ -1,0 +1,18 @@
+{"ts": "2026-05-08T00:00:00Z", "action": "add", "repo": "tinygrad/tinygrad", "status": "triaged", "cooldown_until": "2026-05-22"}
+{"ts": "2026-05-09T00:00:00Z", "action": "evict", "repo": "withastro/astro", "status": "evicted", "reason": "dormant, no items, no open PRs"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "withastro/compiler", "status": "triaged"}
+{"ts": "2026-05-08T00:00:00Z", "action": "add", "repo": "google-gemini/gemini-cli", "status": "ready"}
+{"ts": "2026-05-08T00:00:00Z", "action": "evict", "repo": "python/cpython", "status": "evicted", "reason": "pure monitoring, no actionable items, PR #149575 is someone else's"}
+{"ts": "2026-05-08T00:00:00Z", "action": "evict", "repo": "faster-cpython/ideas", "status": "evicted", "reason": "pure monitoring, proposal only"}
+{"ts": "2026-05-08T00:00:00Z", "action": "evict", "repo": "SoarGroup/Soar", "status": "evicted", "reason": "0% merge rate on core PRs, solo maintainer ignores external contributions"}
+{"ts": "2026-05-09T00:00:00Z", "action": "evict", "repo": "Aider-AI/aider", "status": "evicted", "reason": "manual eviction \u2014 prior PRs 10-50x merge ceiling, priority issue not worth the relationship risk"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "withastro/prettier-plugin-astro", "status": "ready"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "mvdan/sh", "status": "ready"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "astral-sh/ruff", "status": "ready"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "python/mypy", "status": "ready"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "nodejs/node", "status": "monitoring", "reason": "only issue blocked by competing PR #63162"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "microsoft/TypeScript", "status": "ready"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "marimo-team/marimo", "status": "ready"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "pallets/click", "status": "pending_review", "hypothesis": "H3 \u2014 0.1h median review, drip pacing testbed"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "antonmedv/fx", "status": "pending_review", "hypothesis": "H2/H5 \u2014 solo maintainer, 7/10 external merge, 24h turnaround"}
+{"ts": "2026-05-09T00:00:00Z", "action": "add", "repo": "open-webui/open-webui", "status": "pending_review", "hypothesis": "H4 \u2014 AI-friendly policy, same-day merges, tests framing from opposite direction"}
