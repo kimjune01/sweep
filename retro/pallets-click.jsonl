@@ -1,0 +1,3 @@
+{"ts":"2026-05-09T09:00:00Z","key":"median_review_hours","value":0.1,"reason":"retro: fastest review cycle in roster. 5 recent PRs merged in <6 minutes median."}
+{"ts":"2026-05-09T09:00:00Z","key":"hypothesis","value":"H3","reason":"retro: added to test drip pacing. Fast review = fast data generation."}
+{"ts":"2026-05-09T09:00:00Z","key":"fix_ready","value":{"issue":3362,"lines":1,"description":"break_on_hyphens=False in wrap_text()"},"reason":"retro: investigated, 1-line fix confirmed."}

@@ -1,0 +1,4 @@
+{"ts":"2026-05-09T09:00:00Z","key":"ai_policy","value":"friendly","reason":"retro: AI-welcoming repo, same-day merge turnaround for small fixes."}
+{"ts":"2026-05-09T09:00:00Z","key":"hypothesis","value":"H4","reason":"retro: tests framing hypothesis from the opposite direction — does AI-friendly policy help?"}
+{"ts":"2026-05-09T09:00:00Z","key":"flood_effect","value":true,"reason":"retro: MCP servers (similar AI-friendly policy) showed 2-3 competing PRs per issue. open-webui has less competition on tagged issues."}
+{"ts":"2026-05-09T09:00:00Z","key":"fix_ready","value":{"issue":2790,"lines":15,"description":"aria-label on 13 icon-only buttons in MessageInput.svelte"},"reason":"retro: investigated, mechanical fix, blind users requested in thread."}
