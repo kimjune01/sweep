@@ -1,19 +1,19 @@
 {
   "repos": [
     {"repo": "tinygrad/tinygrad", "status": "triaged", "added": "2026-05-08", "cooldown_until": "2026-05-22"},
-    {"repo": "withastro/astro", "status": "dormant", "added": "2026-05-09"},
+    {"repo": "withastro/astro", "status": "evicted", "added": "2026-05-09", "evicted": "2026-05-09", "reason": "dormant, no items, no open PRs"},
     {"repo": "withastro/compiler", "status": "triaged", "added": "2026-05-09"},
     {"repo": "google-gemini/gemini-cli", "status": "ready", "added": "2026-05-08"},
-    {"repo": "python/cpython", "status": "pending_schema", "added": "2026-05-08"},
-    {"repo": "faster-cpython/ideas", "status": "pending_schema", "added": "2026-05-08"},
-    {"repo": "SoarGroup/Soar", "status": "pending_schema", "added": "2026-05-08"},
+    {"repo": "python/cpython", "status": "evicted", "added": "2026-05-08", "evicted": "2026-05-09", "reason": "pure monitoring, no actionable items, PR #149575 is someone else's"},
+    {"repo": "faster-cpython/ideas", "status": "evicted", "added": "2026-05-08", "evicted": "2026-05-09", "reason": "pure monitoring, proposal only"},
+    {"repo": "SoarGroup/Soar", "status": "monitoring", "added": "2026-05-08", "reason": "3 consecutive rejections, 2 stale PRs zero engagement"},
     {"repo": "Aider-AI/aider", "status": "ready", "added": "2026-05-09"},
-    {"repo": "withastro/prettier-plugin-astro", "status": "pending_schema", "added": "2026-05-09"},
-    {"repo": "mvdan/sh", "status": "pending_review", "added": "2026-05-09"},
-    {"repo": "astral-sh/ruff", "status": "pending_review", "added": "2026-05-09"},
-    {"repo": "python/mypy", "status": "pending_review", "added": "2026-05-09"},
-    {"repo": "nodejs/node", "status": "pending_review", "added": "2026-05-09"},
-    {"repo": "microsoft/TypeScript", "status": "pending_review", "added": "2026-05-09"},
-    {"repo": "marimo-team/marimo", "status": "pending_review", "added": "2026-05-09"}
+    {"repo": "withastro/prettier-plugin-astro", "status": "ready", "added": "2026-05-09"},
+    {"repo": "mvdan/sh", "status": "ready", "added": "2026-05-09"},
+    {"repo": "astral-sh/ruff", "status": "ready", "added": "2026-05-09"},
+    {"repo": "python/mypy", "status": "ready", "added": "2026-05-09"},
+    {"repo": "nodejs/node", "status": "monitoring", "added": "2026-05-09", "reason": "only issue blocked by competing PR #63162"},
+    {"repo": "microsoft/TypeScript", "status": "ready", "added": "2026-05-09"},
+    {"repo": "marimo-team/marimo", "status": "ready", "added": "2026-05-09"}
   ]
 }

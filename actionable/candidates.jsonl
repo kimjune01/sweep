@@ -19,3 +19,12 @@
 {"ts":"2026-05-09T06:30:00Z","repo":"stanfordnlp/stanza","action":"skip","reason":"#1562 sentinel tokens. Jittered 5.80. NLP not user's domain.","source":"jittered_diversity","jitter":0.829}
 {"ts":"2026-05-09T06:30:00Z","repo":"tkem/cachetools","action":"skip","reason":"#395 FIFO bug. Maintainer self-assigned.","source":"jittered_diversity","jitter":0.829}
 {"ts":"2026-05-09T06:30:00Z","repo":"open-webui/open-webui","action":"skip","reason":"#21564 regression. Massive codebase, UI domain.","source":"jittered_diversity","jitter":0.829}
+{"ts":"2026-05-09T08:00:00Z","repo":"withastro/astro","action":"evict","reason":"dormant, no items, no open PRs. PR #16634 self-closed, superseded by compiler #1162.","source":"sweep_eviction"}
+{"ts":"2026-05-09T08:00:00Z","repo":"python/cpython","action":"evict","reason":"pure monitoring. Issue #149564 open but PR #149575 is someone else's work. No actionable items for us.","source":"sweep_eviction"}
+{"ts":"2026-05-09T08:00:00Z","repo":"faster-cpython/ideas","action":"evict","reason":"pure monitoring. Issue #739 (tinygrad benchmark proposal) has no PR path.","source":"sweep_eviction"}
+{"ts":"2026-05-09T08:00:00Z","repo":"nodejs/node","action":"demote","reason":"only issue #62838 blocked by competing PR #63162. Demoted to monitoring.","source":"sweep_eviction"}
+{"ts":"2026-05-09T08:00:00Z","repo":"SoarGroup/Soar","action":"demote","reason":"3 consecutive rejections (#578-580 closed). 2 open PRs (#581, #577) stale since April, zero reviews.","source":"sweep_eviction"}
+{"ts":"2026-05-09T08:00:00Z","repo":"astral-sh/ruff","action":"add","reason":"#16519 TD003 regex fix. ~5 lines Rust, collaborator endorsed. Investigated, fix ready.","source":"fill_roster"}
+{"ts":"2026-05-09T08:00:00Z","repo":"python/mypy","action":"add","reason":"#8603 bad error message. ~20 lines Python, maintainer invited PR. Investigated, fix ready.","source":"fill_roster"}
+{"ts":"2026-05-09T08:00:00Z","repo":"microsoft/TypeScript","action":"add","reason":"#30408 confusing label error. Must target TypeScript-go. 7 prior attempts, jakebailey review as guide.","source":"fill_roster"}
+{"ts":"2026-05-09T08:00:00Z","repo":"marimo-team/marimo","action":"add","reason":"#4153 query_params nav bug. Maintainer WIP blueprint, blocker resolved on main. Medium effort.","source":"fill_roster"}
