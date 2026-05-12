@@ -1,7 +1,8 @@
 #!/bin/bash
 # PR Quality Gate — protect your repo against AI slop.
 #
-# Five checks derived from 64 PR outcomes across 21 repos:
+# Six checks derived from 76 PR outcomes across 38 repos:
+# 0. Three-strike ban — 3+ gate closures from same author = auto-close, no checks
 # 1. Em dashes — strongest single signal for AI-generated prose
 # 2. Description depth — does the PR explain *why*, not just *what*?
 # 3. CONTRIBUTING compliance — branch policy, commit limits, AI policy
@@ -18,6 +19,39 @@ PR_BODY=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")
 RESULTS=""
 PASS_COUNT=0
 WARN_COUNT=0
+
+# Strike count: how many PRs from this author has this action already closed?
+# Uses timeline events to find PRs closed by the bot that also have a gate comment.
+CLOSED_PR_NUMBERS=$(gh api --paginate "repos/${REPO}/pulls?state=closed&creator=${PR_AUTHOR}&per_page=100" \
+  --jq '[.[] | select(.merged_at == null) | .number]' 2>/dev/null \
+  | jq -s 'add // []' | jq -r '.[]')
+
+PRIOR_STRIKES=0
+for closed_pr in $CLOSED_PR_NUMBERS; do
+  HAS_GATE_COMMENT=$(gh api "repos/${REPO}/issues/${closed_pr}/comments?per_page=10" \
+    --jq '[.[] | select(.body | startswith("### PR Quality Gate"))] | length' 2>/dev/null || echo "0")
+  if [ "$HAS_GATE_COMMENT" -gt 0 ]; then
+    PRIOR_STRIKES=$((PRIOR_STRIKES + 1))
+  fi
+  if [ "$PRIOR_STRIKES" -ge 3 ]; then
+    break
+  fi
+done
+
+if [ "$PRIOR_STRIKES" -ge 3 ]; then
+  BAN_COMMENT=$(cat <<'BANEOF'
+### PR Quality Gate — auto-closed
+
+This author has had 3+ PRs closed by quality gate checks on this repo. Future PRs will be auto-closed without review.
+
+If you believe this is an error, open an issue to discuss.
+BANEOF
+)
+  gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$BAN_COMMENT" > /dev/null 2>&1
+  gh api "repos/${REPO}/pulls/${PR_NUMBER}" -X PATCH -f state=closed > /dev/null 2>&1
+  echo "PR Quality Gate: BANNED (${PRIOR_STRIKES} prior strikes)"
+  exit 0
+fi
 
 # Standing check: has this author merged PRs to this repo before?
 PRIOR_MERGES=$(gh api "repos/${REPO}/pulls?state=closed&creator=${PR_AUTHOR}&per_page=100" --jq '[.[] | select(.merged_at != null)] | length' 2>/dev/null || echo "0")
@@ -174,7 +208,7 @@ $(printf '%b' "$RESULTS")
 <details>
 <summary>About this check</summary>
 
-Each check corresponds to a pattern that predicted closure in [64 PR outcomes](https://github.com/kimjune01/sweep) across 21 repos.
+Each check corresponds to a pattern that predicted closure in [76 PR outcomes](https://github.com/kimjune01/sweep) across 38 repos. Authors with 3+ gate closures are auto-closed on sight.
 
 [Protect your repo against AI slop](https://github.com/kimjune01/sweep#pr-quality-gate)
 </details>
