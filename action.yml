@@ -1,0 +1,37 @@
+# PR Quality Gate — protect your repo against AI slop.
+#
+# Advisory checks derived from 64 PR outcomes across 21 repos.
+# Each check corresponds to a pattern that predicted merge vs. closure.
+# Posts a single updatable comment. Does not block merging.
+#
+# Requires an LLM API key to assess whether the PR description
+# explains *why* the change is correct, not just *what* changed.
+# Without it, the description check falls back to heuristics.
+
+name: 'PR Quality Gate'
+description: 'Protect your repo against AI slop. Advisory quality checks for pull requests.'
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+    default: ${{ github.token }}
+  anthropic-api-key:
+    description: 'Anthropic API key for description depth analysis (uses Haiku, ~$0.001/PR)'
+    required: false
+    default: ''
+runs:
+  using: 'composite'
+  steps:
+    - name: Run quality checks
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        PR_BASE: ${{ github.event.pull_request.base.ref }}
+        REPO: ${{ github.repository }}
+        COMMITS: ${{ github.event.pull_request.commits }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
+      run: bash ${{ github.action_path }}/entrypoint.sh
