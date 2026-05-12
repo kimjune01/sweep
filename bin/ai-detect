@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage: ai-detect <owner/repo> <pr-number>
+# Scan PR comments for AI detection signals.
+# Returns JSON: {detected: true|false, signal: "...", author: "..."}
+
+repo="${1:?Usage: ai-detect <owner/repo> <pr-number>}"
+pr_number="${2:?Usage: ai-detect <owner/repo> <pr-number>}"
+
+SIGNALS='ai.slop|automated|this is a bot|AI.generated|not.*human.in.the.loop|mainly.produced.by.AI|AI policy|ai-generated'
+
+match=$(gh api "repos/${repo}/issues/${pr_number}/comments" \
+  --jq ".[] | select(.body | test(\"(?i)${SIGNALS}\")) | select(.user.login != \"$(gh api user --jq .login 2>/dev/null)\") | {signal: (.body | split(\"\n\")[0][:120]), author: .user.login}" \
+  2>/dev/null | head -1)
+
+if [ -n "$match" ]; then
+  echo "$match" | jq '. + {detected: true}'
+else
+  jq -n '{detected: false, signal: "", author: ""}'
+fi
