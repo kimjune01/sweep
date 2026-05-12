@@ -43,14 +43,15 @@ runs:
         PASS_COUNT=0
         WARN_COUNT=0
 
-        # 0. Three-strike ban: 3+ gate closures from same author = auto-close, no checks
-        CLOSED_PR_NUMBERS=$(gh api --paginate "repos/${REPO}/pulls?state=closed&creator=${PR_AUTHOR}&per_page=100" \
-          --jq '[.[] | select(.merged_at == null) | .number]' 2>/dev/null \
-          | jq -s 'add // []' | jq -r '.[]')
+        # 0. Three-strike ban: 3+ gate closures from same author across the org = auto-ban
+        ORG=$(echo "$REPO" | cut -d'/' -f1)
+        GATE_CLOSED_PRS=$(gh api graphql -f query="{ search(query: \"is:pr is:closed is:unmerged author:${PR_AUTHOR} org:${ORG}\", type: ISSUE, first: 100) { nodes { ... on PullRequest { number repository { nameWithOwner } } } } }" \
+          --jq '.data.search.nodes[] | "\(.repository.nameWithOwner) \(.number)"' 2>/dev/null || true)
 
         PRIOR_STRIKES=0
-        for closed_pr in $CLOSED_PR_NUMBERS; do
-          HAS_GATE_COMMENT=$(gh api "repos/${REPO}/issues/${closed_pr}/comments?per_page=10" \
+        while IFS=' ' read -r strike_repo strike_number; do
+          [ -z "$strike_repo" ] && continue
+          HAS_GATE_COMMENT=$(gh api "repos/${strike_repo}/issues/${strike_number}/comments?per_page=10" \
             --jq '[.[] | select(.body | startswith("### PR Quality Gate"))] | length' 2>/dev/null || echo "0")
           if [ "$HAS_GATE_COMMENT" -gt 0 ]; then
             PRIOR_STRIKES=$((PRIOR_STRIKES + 1))
@@ -58,13 +59,13 @@ runs:
           if [ "$PRIOR_STRIKES" -ge 3 ]; then
             break
           fi
-        done
+        done <<< "$GATE_CLOSED_PRS"
 
         if [ "$PRIOR_STRIKES" -ge 3 ]; then
           BAN_COMMENT=$(cat <<'BANEOF'
         ### PR Quality Gate — auto-closed
 
-        This author has had 3+ PRs closed by quality gate checks on this repo. Future PRs will be auto-closed without review.
+        This author has had 3+ PRs closed by quality gate checks across this org. Future PRs will be auto-closed without review.
 
         If you believe this is an error, open an issue to discuss.
         BANEOF
