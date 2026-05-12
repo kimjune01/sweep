@@ -1,6 +1,10 @@
 # Sweep
 
-Contribute to open source at scale. Claude Opus orchestrates, Codex implements, Gemini gates. Finds issues, writes fixes, ships PRs — one per org, quality-gated.
+Two tools, same repo.
+
+**For contributors:** Contribute to open source at scale. Claude Opus orchestrates, Codex implements, Gemini gates. Finds issues, writes fixes, ships PRs — one per org, quality-gated.
+
+**For maintainers:** [Protect your repo against AI slop.](#pr-quality-gate) Same checks the pipeline enforces on itself, packaged as a GitHub Action. Advisory, not blocking.
 
 ## What it does
 
