@@ -19,6 +19,13 @@ RESULTS=""
 PASS_COUNT=0
 WARN_COUNT=0
 
+# Standing check: has this author merged PRs to this repo before?
+PRIOR_MERGES=$(gh api "repos/${REPO}/pulls?state=closed&creator=${PR_AUTHOR}&per_page=100" --jq '[.[] | select(.merged_at != null)] | length' 2>/dev/null || echo "0")
+HAS_STANDING=false
+if [ "$PRIOR_MERGES" -ge 3 ]; then
+  HAS_STANDING=true
+fi
+
 add_result() {
   local check="$1" status="$2" detail="$3"
   detail=$(echo "$detail" | sed 's/|/\\|/g')
@@ -183,10 +190,14 @@ else
   gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$COMMENT" > /dev/null 2>&1
 fi
 
-# Auto-close if any warning fired
+# Standing determines action: first-timers get closed, established contributors get warned
 if [ "$WARN_COUNT" -gt 0 ]; then
-  gh api "repos/${REPO}/pulls/${PR_NUMBER}" -X PATCH -f state=closed > /dev/null 2>&1
-  echo "PR Quality Gate: CLOSED (${WARN_COUNT} warning(s))"
+  if [ "$HAS_STANDING" = true ]; then
+    echo "PR Quality Gate: ${WARN_COUNT} warning(s), advisory (${PRIOR_MERGES} prior merges)"
+  else
+    gh api "repos/${REPO}/pulls/${PR_NUMBER}" -X PATCH -f state=closed > /dev/null 2>&1
+    echo "PR Quality Gate: CLOSED (${WARN_COUNT} warning(s), first-time contributor)"
+  fi
 else
   echo "PR Quality Gate: PASSED (${PASS_COUNT} checks)"
 fi
