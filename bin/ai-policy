@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage: ai-policy <owner/repo>
+# Check if a repo has an AI policy that would reject AI-generated PRs.
+# Returns JSON: {detected: true|false, source: "...", line: "..."}
+#
+# Checks: CONTRIBUTING.md, .github/CONTRIBUTING.md, CODE_OF_CONDUCT.md,
+#          repo description, AI_POLICY.md, .github/AI_POLICY.md
+
+repo="${1:?Usage: ai-policy <owner/repo>}"
+PATTERNS='LLM|AI.generated|ai.slop|AI_POLICY|not to open PRs generated|copilot|chatgpt|generative'
+
+org="${repo%%/*}"
+
+# Check repo-level files, then org-level .github repo
+for check_repo in "$repo" "${org}/.github"; do
+  for path in CONTRIBUTING.md .github/CONTRIBUTING.md CODE_OF_CONDUCT.md AI_POLICY.md .github/AI_POLICY.md; do
+    content=$(gh api "repos/${check_repo}/contents/${path}" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)
+    if [ -n "$content" ]; then
+      match=$(echo "$content" | grep -iE "$PATTERNS" | head -1 | cut -c1-120 || true)
+      if [ -n "$match" ]; then
+        jq -n --arg s "${check_repo}/${path}" --arg l "$match" '{detected: true, source: $s, line: $l}'
+        exit 0
+      fi
+    fi
+  done
+done
+
+# Check repo description
+desc=$(gh api "repos/${repo}" --jq '.description // ""' 2>/dev/null || true)
+if echo "$desc" | grep -qiE "$PATTERNS"; then
+  jq -n --arg s "repo description" --arg l "$desc" '{detected: true, source: $s, line: $l}'
+  exit 0
+fi
+
+jq -n '{detected: false, source: "", line: ""}'
