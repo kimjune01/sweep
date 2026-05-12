@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Offer the slop filter action to a repo with an anti-AI policy.
+# Idempotent: checks for existing issue before opening.
+# Usage: offer-slop-filter [--dry-run] <owner/repo>
+set -euo pipefail
+
+DRY_RUN=false
+if [ "${1:-}" = "--dry-run" ]; then
+  DRY_RUN=true
+  shift
+fi
+
+REPO="${1:?Usage: offer-slop-filter [--dry-run] <owner/repo>}"
+TEMPLATE="$HOME/.sweep/templates/slop-filter-issue.md"
+BANLIST="$HOME/.sweep/banlist.txt"
+CANDIDATES="$HOME/.sweep/actionable/candidates.jsonl"
+
+# Skip banned repos
+if [ -f "$BANLIST" ] && grep -qxF "$REPO" "$BANLIST"; then
+  echo "SKIP: $REPO is banned"
+  exit 0
+fi
+
+# Check for existing issue by kimjune01
+EXISTING=$(gh search issues --author kimjune01 --repo "$REPO" "Protect this repo from AI-generated PRs" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+
+if [ -n "$EXISTING" ]; then
+  echo "SKIP: issue #$EXISTING already open on $REPO"
+  exit 0
+fi
+
+# Extract body (skip frontmatter)
+BODY=$(sed '1,/^---$/d' "$TEMPLATE" | sed '1,/^---$/d')
+TITLE=$(grep '^title:' "$TEMPLATE" | sed 's/title: *"\(.*\)"/\1/')
+
+if [ "$DRY_RUN" = true ]; then
+  echo "DRY-RUN: would open issue on $REPO"
+  echo "  title: $TITLE"
+  exit 0
+fi
+
+# Open the issue
+RESULT=$(gh issue create --repo "$REPO" \
+  --title "$TITLE" \
+  --body "$BODY" 2>&1) || {
+  echo "FAIL: $RESULT"
+  exit 1
+}
+
+echo "OPENED: $RESULT"
+
+# Log
+TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+mkdir -p "$(dirname "$CANDIDATES")"
+echo "{\"ts\":\"$TS\",\"repo\":\"$REPO\",\"action\":\"slop_filter_offered\",\"issue_url\":\"$RESULT\"}" >> "$CANDIDATES"
