@@ -271,7 +271,7 @@ Protect your repo against AI slop. Same checks this pipeline enforces on itself,
 | **Test presence** | Bug fix with no tests is an unproven claim |
 | **Contributor velocity** | 5+ PRs in 24h across GitHub is a spray pattern |
 
-Advisory only. Posts a comment, does not block merging.
+Any warning auto-closes the PR with a comment explaining which check failed. Full symmetry with the pipeline's own gate hook.
 
 ### Install
 

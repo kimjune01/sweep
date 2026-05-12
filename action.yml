@@ -2,7 +2,7 @@
 #
 # Advisory checks derived from 64 PR outcomes across 21 repos.
 # Each check corresponds to a pattern that predicted merge vs. closure.
-# Posts a single updatable comment. Does not block merging.
+# Any warning auto-closes the PR with a comment explaining why.
 #
 # Requires an LLM API key to assess whether the PR description
 # explains *why* the change is correct, not just *what* changed.

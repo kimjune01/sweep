@@ -173,9 +173,7 @@ $(printf '%b' "$RESULTS")
 <details>
 <summary>About this check</summary>
 
-Advisory quality gate. Does not block merging.
-
-Checks derived from [64 PR outcomes](https://github.com/kimjune01/sweep) across 21 repos. Each check corresponds to a pattern that predicted merge vs. closure.
+Each check corresponds to a pattern that predicted closure in [64 PR outcomes](https://github.com/kimjune01/sweep) across 21 repos.
 
 [Protect your repo against AI slop](https://github.com/kimjune01/sweep#pr-quality-gate)
 </details>
@@ -191,4 +189,10 @@ else
   gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$COMMENT" > /dev/null 2>&1
 fi
 
-echo "PR Quality Gate: ${PASS_COUNT} pass, ${WARN_COUNT} warn"
+# Auto-close if any warning fired
+if [ "$WARN_COUNT" -gt 0 ]; then
+  gh api "repos/${REPO}/pulls/${PR_NUMBER}" -X PATCH -f state=closed > /dev/null 2>&1
+  echo "PR Quality Gate: CLOSED (${WARN_COUNT} warning(s))"
+else
+  echo "PR Quality Gate: PASSED (${PASS_COUNT} checks)"
+fi
