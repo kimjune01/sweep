@@ -81,7 +81,7 @@ fi
 BODY_LEN=${#PR_BODY}
 if [ "$BODY_LEN" -lt 50 ]; then
   add_result "Description" "warn" "PR body is ${BODY_LEN} chars. Describe *why* this change is needed."
-else
+elif [ -n "$ANTHROPIC_API_KEY" ]; then
   DIFF_SUMMARY=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.additions, .deletions, .changed_files' 2>/dev/null | tr '\n' '/' || echo "?/?/?")
   LLM_VERDICT=$(curl -s https://api.anthropic.com/v1/messages \
     -H "content-type: application/json" \
@@ -107,6 +107,28 @@ else
     add_result "Description" "pass" "Explains why"
   else
     add_result "Description" "pass" "Description present (LLM check inconclusive)"
+  fi
+else
+  # Heuristic fallback: no API key. Check for what-not-why signals.
+  WHAT_SIGNALS=0
+  # Body just restates the title
+  if echo "$PR_BODY" | grep -qi "$(echo "$PR_TITLE" | sed 's/[^a-zA-Z ]//g' | head -c 30)"; then
+    WHAT_SIGNALS=$((WHAT_SIGNALS + 1))
+  fi
+  # Body uses "this PR" + action verb without rationale keywords
+  if echo "$PR_BODY" | grep -qiE 'this (PR|pull request|change|commit) (adds|removes|updates|fixes|changes|modifies|implements)' && \
+     ! echo "$PR_BODY" | grep -qiE 'because|root cause|the problem|the issue|the bug|rationale|the reason|this happens when'; then
+    WHAT_SIGNALS=$((WHAT_SIGNALS + 1))
+  fi
+  # Bullet-list-only body (no prose sentences)
+  PROSE_LINES=$(echo "$PR_BODY" | grep -cvE '^\s*[-*]|^\s*$|^#|^\|' || true)
+  if [ "$PROSE_LINES" -eq 0 ] && [ "$BODY_LEN" -gt 50 ]; then
+    WHAT_SIGNALS=$((WHAT_SIGNALS + 1))
+  fi
+  if [ "$WHAT_SIGNALS" -ge 2 ]; then
+    add_result "Description" "warn" "Describes *what* changed, not *why*. Add root cause or rationale."
+  else
+    add_result "Description" "pass" "Description present"
   fi
 fi
 
