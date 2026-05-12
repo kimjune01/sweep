@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage: evict-cleanup [--dry-run]
+# Move local clones of evicted/banned repos to /tmp/.
+# Matches repos via git remote origin URL.
+
+DRY_RUN=false
+[ "${1:-}" = "--dry-run" ] && DRY_RUN=true
+
+sweep="$HOME/.sweep"
+docs="$HOME/Documents"
+moved=0
+
+# Collect all evicted repos (owner/repo format)
+evicted_repos=()
+
+# From DENYLIST.md
+if [ -f "$sweep/DENYLIST.md" ]; then
+  while IFS= read -r line; do
+    repo=$(echo "$line" | grep -oE '[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+' | head -1)
+    [ -n "$repo" ] && evicted_repos+=("$repo")
+  done < <(grep "^-" "$sweep/DENYLIST.md")
+fi
+
+# From retro params
+for dir in "$sweep"/repos/*/; do
+  retro="${dir}retro.jsonl"
+  [ -f "$retro" ] || continue
+  repo_status=$(grep '"key":"status"' "$retro" | tail -1 | jq -r '.value // empty' 2>/dev/null)
+  if [ "$repo_status" = "permanent_eviction" ] || [ "$repo_status" = "evicted" ]; then
+    slug=$(basename "$dir")
+    # Convert slug back to owner/repo (first hyphen is the separator)
+    owner=$(echo "$slug" | cut -d'-' -f1)
+    repo_name=$(echo "$slug" | cut -d'-' -f2-)
+    evicted_repos+=("${owner}/${repo_name}")
+  fi
+done
+
+# Deduplicate
+IFS=$'\n' evicted_repos=($(printf '%s\n' "${evicted_repos[@]}" | sort -u))
+
+# Scan ~/Documents for matching clones
+for clone_dir in "$docs"/*/; do
+  [ -d "${clone_dir}.git" ] || continue
+  remotes=$(git -C "$clone_dir" remote -v 2>/dev/null | awk '{print $2}' | sort -u)
+  [ -z "$remotes" ] && continue
+
+  for evicted in "${evicted_repos[@]}"; do
+    # Check all remotes (origin might be the fork, upstream the real repo)
+    # Also match just the repo name for fork remotes (kimjune01/gherkin -> cucumber/gherkin)
+    evicted_name="${evicted#*/}"
+    if echo "$remotes" | grep -qi "$evicted\|/${evicted_name}\.git\|/${evicted_name}$"; then
+      dirname=$(basename "$clone_dir")
+      if [ "$DRY_RUN" = true ]; then
+        echo "WOULD MOVE: $clone_dir -> /tmp/$dirname"
+      else
+        mv "$clone_dir" "/tmp/$dirname"
+        echo "MOVED: $clone_dir -> /tmp/$dirname"
+      fi
+      moved=$((moved + 1))
+      break
+    fi
+  done
+done
+
+echo "---"
+echo "Evicted repos: ${#evicted_repos[@]}"
+echo "Clones ${DRY_RUN:+would be }moved: $moved"
