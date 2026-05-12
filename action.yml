@@ -17,8 +17,7 @@ inputs:
     default: ${{ github.token }}
   anthropic-api-key:
     description: 'Anthropic API key for description depth analysis (uses Haiku, ~$0.001/PR)'
-    required: false
-    default: ''
+    required: true
 runs:
   using: 'composite'
   steps:

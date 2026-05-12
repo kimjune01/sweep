@@ -40,7 +40,7 @@ fi
 BODY_LEN=${#PR_BODY}
 if [ "$BODY_LEN" -lt 50 ]; then
   add_result "Description" "warn" "PR body is ${BODY_LEN} chars. Describe *why* this change is needed."
-elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+else
   DIFF_SUMMARY=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.additions, .deletions, .changed_files' 2>/dev/null | tr '\n' '/' || echo "?/?/?")
   LLM_VERDICT=$(curl -s https://api.anthropic.com/v1/messages \
     -H "content-type: application/json" \
@@ -66,12 +66,6 @@ elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
     add_result "Description" "pass" "Explains why"
   else
     add_result "Description" "pass" "Description present (LLM check inconclusive)"
-  fi
-else
-  if ! printf '%s' "$PR_BODY" | grep -qiE 'because|since|caused by|root cause|the problem|the issue|the bug|due to|in order to|the reason'; then
-    add_result "Description" "warn" "PR body may only describe *what* changed. Lead with the root cause. (Add ANTHROPIC_API_KEY for deeper analysis.)"
-  else
-    add_result "Description" "pass" "Description explains why"
   fi
 fi
 

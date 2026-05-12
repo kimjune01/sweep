@@ -266,7 +266,7 @@ Protect your repo against AI slop. Same checks this pipeline enforces on itself,
 | Check | What it catches |
 |-------|-----------------|
 | **Em dashes** | Strongest single signal for AI-generated prose |
-| **Description depth** | PR describes *what* changed instead of *why* it's correct. Uses Claude Haiku (~$0.001/PR) when API key provided, keyword heuristics otherwise |
+| **Description depth** | PR describes *what* changed instead of *why* it's correct. Claude Haiku judges (~$0.001/PR) |
 | **CONTRIBUTING compliance** | Wrong branch, too many commits, AI policy violations |
 | **Test presence** | Bug fix with no tests is an unproven claim |
 | **Contributor velocity** | 5+ PRs in 24h across GitHub is a spray pattern |
@@ -294,5 +294,5 @@ jobs:
       - uses: kimjune01/sweep@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # optional, enables LLM description check
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # required, ~$0.001/PR
 ```
