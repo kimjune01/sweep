@@ -1,0 +1,54 @@
+#!/bin/bash
+# Update the GitHub profile README with live stats.
+# Computes: merge rate, merged count, repo count, hot streak.
+set -euo pipefail
+
+PROFILE_DIR="${HOME}/Documents/kimjune01"
+README="${PROFILE_DIR}/README.md"
+USER="kimjune01"
+
+# Lifetime stats (excluding own repos)
+MERGED=$(gh api graphql -f query="{ search(query: \"is:pr is:merged author:${USER} -user:${USER}\", type: ISSUE) { issueCount } }" --jq '.data.search.issueCount')
+CLOSED=$(gh api graphql -f query="{ search(query: \"is:pr is:closed is:unmerged author:${USER} -user:${USER}\", type: ISSUE) { issueCount } }" --jq '.data.search.issueCount')
+REPOS=$(gh api graphql -f query="{ search(query: \"is:pr is:merged author:${USER} -user:${USER}\", type: ISSUE, first: 100) { nodes { ... on PullRequest { repository { nameWithOwner } } } } }" --jq '[.data.search.nodes[].repository.nameWithOwner] | unique | length')
+RATE=$(( MERGED * 100 / (MERGED + CLOSED) ))
+
+# Hot streak: consecutive merges from most recent resolved PR
+RESOLVED=$(gh api graphql -f query="{
+  merged: search(query: \"is:pr is:merged author:${USER} -user:${USER} sort:updated-desc\", type: ISSUE, first: 30) {
+    nodes { ... on PullRequest { mergedAt repository { nameWithOwner } number } }
+  }
+  closed: search(query: \"is:pr is:closed is:unmerged author:${USER} -user:${USER} sort:updated-desc\", type: ISSUE, first: 30) {
+    nodes { ... on PullRequest { closedAt repository { nameWithOwner } number } }
+  }
+}" --jq '
+  ([.data.merged.nodes[] | {time: .mergedAt, state: "MERGED"}] +
+   [.data.closed.nodes[] | {time: .closedAt, state: "CLOSED"}])
+  | sort_by(.time) | reverse | .[].state')
+
+STREAK=0
+while IFS= read -r state; do
+  if [ "$state" = "MERGED" ]; then
+    STREAK=$((STREAK + 1))
+  else
+    break
+  fi
+done <<< "$RESOLVED"
+
+# Update header
+HEADER="## ${RATE}% merge rate · ${MERGED} merged · ${REPOS} repos · 🔥 streak: ${STREAK}"
+sed -i '' "1s/^##.*/${HEADER}/" "$README"
+
+# Update leaderboard row
+sed -i '' "s/| ${USER} |.*|/| ${USER} | ${MERGED} | ${RATE}% | ${REPOS} |/" "$README"
+
+# Commit and push if changed
+cd "$PROFILE_DIR"
+if ! git diff --quiet README.md; then
+  git add README.md
+  git commit -m "${MERGED} merged, ${REPOS} repos, 🔥 streak: ${STREAK}"
+  git push origin main
+  echo "Profile updated: ${HEADER}"
+else
+  echo "No changes"
+fi
