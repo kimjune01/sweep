@@ -3,7 +3,7 @@
 # Checks derived from 76 PR outcomes across 38 repos.
 # Each check corresponds to a pattern that predicted merge vs. closure.
 # Any warning auto-closes the PR with a comment explaining why.
-# Three-strike policy: 3+ gate closures from the same author = auto-close without checks.
+# Three-strike policy: 3+ gate closures from the same author = auto-ban without checks.
 #
 # Drop-in: works without any API keys. Optional Anthropic key improves
 # the description depth check (Haiku, ~$0.001/PR).
