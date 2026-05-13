@@ -1,24 +1,39 @@
 ---
 name: actionable
-description: Find work worth doing. Starts from issues, not repos — finds maintainer-acknowledged problems with mechanical acceptance criteria. Reads retro parameters to score active repos and expand from what works.
+description: Find work worth doing. Starts from intent, not repos — finds maintainer-acknowledged problems and maintainer-desired improvements with mechanical acceptance criteria. Reads retro parameters to score active repos and expand from what works.
 argument-hint: [--dry-run]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
 # Actionable
 
-Find work worth doing. Start from issues, not repos.
+Find work worth doing. Start from intent, not repos.
+
+Work worth doing is anything the maintainer wants done — bugs are a subset. The full space is **desirable improvements**: bugs, planned features, roadmap items, conformance gaps, performance targets, doc holes. The common thread is maintainer pre-commitment: they signaled they want this, nobody's doing it, and the acceptance criteria are readable.
 
 ## What makes a good candidate
 
-An issue where:
-1. **Maintainer acknowledged it** — they commented, labeled it, or opened it themselves
-2. **Acceptance criteria are mechanical** — a test fails, a benchmark regresses, a conformance suite has a gap
+An item where:
+1. **Maintainer signaled intent** — they opened it, commented, labeled it, added it to a milestone, listed it in a roadmap, pinned it, or wrote "PRs welcome"
+2. **Acceptance criteria are mechanical** — a test fails, a benchmark regresses, a conformance suite has a gap, a spec is documented, a checklist exists
 3. **Nobody's working on it** — no assigned contributor, no open PR addressing it
 4. **The repo has a harness** — CI + bench that gives a definitive yes/no before you submit
 5. **Estimated fix fits the merge ceiling** — check the repo's merged PR size distribution (from review schema or retro). If the median external merge is ~30 lines and the fix looks like 500+, score it down hard. Prior PRs at 10-50x the merge ceiling don't land regardless of quality.
 
-The ideal issue is a maintainer-acknowledged bug with a reproducer, sitting for months because it's hard. The maintainer pre-committed when they said "PRs welcome." You're claiming work from a queue, not pitching.
+### Intent signals (strongest to weakest)
+
+| Signal | Where to find it | Strength |
+|---|---|---|
+| Maintainer opened the issue | Issue author = repo owner/collaborator | Very strong — they defined the problem |
+| Milestone assignment | `gh issue view --json milestone` | Strong — scheduled, not aspirational |
+| Roadmap / tracking issue | Pinned issues, `ROADMAP.md`, `TODO.md`, project boards | Strong — published plan |
+| `enhancement` + maintainer comment | Issue labels + comment authors | Medium — acknowledged want |
+| `help wanted` / `contributions welcome` | Issue labels | Medium — explicit invitation |
+| `planned` / `accepted` / `next-release` labels | Issue labels | Medium — intent without urgency |
+| `CONTRIBUTING.md` listing areas of help | Repo docs | Weak — general, not specific |
+| `good first issue` | Issue labels | Weak — high competition, but standing-builder |
+
+Bugs with reproducers are the safest entry point. Roadmap items with specs are the highest-leverage. Features without maintainer endorsement are noise — inventing problems.
 
 ## Sources
 
@@ -44,50 +59,104 @@ Keyword trawling alone fails for niche skillsets. Use all of these:
 ```
 gh search issues --label "good first issue" --language <lang> --sort created --limit 200
 gh search issues --label "help wanted" --language <lang> --sort created --limit 200
+gh search issues --label "enhancement" --label "accepted" --language <lang> --sort created --limit 100
+gh search issues --label "planned" --language <lang> --sort created --limit 100
 ```
 Cast wide — 200 results per language per label. Score by issue quality. At 1000 slots, false positives are cheap; false negatives are expensive.
 
-**b. GitHub trending**
+**b. Intent search (roadmap mining)**
+
+Find items the maintainer already wants done — not just bugs, but planned improvements, conformance gaps, and accepted enhancements.
+
+```bash
+# Milestone items with no assignee — scheduled work nobody's claimed
+gh api "repos/OWNER/REPO/milestones" --jq '.[].number' | while read ms; do
+  gh api "repos/OWNER/REPO/issues?milestone=$ms&assignee=none&state=open&per_page=20" \
+    --jq '.[] | "\(.number) \(.title)"'
+done
+
+# Pinned issues — maintainer's priorities
+gh api "repos/OWNER/REPO/issues?state=open&per_page=100" \
+  --jq '[.[] | select(.labels[]?.name | test("tracking|roadmap|planned|accepted|meta"))] | .[] | "\(.number) \(.title)"'
+
+# Tracking issues with unchecked items
+gh api "repos/OWNER/REPO/issues?state=open&per_page=50" \
+  --jq '.[] | select(.body | test("- \\[ \\]")) | "\(.number) \(.title)"'
+```
+
+Roadmap files (`ROADMAP.md`, `TODO.md`, project boards) are also intent signals but aren't API-searchable across repos. Check them per-repo after the repo enters the roster.
+
+**d. GitHub trending**
 ```
 gh api /search/repositories?q=stars:>1000+pushed:>$(date -v-7d +%Y-%m-%d)&sort=updated&per_page=100
 ```
 Active high-star repos. Filter for open good-first-issues. These repos have review bandwidth.
 
-**c. Dependency graph traversal**
+**e. Dependency graph traversal**
 For repos where you've merged PRs, check their dependency tree:
 ```
 gh api repos/OWNER/REPO/dependency-graph/sbom
 ```
 Upstream dependencies often share maintainers. If you have standing in `ruff`, check `astral-sh/uv`, `astral-sh/ty`, etc.
 
-**d. "Used by" expansion**
+**f. "Used by" expansion**
 GitHub shows repos that depend on a project. High-star dependents of projects you've contributed to are warm leads — you understand the dependency.
 
-**e. Topic cluster search**
+**g. Topic cluster search**
 ```
 gh search repos --topic=parser --topic=formatter --language=Go --sort=stars --limit 50
 gh search repos --topic=linter --topic=type-checker --language=Python --sort=stars --limit 50
 ```
 Find repos in the same domain as your highest-merge repos.
 
+**h. Overwhelmed maintainer search (maintainer-first)**
+
+Instead of "what's broken," ask "who needs help." Search for solo maintainers with popular repos and growing issue backlogs. The issue is secondary — any bug on their queue is welcome.
+
+Profile: personal account (not org), top contributor has >80% of recent commits, open issues growing, last external PR was merged (proving they accept contributions).
+
+```bash
+# Search for CLI/TUI tools by personal accounts with issue backlogs
+gh api search/repositories -X GET \
+  -f "q=topic:cli stars:>200 pushed:>$(date -v-30d +%Y-%m-%d)" \
+  -f "sort=updated" -f "per_page=20" \
+  --jq '.items[] | "\(.full_name) (\(.stargazers_count)★, \(.open_issues_count) issues)"'
+```
+
+For each candidate, verify the solo-maintainer signal:
+```bash
+# Check if top contributor dominates
+gh api "repos/OWNER/REPO/contributors?per_page=5" --jq '.[0].contributions, .[1].contributions // 0'
+# Check if external PRs merge
+gh pr list --repo OWNER/REPO --state merged --limit 5 --json author --jq '[.[] | .author.login] | unique'
+```
+
+Solo maintainer + popular tool + issue backlog + merge history = high-receptivity target. These maintainers appreciate the small stuff — cosmetic fixes, error messages, edge cases — because they don't have time for it themselves.
+
+**Big repos are fine.** The pipeline has landed PRs on godot (90k★), pytorch (90k★), hyper, VictoriaMetrics, envoy, and polars. Large repos with active CI and clear contribution norms are often *easier* — they have established review processes, fast CI, and maintainers who expect external PRs. The constraint is merge ceiling (diff size vs repo norms), not repo size or star count. A 10-line fix on a 50k★ repo is more likely to merge than a 500-line fix on a 500★ repo.
+
 **Retro note (2026-05-09):** Compiler/optimizer niche is too narrow for generic labels. But general bug fixes, error messages, and docs span all domains. The pipeline's skillset is "read code, find root cause, write fix" — not limited to compilers. Expand the search to any well-maintained repo with mechanical acceptance criteria.
+
+**Retro note (2026-05-10):** Maintainer-first search found pvolok/mprocs (2.5k★, 65 issues, solo Rust maintainer) via ecosystem graph from existing roster repos. Issue-first search misses repos where the maintainer hasn't labeled issues yet.
+
+**Retro note (2026-05-10):** Maintainer-first repos have 50-100+ open issues — pick the *easiest*, not the most interesting. On mprocs (65 issues) and onecli (228 issues), triage agents picked domain-heavy bugs (config-vs-state, security defaults) and gemini killed both. The maintainer doesn't need you to redesign their state model. They need the 30 boring items off their plate: typos, error messages, missing edge cases, doc fixes. For first contribution to a solo-maintainer repo, filter issues by estimated complexity ≤10 lines and labels like `docs`, `error-message`, `typo`, `good-first-issue`. Standing first, ambition second.
 
 ## What to skip
 
-- Issues with no maintainer response — until they engage, you don't know if they want it fixed
-- Issues with active discussion or assigned contributors — someone's on it
+- Items with no maintainer response — until they engage, you don't know if they want it done
+- Items with active discussion or assigned contributors — someone's on it
 - **Issues with an existing open PR** — always run `gh pr list --repo OWNER/REPO --search "KEYWORD" --state open` before scoring. If a PR exists and was updated in the last 30 days, skip. If stale (>30 days, no reviews), note as opportunity to pick up the stalled work. Retro 2026-05-09: gemini-cli #25693 and #25689 both had competing PRs (#25728, #25729) that triage agents discovered only after full investigation.
-- Feature requests with no maintainer endorsement — inventing problems
+- Feature requests with no maintainer endorsement — inventing problems, not solving them
 - Issues that need hardware you don't have — can't verify
 - **Fix exceeds merge ceiling** — if the estimated diff is >3x the repo's median merged PR size for external contributors, skip. A 2000-line feature on a repo that merges 30-line fixes is dead on arrival.
 - **Repos with `process_depth: shallow`** in their review schema — the pipeline produces investigation-backed PRs. Shallow-review repos can't absorb them. Only add shallow repos if the issue is trivial enough that investigation depth is unnecessary (1-line fix, obvious bug, failing test with known cause).
 - **Bot-magnet issues** — run `~/.sweep/bin/body-count <repo> <issue-number>`. If verdict is `"skip"` (3+ distinct unmerged authors), the issue is a honeypot. The signal isn't "nobody solved it yet," it's "the maintainer is tired of closing these."
+- **AI policy repos** — run `~/.sweep/bin/ai-policy <owner/repo>`. If `detected: true`, don't add to roster. Unless `--dry-run`, run `~/.sweep/bin/offer-slop-filter <owner/repo>` — it checks the banlist, dedupes against existing issues, opens the slop filter issue from the template, and logs to candidates.jsonl. One script, idempotent. In dry-run, log the candidate but don't open the issue.
+- **GUI/TUI application repos** — skip repos where the primary artifact is a graphical or terminal UI application. These require visual verification the agent can't do and have opinionated render architectures (dirty flags, event loops, frame limiters) that resist automated fixes. Libraries that provide UI primitives (ratatui, egui) are borderline — fixes may be testable. But apps built on them (jellyfin-tui, terminal dashboards, desktop apps) are out. jellyfin-tui taught this: bug-hunt diagnosed correctly, pipeline still pushed wrong fix, maintainer said "ai slop."
 
 ## Output
 
 Updated `~/.sweep/repos.jsonl`. Log additions and removals to `~/.sweep/actionable/candidates.jsonl`.
-
-**Dashboard reminder:** after every tick, remind the user to check the dashboard at `http://localhost:8321/`.
 
 ## Diversity selection
 
@@ -106,16 +175,35 @@ After scoring candidates, select the final set using DPP-style diversity. Each c
 
 **Hypothesis-driven selection (retro 2026-05-09):** The pipeline is an experiment, not a merge optimizer. Each repo is a perturbation. Select repos that fill gaps in the hypothesis coverage, not just feature-vector distance. Ask "which hypothesis does this test?" before "will this merge?" Specifically: fast-review repos test H3 (pacing), solo maintainers test H2/H5, AI-friendly repos test H4. A repo that fills a hypothesis gap is worth more than a high-merge-probability repo that duplicates an existing condition.
 
-**Selection:** diversify strategies, not just results. Each parallel agent uses a **different search strategy** — one does label search, one does trending, one does dependency graph, one does topic clusters. Strategy diversity prevents correlated search spaces. Within each strategy, jitter scores:
+**Selection:** diversify strategies, not just results. Each parallel agent uses a **different search strategy** — one does label search, one does trending, one does dependency graph, one does topic clusters. Strategy diversity prevents correlated search spaces.
+
+### d20 stochastic search
+
+Three dice, three axes. Roll all three, build the query, fetch results, filter deterministically. No learning, no posterior, no feedback loop. The dice don't learn — you can't overfit a d20.
 
 ```bash
-jitter=$(python3 -c "import random; print(random.uniform(0.7, 1.3))")
-jittered_score=$(python3 -c "print($score * $jitter)")
+# Roll 3 queries (each is a d12 × d8 × d6 = 576 combinations)
+python3 ~/.sweep/bin/roll-search.py 3
 ```
 
-LLMs can't generate real randomness — use the shell. Dedup at the sweep level: if two agents pick the same repo, one re-rolls.
+Dice tables live in `~/.sweep/bin/roll-search.py`:
+- **d12 Language:** rust, go, python, typescript, cpp, java, csharp, kotlin, ruby, zig, swift, lua
+- **d8 Signal:** unassigned bugs, silent bugs, discussed bugs, good-first-issue, help-wanted, upvoted bugs, kind/bug, broad bugs
+- **d6 Sort+Size:** updated+mid, updated+small, reactions+large, created+any, comments+mid, updated+large
 
-No central coordinator. No partitioning. Strategy diversity × score noise = broad coverage without bottleneck.
+Each roll outputs a query + sort. Search with REST:
+```bash
+python3 ~/.sweep/bin/roll-search.py 3 | while IFS=$'\t' read -r query sort; do
+  gh api search/issues -X GET -f "q=$query" -f "sort=${sort#sort:}" -f per_page=30 \
+    --jq '.items[] | "\(.repository_url | split("/")[-2:]|join("/")) #\(.number) \(.title)"' 2>/dev/null
+done
+```
+
+**Three rolls per invocation.** Each /actionable run rolls the dice three times, producing three independent queries. Results are pooled, deduped against `repos.jsonl`, then filtered deterministically (competing PRs, maintainer responsiveness, hypothesis coverage, merge ceiling, AI policy).
+
+**Re-roll on empty.** If a roll returns zero new repos (all already in roster or filtered out), re-roll that leg. Max 3 re-rolls per leg. If still empty, that leg produced nothing — move on.
+
+**No jitter, no weighting, no memory.** The dice are uniform. The filter is deterministic. The exploration comes from the dice. The quality comes from the filter. They don't talk to each other.
 
 ## Standing-gated bug hunt
 
@@ -131,7 +219,7 @@ This is the endgame. The issue is your hypothesis. The PR is your fix. Your stan
 
 ## Process
 
-1. Read `~/.sweep/repos.jsonl` and `~/.sweep/retro/*.jsonl`.
+1. Read `~/.sweep/repos.jsonl` and `~/.sweep/retro/*.jsonl`. **Read `~/.sweep/banlist.txt` — these repos are permanently banned. Never add, investigate, or re-add a banned repo. The banlist is human-edited only.**
 2. Score active repos. Drop dormant ones. Respect cooldowns.
 3. For repos above the standing threshold (3+ merges), run standing-gated bug hunt.
 4. Search for issues: contributed repos, then adjacent, then cold.
