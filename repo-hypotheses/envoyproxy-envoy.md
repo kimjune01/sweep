@@ -1,72 +1,82 @@
-# Triage Graph: envoyproxy/envoy
+# envoyproxy/envoy PR #44981 — Hypothesis Graph (code dispute)
 
-**Timestamp**: 2026-05-09T19:55:00Z
-**Branch**: sweep-triage-1778364683
-**Issue**: #44111
+**PR**: https://github.com/envoyproxy/envoy/pull/44981
+**Issue**: https://github.com/envoyproxy/envoy/issues/44111 (filed by @bbassingthwaite, assigned @cpakulski, label `bug`)
+**Reviewer pushback**: @kyessenov 2026-05-13 — "Please fix DCO. I don't think system time is safe to use as a deadline, it's discontinuous."
+**Posture**: code dispute. Verify before capitulating or pushing back. Replaces prior triage notes; PR is now in review-dispute state.
 
-## Issue Selection Process
+---
 
-### Candidates Evaluated
+## H0 — systemTime is the correct fix for the cross-instance bug
 
-1. **#44924** - HTTP/1.1 header casing documentation reversed
-   - Status: Has competing PR #44939
-   - Skipped
+**Verdict: CONFIRMED.**
 
-2. **#44895** - Local rate limit stats documentation fix
-   - Status: Has competing PR #44930
-   - Skipped
+Evidence:
+1. **Original bug is real and user-visible.** Issue #44111 from @bbassingthwaite describes multiple Envoy instances behind an NLB; cookies issued by instance A are validated by instance B; B's `monotonicTime()` baseline is unrelated to A's, so cookies appear pre-expired and the upstream host is reselected — breaking session affinity. Reporter himself proposes `systemTime()` as the fix.
+2. **Maintainer @cpakulski concurred** on the issue thread: "Your analysis makes sense. I do not remember exact reasoning behind usage of monotonic time, but am thinking that the design process did not take 1+ Envoys into account."
+3. **Code under monotonicTime is structurally broken across processes by definition.** `std::chrono::steady_clock` (which `time_source_.monotonicTime()` wraps) has an implementation-defined epoch per the C++ standard — comparing values across processes is meaningless.
+4. The PR makes both sides — `onUpdate` cookie write in `source/extensions/http/stateful_session/cookie/cookie.cc:22` and `onRequest` validation in `source/extensions/http/stateful_session/cookie/cookie.h:78` — use `systemTime()`, so the TTL math is symmetric on a single instance and meaningful across instances.
 
-3. **#44704** - Golang filter crash with SendLocalReply
-   - Status: Has competing PR #44974, security issue
-   - Skipped
+## H1 — systemTime is unsafe as a deadline because it's discontinuous (kyessenov's claim)
 
-4. **#44499** - data-plane-api sync failing
-   - Status: No competing PRs, but unclear root cause
-   - Investigated but deferred
+**Verdict: TRUE IN GENERAL, INAPPLICABLE TO THIS DEADLINE.**
 
-5. **#44111** - Stateful session cookies incompatible between Envoy processes ✓
-   - Status: No competing PRs, maintainer-acknowledged, clear fix
-   - **Selected**
+The general statement is correct: `systemTime()` (= `std::chrono::system_clock`) can jump (NTP step, manual set, virtualization pause/resume). For *process-local* deadlines this is exactly the right reason to prefer `monotonicTime()`.
 
-## Selected Issue: #44111
+But the structural requirement here forces wall clock:
 
-### Diagnosis
+1. **The deadline crosses processes.** The cookie travels envoy-A → client → envoy-B. The only deadline both processes can agree on is one expressed in a shared epoch — wall clock. `monotonicTime()` is *defined* to be incomparable across processes; its epoch is unspecified and typically tied to boot time.
 
-**Problem**: Cookie expiry timestamps use `monotonicTime()` which is process-specific. When requests are load-balanced across multiple Envoy instances, cookies created by one instance appear expired to another because their monotonic clocks differ.
+2. **Envoy's own precedents use `systemTime()` for exactly this shape:**
+   - `source/extensions/filters/http/jwt_authn/authenticator.cc:257` — JWT `exp` validation: `absl::FromChrono(timeSource().systemTime())`. JWT crosses processes with a wire-format `exp`, identical structure to this cookie.
+   - `source/extensions/filters/http/oauth2/filter.cc:605, 1145, 1174, 1205` — OAuth2 cookie `expires` is built from `time_source_.systemTime()`.
+   - `source/extensions/filters/http/cache/upstream_request.cc:73, 219` and `cache_v2/cache_sessions_impl.cc:720, 863, 888` — HTTP cache freshness uses `systemTime()`.
+   - `source/extensions/filters/network/redis_proxy/proxy_filter.cc:166`, `command_splitter_impl.cc:653, 1126` — Redis epoch comparisons use `systemTime()`.
 
-**Root Cause**: Two locations in the code use `time_source_.monotonicTime()`:
-- `cookie.cc:22` - setting cookie expiry when creating cookie
-- `cookie.h:78` - validating cookie expiry when parsing cookie
+3. **Every `monotonicTime()` precedent for an "expiry" or "deadline" in the tree is process-local:**
+   - `source/extensions/filters/http/jwt_authn/jwks_cache.cc:159, 165` — cached JWKS validity within one process.
+   - `source/common/grpc/buffered_message_ttl_manager.h:33` — in-process gRPC ack timeout.
+   - `source/common/config/ttl.cc:66` — xDS resource TTL inside one envoy.
+   - `source/common/http/http_server_properties_cache_impl.cc:107-112` — in-process HTTP/3 Alt-Svc cache.
+   - `source/extensions/tracers/datadog/agent_http_client.cc:57` — in-process request deadline.
 
-**Maintainer Confirmation**: cpakulski acknowledged the bug and stated "Your analysis makes sense. I do not remember exact reasoning behind usage of monotonic time, but am thinking that the design process did not take 1+ Envoys into account."
+   Pattern is unambiguous: **process-local → monotonic; cross-process / wire-serialized → system.** The cookie is the latter.
 
-### Solution Implemented
+4. **Clock-skew tolerance is operator-managed, not envoy's job.** Same convention as JWT and X.509: wall-clock expiries assume NTP-synced hosts. Standard NTP corrections are sub-second; cookie TTLs are minutes to hours. The "1-hour backward jump" failure mode would simultaneously break JWT, OAuth2, HTTP cache, certificate validation, and access-log timestamps — it's a fleet-wide event, not a stateful_session-specific risk.
 
-Changed both locations from `monotonicTime()` to `systemTime()`:
+5. **The objection, if accepted, would invalidate JWT/OAuth2/cache.** If `systemTime()` is unsafe for a cross-process deadline, then envoy's JWT `exp` check is also unsafe, and so is OAuth2 cookie expiry. The project has resolved this trade-off the same way the rest of the industry has.
 
-1. **cookie.cc line 22**: Cookie creation timestamp
-2. **cookie.h line 78**: Cookie validation timestamp
+kyessenov's review reads as a generic "system time is discontinuous" warning applied without checking whether the deadline is single-process or multi-process. It's the right warning for `jwks_cache`; it's the wrong critique for a wire-serialized cookie.
 
-This ensures all Envoy instances use wall-clock time that is synchronized across processes.
+## H2 — third path (hybrid clock, monotonic-anchored-to-wall, server-side store)
 
-### Commit
+**Verdict: NOT JUSTIFIED in scope of this bug.**
 
-- Branch: `sweep-triage-1778364683`
-- Commit: `9f7eb14f`
-- Files changed: 2
-- Lines changed: 2 deletions, 2 insertions
+Considered:
+- **Hybrid (monotonic interior + wall on serialization)**: pointless. At deserialization on a different host you must re-anchor to wall clock anyway, so the on-wire deadline is wall-clock either way.
+- **Server-side session table keyed by opaque cookie id**: legitimate alternative *architecture*, not a clock fix. Out of scope for this bug; orthogonal feature.
+- **HMAC-signed cookie with skew tolerance window**: cookie isn't signed today; adding signing is a separate proposal. The configured `ttl` is already the operator's tolerance window.
 
-### Risk Assessment
+There is no clock primitive that gives both cross-process portability AND immunity to wall-clock discontinuity — the trade-off is intrinsic.
 
-**Low Risk**:
-- Minimal change (2 lines)
-- Well-understood fix (clock source swap)
-- Maintains existing behavior for single-instance deployments
-- Fixes reported bug for multi-instance deployments
-- No new dependencies or API changes
+## H3 — original bug has a different root cause; fix is elsewhere
 
-### Next Steps
+**Verdict: FALSIFIED.**
 
-1. Drip queue entry created
-2. Ready to push to fork when drip slot opens
-3. Will create PR referencing issue #44111
+The bug is mechanically deterministic: `monotonicTime()` epoch is per-process, the cookie's `expires` field is an integer compared against `monotonicTime().time_since_epoch()` on a *different* process. Definitional mismatch, not symptom of something else. Reporter, maintainer, and the code path agree on the mechanism.
+
+---
+
+## Recommendation
+
+**Push back, with evidence.** Acknowledge kyessenov's general principle (correct in the abstract), demonstrate that this specific deadline must be wall-clock because it crosses processes, cite the JWT and OAuth2 precedents in envoy's own tree.
+
+DCO is a mechanical fix unrelated to the substantive question — handle after the design point is settled, to avoid muddying the thread.
+
+## Provenance
+
+- Repo: ~/Documents/envoy, branch `sweep-triage-1778364683`, base `upstream/main`
+- PR diff: 2 files changed, 2 insertions/2 deletions in source; tests updated to `setSystemTime` to match.
+- Files inspected: see citations above.
+- Issue thread: envoyproxy/envoy#44111 (@bbassingthwaite report, @cpakulski concur).
+- PR thread: envoyproxy/envoy#44981 (@kyessenov review 2026-05-13T17:45Z).
