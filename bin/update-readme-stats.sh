@@ -86,19 +86,20 @@ STREAK=$(gh api graphql -f query="{ merged: search(query: \"is:pr is:merged auth
 # Time series: cumulative merges by day
 MERGE_DATES=$(gh api graphql -f query="{ search(query: \"is:pr is:merged author:kimjune01 created:>$EPOCH sort:created-asc\", type: ISSUE, first: 100) { edges { node { ... on PullRequest { mergedAt } } } } }" --jq '[.data.search.edges[].node.mergedAt]' 2>/dev/null)
 
-# Time series: positive-reception issue dates (from scoreboard cache).
+# Time series: positive-reception issue dates from scoreboard cache,
+# filtered to the slop-filter campaign cohort (created >= ISSUE_EPOCH).
+# Pre-campaign issues were /investigate companions (~89% positive baseline);
+# mixing them into the chart hides the campaign's actual reception trajectory.
 # A "defense dispensed" event is an issue that landed positively. Date is
-# closed_at when the maintainer closed it as completed, else created_at
-# (best available proxy for open + engaged issues).
-ISSUE_POS_DATES=$(python3 << 'IPDEOF'
+# closed_at when the maintainer closed it as completed, else created_at.
+ISSUE_POS_DATES=$(ISSUE_EPOCH="$ISSUE_EPOCH" python3 << 'IPDEOF'
 import json, os, sys
-sys.path.insert(0, os.path.expanduser("~/.sweep/bin"))
 cache = os.path.expanduser("~/.sweep/cache/scoreboard-issues.json")
 if not os.path.exists(cache):
     print("[]"); sys.exit(0)
 issues = json.load(open(cache))
+since = os.environ.get("ISSUE_EPOCH", "")
 POSITIVE_LABELS = {"bug","accepted","confirmed","good first issue","help wanted","enhancement","ready","approved","triaged"}
-NEGATIVE_LABELS = {"spam","wontfix","invalid","no-repro","not-a-bug","abuse","duplicate-spam","low-quality","ai-slop"}
 BOT_LABELS = {"stale","auto-close","auto-closed","bot-closed","no-activity","abandoned","lifecycle/stale","lifecycle/rotten","needs-info","no-response"}
 def is_bot(l):
     if not l: return False
@@ -109,15 +110,15 @@ def positive(i):
     if is_bot(i.get("closer")): return False
     if labels & BOT_LABELS or "spam" in labels: return False
     if i["state"] == "closed":
-        if i["state_reason"] == "completed": return True
-        return False
+        return i["state_reason"] == "completed"
     if labels & POSITIVE_LABELS: return True
-    if i.get("comments", 0) > 0: return True
-    return False
+    return i.get("comments", 0) > 0
 dates = []
 for i in issues:
+    created = i.get("created_at", "")
+    if since and created < since: continue  # filter to campaign cohort
     if not positive(i): continue
-    d = i.get("closed_at") or i.get("created_at")
+    d = i.get("closed_at") or created
     if d: dates.append(d)
 print(json.dumps(dates))
 IPDEOF
