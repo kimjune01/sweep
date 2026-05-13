@@ -180,11 +180,13 @@ CHARTEOF
 cp "$HOME/.sweep/HYPOTHESIS_GRAPH.md" "$REPO_DIR/HYPOTHESIS_GRAPH.md" 2>/dev/null
 cp "$HOME/.sweep/ISSUE_HYPOTHESIS_GRAPH.md" "$REPO_DIR/ISSUE_HYPOTHESIS_GRAPH.md" 2>/dev/null
 
-# Leaderboard: ClickHouse discovery + GitHub GQL verification
-LEADERBOARD=$(python3 << 'LBEOF'
-import subprocess, json, sys, urllib.request, urllib.parse
+# Leaderboard: ClickHouse discovery + GitHub GQL verification.
+# Threads $EPOCH from bash so the cutoff stays in sync with the rest of the
+# profile (PR merge rate, hypothesis graph, sankey).
+LEADERBOARD=$(EPOCH="${EPOCH%T*}" python3 << 'LBEOF'
+import subprocess, json, sys, os, urllib.request, urllib.parse
 
-EPOCH = "2026-05-09"
+EPOCH = os.environ["EPOCH"]  # YYYY-MM-DD form, threaded from bash $EPOCH
 
 # Step 1: ClickHouse discovery — top 50 cross-repo PR openers globally
 # Uses the public github_events dataset (same data as gharchive)
@@ -337,7 +339,7 @@ ${FEED}
 
 ## Leaderboard
 
-*voluntary contributions to repos you don't own | non-owner only | [methodology](https://github.com/kimjune01/kimjune01)*
+*since ${EPOCH%T*} (pipeline epoch) | voluntary contributions to repos you don't own | non-owner only | [methodology](https://github.com/kimjune01/kimjune01)*
 
 ${LEADERBOARD}
 
