@@ -8,7 +8,9 @@ This work is licensed under the [Creative Commons Attribution-ShareAlike 4.0 Int
 
 **Corresponding Source** means the complete source material from which the Derivative Work can be regenerated: the original prose, code, and configuration; any modifications to them; and any build instructions (prompts, scripts, workflows) used in the compilation.
 
-**Compatible License** means CC BY-SA 4.0, AGPL 3.0, or any later version of either.
+**Compatible License** means CC BY-SA-NS, AGPL 3.0, or any later version of either, or any license at least as protective of the Network Services clause defined above.
+
+> *Compatibility is upward-only.* Plain CC BY-SA 4.0 is **not** a Compatible License — it lacks the Network Services clause and would let a downstream relicense one hop down to escape the network requirement, breaking the chain. AGPL 3.0 qualifies because its own §13 ("Remote Network Interaction") provides the equivalent obligation for code. This mirrors how AGPL itself refuses GPL 3.0 as a downgrade path.
 
 ## Why
 
