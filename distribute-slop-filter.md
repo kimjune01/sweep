@@ -17,56 +17,78 @@ Find repos that are actively dealing with AI-generated PRs and offer the quality
 3. Open an issue offering `kimjune01/sweep`'s PR Quality Gate action
 4. Log results
 
-## Search strategies
+## Search strategy
 
-Run all of these, pool and dedup results:
+Top repos by stars, descending. Bigger repos get more AI slop. The evidence filter (5+ catchable PRs/week) does the qualification, not policy detection.
 
 ```bash
-# 1. CONTRIBUTING.md with AI/LLM policy language
-gh api 'search/code?q=%22LLM%22+%22do+not%22+filename:CONTRIBUTING.md&per_page=20' \
-  --jq '.items[].repository.full_name'
+# Sharded by star range to bypass GitHub's 1000-result cap.
+# Each shard sorted by stars desc, up to 1000 results.
+SHARDS=(
+  "stars:>100000"
+  "stars:50000..100000"
+  "stars:20000..50000"
+  "stars:10000..20000"
+  "stars:5000..10000"
+)
 
-gh api 'search/code?q=%22AI+generated%22+%22not+accepted%22+filename:CONTRIBUTING.md&per_page=20' \
-  --jq '.items[].repository.full_name'
-
-gh api 'search/code?q=%22ai-slop%22+filename:CONTRIBUTING.md&per_page=20' \
-  --jq '.items[].repository.full_name'
-
-# 2. AGENTS.md with refusal language
-gh api 'search/code?q=%22do+NOT%22+filename:AGENTS.md&per_page=20' \
-  --jq '.items[].repository.full_name'
-
-# 3. Repos using known AI PR detection actions
-gh api 'search/code?q=%22agentscan%22+filename:.yml+path:.github/workflows&per_page=20' \
-  --jq '.items[].repository.full_name'
-
-# 4. Issues/PRs mentioning AI slop problems
-gh search issues "AI generated PRs" --sort reactions --json repository --jq '.[].repository.fullName' | head -20
-gh search issues "LLM spam PRs" --sort reactions --json repository --jq '.[].repository.fullName' | head -20
+for shard in "${SHARDS[@]}"; do
+  gh api "search/repositories?q=${shard}+is:public&sort=stars&order=desc&per_page=100" \
+    --jq '.items[] | select(.has_issues and .archived == false and .fork == false) | .full_name'
+done
 ```
+
+One shard per tick. The cursor JSONL tracks which shard we're in. ~500 repos in the >100K shard, ~2000 in 5K-10K. Total space is ~8K repos.
+
+Walk the list top to bottom. For each, run `offer-slop-filter` which checks evidence (5+ catchable PRs in the last week). Most repos won't qualify. The ones that do are the ones drowning.
+
+State file: `~/.sweep/slop-filter-cursor.jsonl` — append-only, one line per repo checked.
+
+```jsonl
+{"ts":"2026-05-13T00:00:00Z","repo":"torvalds/linux","stars":195000,"result":"skip","reason":"0 catchable"}
+{"ts":"2026-05-13T00:00:01Z","repo":"facebook/react","stars":190000,"result":"offered","issue":"https://github.com/..."}
+```
+
+Each run reads the file, skips already-checked repos, continues from the highest-star unchecked repo.
 
 ## Filter
 
 For each candidate repo:
 1. Skip if in `~/.sweep/banlist.txt`
 2. Skip if already has an issue from kimjune01 about AI PRs
-3. Skip if repo has <100 stars (not worth the noise)
+3. Skip if repo has <1000 stars (smaller repos don't get enough AI slop to justify the action)
 4. Skip if repo is archived
-5. Verify the repo actually has the problem (check recent closed PRs for AI patterns, or confirm the policy file exists)
+5. Skip if issues are disabled
+6. `offer-slop-filter` checks: would the filter have caught 5+ PRs in the last week? If not, skip. The problem must be bad enough to justify installing an action.
+
+Sort candidates by star count descending. Bigger repos get hit harder by AI slop.
 
 ## Dispatch
 
-```bash
-# --dry-run: report only
-~/.sweep/bin/offer-slop-filter --dry-run <owner/repo>
+Each tick has two phases — withdraw first (cleanup), offer second (new sends).
 
-# live: open the issue
-~/.sweep/bin/offer-slop-filter <owner/repo>
+```bash
+# Phase 1: withdraw stale silent issues (politeness — clears maintainer noise debt)
+# Closes our open issues that got the silent treatment for 2+ days with zero
+# engagement (no comments, no reactions). Posts a polite withdrawal comment
+# before closing. Reactions (👀, 👍) protect an issue from withdrawal.
+~/.sweep/bin/offer-slop-filter --withdraw-stale [--dry-run] [--age 2]
+
+# Phase 2: offer to new candidates
+~/.sweep/bin/offer-slop-filter [--dry-run] <owner/repo>
 ```
 
-`--dry-run` passed to `/slop-filter` propagates to every `offer-slop-filter` call.
+**Why withdraw first.** Issues we left silent are accumulating maintainer noise debt.
+A 2-day silence is the maintainer telling us "I saw your offer and chose to ignore."
+Closing it ourselves is polite — they don't have to spend the click. It also keeps
+the scoreboard's silent-treatment-as-negative bucket from growing past the
+[2-day politeness threshold](#).
 
-Default `--limit` is 10 repos per run.
+`--dry-run` passed to `/slop-filter` propagates to every `offer-slop-filter` call,
+both phases.
+
+Default `--limit` is 10 repos per run (offer phase only — withdrawal sweeps all
+stale silent issues unconditionally).
 
 ## Output
 
