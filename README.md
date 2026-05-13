@@ -296,3 +296,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # required, ~$0.001/PR
 ```
+
+
+---
+
+*Licensed [CC BY-SA-NS](LICENSE.md) — CC BY-SA 4.0 plus a network-services clause. Build on it freely; if you serve it, source flows to users.*
