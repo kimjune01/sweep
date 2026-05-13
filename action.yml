@@ -274,21 +274,30 @@ runs:
           add_result "Tests" "pass" "Tests present or no source changes"
         fi
 
-        # 5. Contributor velocity
+        # 5. Contributor velocity (org-scoped)
+        # The signal we care about is "this author is flooding this maintainer
+        # surface", not "this author is generally active on GitHub". A
+        # first-timer to this repo who happens to open 12 PRs across other
+        # repos is not the same as 12 PRs to repos sharing this maintainer
+        # team. Scope to org to keep the two axes independent. Standing
+        # (PRIOR_MERGES > 0) further exempts known-good contributors from
+        # the velocity warn, since their pattern is already vetted here.
         if [[ "$OSTYPE" == "linux-gnu"* ]]; then
           SINCE=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
         else
           SINCE=$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ)
         fi
 
-        RECENT_PRS=$(gh api graphql -f query="{ search(query: \"is:pr author:${PR_AUTHOR} created:>${SINCE}\", type: ISSUE, first: 1) { issueCount } }" --jq '.data.search.issueCount' 2>/dev/null || echo "0")
+        RECENT_PRS=$(gh api graphql -f query="{ search(query: \"is:pr author:${PR_AUTHOR} org:${ORG} created:>${SINCE}\", type: ISSUE, first: 1) { issueCount } }" --jq '.data.search.issueCount' 2>/dev/null || echo "0")
 
-        if [ "$RECENT_PRS" -gt 10 ]; then
-          add_result "Velocity" "warn" "${RECENT_PRS} PRs opened in last 24h across GitHub. High-volume pattern."
+        if [ "${PRIOR_MERGES:-0}" -gt 0 ]; then
+          add_result "Velocity" "pass" "${RECENT_PRS} PRs in last 24h to ${ORG} (standing here exempts)"
+        elif [ "$RECENT_PRS" -gt 10 ]; then
+          add_result "Velocity" "warn" "${RECENT_PRS} PRs opened in last 24h to ${ORG}. High-volume pattern on this maintainer surface."
         elif [ "$RECENT_PRS" -gt 5 ]; then
-          add_result "Velocity" "warn" "${RECENT_PRS} PRs opened in last 24h"
+          add_result "Velocity" "warn" "${RECENT_PRS} PRs opened in last 24h to ${ORG}"
         else
-          add_result "Velocity" "pass" "${RECENT_PRS} PRs in last 24h"
+          add_result "Velocity" "pass" "${RECENT_PRS} PRs in last 24h to ${ORG}"
         fi
 
         # 7. Emoji spam in title/body
