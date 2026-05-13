@@ -2,36 +2,96 @@
 set -euo pipefail
 
 # Usage: ai-policy <owner/repo>
-# Check if a repo has an AI policy that would reject AI-generated PRs.
-# Returns JSON: {detected: true|false, source: "...", line: "..."}
+# Fetches the upstream repo's CONTRIBUTING.md / AGENTS.md / .github/AGENTS.md
+# and greps for AI prohibition or disclosure-required language.
 #
-# Checks: CONTRIBUTING.md, .github/CONTRIBUTING.md, CODE_OF_CONDUCT.md,
-#          repo description, AI_POLICY.md, .github/AI_POLICY.md
+# Output: JSON {repo, detected, severity, matched, files_checked, sources}
+#   detected ∈ {true, false}  — true means do not ship without satisfying policy
+#   severity ∈ {prohibited, disclosure_required, none}
+#
+# Caches results for 6 hours under ~/.sweep/cache/ai-policy/.
+# This is the upstream-truth check; for cached evictions / cooldowns use repo-status.
 
 repo="${1:?Usage: ai-policy <owner/repo>}"
-PATTERNS='LLM|AI.generated|ai.slop|AI_POLICY|not to open PRs generated|copilot|chatgpt|generative'
+[[ "$repo" == */* ]] || { echo "ERROR: repo must be owner/name (got: $repo)" >&2; exit 2; }
 
-org="${repo%%/*}"
+cache_dir="$HOME/.sweep/cache/ai-policy"
+mkdir -p "$cache_dir"
+cache_file="$cache_dir/${repo/\//-}.json"
+ttl=$((6 * 3600))
 
-# Check repo-level files, then org-level .github repo
-for check_repo in "$repo" "${org}/.github"; do
-  for path in CONTRIBUTING.md .github/CONTRIBUTING.md CODE_OF_CONDUCT.md AI_POLICY.md .github/AI_POLICY.md; do
-    content=$(gh api "repos/${check_repo}/contents/${path}" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)
-    if [ -n "$content" ]; then
-      match=$(echo "$content" | grep -iE "$PATTERNS" | head -1 | cut -c1-120 || true)
-      if [ -n "$match" ]; then
-        jq -n --arg s "${check_repo}/${path}" --arg l "$match" '{detected: true, source: $s, line: $l}'
-        exit 0
-      fi
-    fi
-  done
-done
-
-# Check repo description
-desc=$(gh api "repos/${repo}" --jq '.description // ""' 2>/dev/null || true)
-if echo "$desc" | grep -qiE "$PATTERNS"; then
-  jq -n --arg s "repo description" --arg l "$desc" '{detected: true, source: $s, line: $l}'
-  exit 0
+if [ -f "$cache_file" ]; then
+  age=$(( $(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || stat -c %Y "$cache_file") ))
+  if [ "$age" -lt "$ttl" ]; then
+    cat "$cache_file"
+    exit 0
+  fi
 fi
 
-jq -n '{detected: false, source: "", line: ""}'
+# Files to check, in priority order
+candidate_paths=(
+  "AGENTS.md"
+  ".github/AGENTS.md"
+  "CONTRIBUTING.md"
+  ".github/CONTRIBUTING.md"
+  "AI_POLICY.md"
+  ".github/AI_POLICY.md"
+)
+
+# Patterns. Each entry: "<severity>|<regex>"
+patterns=(
+  'prohibited|do not (submit|create|use).*(AI|LLM|generated|autonomous|agent)'
+  'prohibited|will (close|reject|ban).*(AI|LLM|generated|autonomous|agent)'
+  'prohibited|no (AI|LLM)-?(generated|assisted)'
+  'prohibited|AI[- ]free'
+  'prohibited|forbidden.*(AI|LLM|generated)'
+  'prohibited|prohibit.*(AI|LLM|generated|autonomous)'
+  'disclosure_required|disclose.*(AI|LLM|model|tool)'
+  'disclosure_required|must.*(label|tag|mark).*(AI|LLM|generated)'
+  'disclosure_required|require.*(AI|LLM).*disclosure'
+)
+
+severity="none"
+matched_lines='[]'
+files_checked='[]'
+
+for path in "${candidate_paths[@]}"; do
+  body=$(gh api "repos/$repo/contents/$path" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)
+  [ -z "$body" ] && continue
+  files_checked=$(echo "$files_checked" | jq --arg p "$path" '. + [$p]')
+
+  while IFS='|' read -r sev pattern; do
+    matches=$(echo "$body" | grep -iE "$pattern" || true)
+    if [ -n "$matches" ]; then
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        snippet=$(echo "$line" | cut -c1-200)
+        matched_lines=$(echo "$matched_lines" | jq \
+          --arg p "$path" --arg s "$sev" --arg t "$snippet" \
+          '. + [{file: $p, severity: $s, snippet: $t}]')
+      done <<< "$matches"
+      # Promote severity (prohibited > disclosure_required > none)
+      if [ "$sev" = "prohibited" ]; then
+        severity="prohibited"
+      elif [ "$sev" = "disclosure_required" ] && [ "$severity" != "prohibited" ]; then
+        severity="disclosure_required"
+      fi
+    fi
+  done < <(printf '%s\n' "${patterns[@]}")
+done
+
+if [ "$severity" = "none" ]; then
+  detected="false"
+else
+  detected="true"
+fi
+
+result=$(jq -n \
+  --arg repo "$repo" \
+  --arg detected "$detected" \
+  --arg severity "$severity" \
+  --argjson matched "$matched_lines" \
+  --argjson files "$files_checked" \
+  '{repo: $repo, detected: ($detected == "true"), severity: $severity, matched: $matched, files_checked: $files}')
+
+echo "$result" | tee "$cache_file"

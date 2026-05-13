@@ -193,6 +193,61 @@ runs:
           add_result "CONTRIBUTING" "pass" "No CONTRIBUTING.md found"
         fi
 
+        # 3b. AGENTS.md compliance (AI/agent-specific repo policy)
+        # Many repos now publish AGENTS.md alongside CONTRIBUTING.md to state
+        # explicit rules for AI/agent contributions: blanket prohibitions,
+        # required title markers (e.g. trailing 🤖), required disclosure fields.
+        # Closures observed: openbao#3067 (missing 🤖 marker per their AGENTS.md),
+        # kanidm#4339 (resubmission without reading AGENTS.md).
+        AGENTS=""
+        for path in AGENTS.md .github/AGENTS.md; do
+          CONTENT=$(gh api "repos/${REPO}/contents/${path}" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)
+          if [ -n "$CONTENT" ]; then
+            AGENTS="$CONTENT"
+            break
+          fi
+        done
+
+        if [ -n "$AGENTS" ]; then
+          AGENTS_ISSUES=""
+
+          # Blanket prohibition: any phrasing that rejects AI-generated work outright.
+          if echo "$AGENTS" | grep -qiE '(reject|prohibit|forbid|not? accept|do not (submit|open)|no (ai|llm|generative)).{0,80}(ai|llm|generative|generated|copilot|chatgpt|claude)'; then
+            PROHIB_LINE=$(echo "$AGENTS" | grep -iE '(reject|prohibit|forbid|not? accept|do not (submit|open)|no (ai|llm|generative)).{0,80}(ai|llm|generative|generated|copilot|chatgpt|claude)' | head -1 | cut -c1-140)
+            AGENTS_ISSUES="${AGENTS_ISSUES}AGENTS.md prohibits AI contributions: ${PROHIB_LINE} "
+          fi
+
+          # Required title marker: AGENTS.md often mandates a specific emoji or token in PR title.
+          # Detect any emoji mentioned alongside "title" within ~80 chars.
+          TITLE_MARKER_LINE=$(echo "$AGENTS" | grep -iE 'title.{0,80}(emoji|marker|🤖|✨|🧠|prefix|suffix|tag)|[(]?:robot|🤖|✨|🧠[)]?.{0,40}(title|pr.{0,5}title|end of)' | head -1 | cut -c1-140)
+          if [ -n "$TITLE_MARKER_LINE" ]; then
+            # Extract any non-ASCII char from the line as a candidate marker.
+            CANDIDATE=$(printf '%s' "$TITLE_MARKER_LINE" | python3 -c "import sys,re; print(''.join(re.findall(r'[\U0001F300-\U0001FAFF✀-➿]', sys.stdin.read()))[:5])" 2>/dev/null || true)
+            if [ -n "$CANDIDATE" ]; then
+              if ! printf '%s' "$PR_TITLE" | grep -qF "$CANDIDATE"; then
+                AGENTS_ISSUES="${AGENTS_ISSUES}AGENTS.md appears to require '${CANDIDATE}' marker in PR title (not found). "
+              fi
+            else
+              AGENTS_ISSUES="${AGENTS_ISSUES}AGENTS.md mentions title marker requirement; verify PR title compliance: ${TITLE_MARKER_LINE} "
+            fi
+          fi
+
+          # Required disclosure: if AGENTS.md asks contributors to disclose AI use, check the body.
+          if echo "$AGENTS" | grep -qiE '(disclos|declar|state|note|mark).{0,60}(ai|llm|generative|copilot|chatgpt|assist)'; then
+            if ! echo "$PR_BODY" | grep -qiE 'ai|llm|copilot|claude|chatgpt|assist|generated'; then
+              AGENTS_ISSUES="${AGENTS_ISSUES}AGENTS.md may require AI-use disclosure; PR body has none. "
+            fi
+          fi
+
+          if [ -n "$AGENTS_ISSUES" ]; then
+            add_result "AGENTS" "warn" "$AGENTS_ISSUES"
+          else
+            add_result "AGENTS" "pass" "Follows AGENTS.md"
+          fi
+        else
+          add_result "AGENTS" "pass" "No AGENTS.md found"
+        fi
+
         # 4. Test presence
         DIFF_FILES=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/files" --jq '.[].filename' 2>/dev/null || true)
         HAS_SOURCE=false

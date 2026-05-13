@@ -1,0 +1,347 @@
+#!/usr/bin/env python3
+"""Issue spam accountability scoreboard.
+
+Queries GitHub for issues authored by kimjune01 and computes positive
+reception per repo and per org. The point isn't volume — it's restraint.
+This surfaces who we've spammed and how they reacted, so we can stop
+generating issues for repos that label them spam.
+
+Definitions
+-----------
+Positive reception:
+  - closed with state_reason=completed (maintainer fixed it)
+  - any label in POSITIVE_LABELS (bug, accepted, confirmed, etc.)
+  - state=open with comments>0 and no negative labels (engaged)
+
+Negative reception:
+  - closed with state_reason=not_planned (maintainer rejected)
+  - any label in NEGATIVE_LABELS (spam, wontfix, invalid, no-repro, ...)
+
+Bot-closed (excluded from rate, but signal-bearing):
+  - any label in BOT_CLOSE_LABELS (stale, auto-close, no-activity, ...)
+  - closed with state_reason=null AND no engagement AND age >= 60 days
+    (heuristic for stale-bot closes that don't label)
+  Note: a repo with stale-bot is *already protected* against low-engagement
+  spam. For slop-filter campaign accounting, bot-closed means our offer
+  was redundant — they have automated defense already.
+
+Inconclusive (excluded from rate):
+  - state=open, comments=0, age < SILENT_GRACE_DAYS (not enough time yet)
+  - closed as duplicate (the issue exists, just not ours)
+
+Silent-treatment negatives:
+  - state=open, comments=0, age >= SILENT_GRACE_DAYS = the maintainer saw
+    it and chose to ignore. Counted as negative — we picked the wrong target.
+
+Usage
+-----
+  scoreboard                  # both org + repo views (default)
+  scoreboard --org            # org view only
+  scoreboard --repo           # repo view only
+  scoreboard --json           # full JSON
+  scoreboard --window 7       # recency window (default 14)
+  scoreboard --since 2026-05-09  # absolute lower bound on created_at (overrides --window)
+  scoreboard --top 15         # row count (default 10)
+  scoreboard --refresh        # bypass cache
+"""
+
+import json, os, sys, subprocess
+from collections import defaultdict
+from datetime import datetime, timezone, timedelta
+
+CACHE_FILE = os.path.expanduser("~/.sweep/cache/scoreboard-issues.json")
+CACHE_TTL_SEC = 30 * 60  # 30 minutes
+AUTHOR = "kimjune01"
+
+POSITIVE_LABELS = {
+    "bug", "accepted", "confirmed", "good first issue", "help wanted",
+    "enhancement", "ready", "approved", "triaged",
+}
+NEGATIVE_LABELS = {
+    "spam", "wontfix", "invalid", "no-repro", "not-a-bug", "abuse",
+    "duplicate-spam", "low-quality", "ai-slop",
+}
+BOT_CLOSE_LABELS = {
+    "stale", "auto-close", "auto-closed", "bot-closed", "no-activity", "abandoned",
+    "lifecycle/stale", "lifecycle/rotten", "needs-info", "no-response",
+}
+STALE_AGE_DAYS = 60  # closed with no engagement after this = likely auto-close
+SILENT_GRACE_DAYS = 7  # open with no engagement after this = silent treatment = negative
+                       # (we picked the wrong target — they ignored our offer)
+
+def fetch_issues(force_refresh=False):
+    os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+    if not force_refresh and os.path.exists(CACHE_FILE):
+        age = datetime.now().timestamp() - os.path.getmtime(CACHE_FILE)
+        if age < CACHE_TTL_SEC:
+            with open(CACHE_FILE) as f: return json.load(f)
+
+    items = []
+    page = 1
+    while page <= 10:  # 100 per page * 10 = 1000 max
+        cmd = ["gh", "api", "-X", "GET", "search/issues",
+               "-f", f"q=author:{AUTHOR} is:issue",
+               "-f", "per_page=100",
+               "-f", f"page={page}"]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0: break
+            data = json.loads(result.stdout)
+            batch = data.get("items", [])
+            if not batch: break
+            items.extend(batch)
+            if len(batch) < 100: break
+            page += 1
+        except Exception as e:
+            print(f"WARN: fetch failed on page {page}: {e}", file=sys.stderr)
+            break
+
+    issues = []
+    for it in items:
+        repo_url = it.get("repository_url", "")
+        repo = "/".join(repo_url.split("/")[-2:]) if repo_url else ""
+        issues.append({
+            "repo": repo,
+            "number": it.get("number"),
+            "title": it.get("title", ""),
+            "state": it.get("state"),
+            "state_reason": it.get("state_reason"),
+            "labels": [l["name"] for l in it.get("labels", [])],
+            "comments": it.get("comments", 0),
+            "created_at": it.get("created_at"),
+            "closed_at": it.get("closed_at"),
+            "closer": None,  # filled in by enrich_closers()
+        })
+
+    enrich_closers(issues)
+
+    with open(CACHE_FILE, "w") as f:
+        json.dump(issues, f)
+    return issues
+
+def enrich_closers(issues):
+    """Fetch closed_by.login for each closed issue. The search API doesn't
+    return it, but it's the strongest bot signal we have (e.g. DrahtBot on
+    bitcoin/bitcoin closed our issue as 'completed' after running an LLM
+    spam check — state_reason looked positive but the closer was a bot)."""
+    closed = [i for i in issues if i["state"] == "closed" and i["closer"] is None]
+    for i in closed:
+        repo, num = i["repo"], i["number"]
+        if not repo or not num: continue
+        try:
+            result = subprocess.run(
+                ["gh", "api", f"repos/{repo}/issues/{num}", "--jq", ".closed_by.login // empty"],
+                capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                i["closer"] = result.stdout.strip() or None
+        except Exception:
+            pass
+
+def is_bot_account(login):
+    """A login is bot-y if it ends with 'bot' or contains '[bot]' (the
+    GitHub App suffix). Case-insensitive."""
+    if not login: return False
+    lower = login.lower()
+    return lower.endswith("bot") or lower.endswith("-bot") or "[bot]" in lower
+
+def classify(issue):
+    """Returns 'positive', 'negative', 'bot_closed', or 'inconclusive'.
+
+    Bot signals (any one wins, regardless of state_reason or labels):
+      - closer login matches *bot or contains [bot]  (strongest signal —
+        e.g. bitcoin/bitcoin's DrahtBot closed as 'completed' after LLM
+        spam detection)
+      - 'spam' label (yt-dlp #16712, nuxt #35069 — bot-applied)
+      - any BOT_CLOSE_LABELS match (stale, lifecycle/stale, etc.)
+      - state_reason=not_planned + comments=0 + no maintainer-style labels
+        (humans leave a comment when rejecting; silent close = automation)
+      - silent close after STALE_AGE_DAYS with zero engagement
+    """
+    labels = {l.lower() for l in issue["labels"]}
+
+    # Strongest signal: closer is a bot account.
+    if is_bot_account(issue.get("closer")):
+        return "bot_closed"
+
+    # Label-based bot signals.
+    if labels & BOT_CLOSE_LABELS:
+        return "bot_closed"
+    if "spam" in labels:
+        return "bot_closed"
+
+    if issue["state"] == "closed":
+        if issue["state_reason"] == "completed":
+            return "positive"
+        if issue["state_reason"] == "duplicate":
+            return "inconclusive"
+        if issue["state_reason"] == "not_planned":
+            # 0 comments + not_planned = automation. Maintainers comment when rejecting.
+            if issue["comments"] == 0:
+                return "bot_closed"
+            return "negative"
+        # Closed with no state_reason — fall back to age heuristic.
+        if issue["comments"] == 0:
+            created = parse_ts(issue.get("created_at"))
+            closed = parse_ts(issue.get("closed_at"))
+            if created and closed and (closed - created).days >= STALE_AGE_DAYS:
+                return "bot_closed"
+            return "negative"
+        return "inconclusive"
+
+    # Open
+    if labels & POSITIVE_LABELS:
+        return "positive"
+    if issue["comments"] > 0:
+        return "positive"  # any maintainer engagement counts
+    # Silent treatment: open + no engagement past grace period = negative.
+    # The maintainer saw it and chose to ignore. That's a real signal that
+    # we picked the wrong target. Within grace, still inconclusive.
+    created = parse_ts(issue.get("created_at"))
+    if created:
+        now = datetime.now(timezone.utc)
+        age_days = (now - created).days
+        if age_days >= SILENT_GRACE_DAYS:
+            return "negative"
+    return "inconclusive"
+
+def parse_ts(s):
+    if not s: return None
+    try: return datetime.strptime(s.rstrip("Z"), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except: return None
+
+def aggregate(issues, window_days, since=None):
+    now = datetime.now(timezone.utc)
+    if since is not None:
+        cutoff = since
+    else:
+        cutoff = now - timedelta(days=window_days)
+
+    by_repo = defaultdict(lambda: {
+        "total": 0, "recent": 0,
+        "positive": 0, "negative": 0, "bot_closed": 0, "inconclusive": 0,
+        "last_ts": None,
+    })
+    # When --since is set, only count issues created after that point — both
+    # in totals AND in classification. The "since" use case is "what does my
+    # public scoreboard look like since the pipeline epoch?", not "what's
+    # in flight recently?". For the --window use case we keep the original
+    # behavior (totals are all-time, recent is bucketed).
+    use_since = (since is not None)
+    for it in issues:
+        repo = it["repo"]
+        if not repo: continue
+        ts = parse_ts(it["created_at"])
+        if use_since and (ts is None or ts < cutoff):
+            continue
+        rec = by_repo[repo]
+        rec["total"] += 1
+        rec[classify(it)] += 1
+        if ts:
+            if ts > cutoff: rec["recent"] += 1
+            if rec["last_ts"] is None or ts > rec["last_ts"]:
+                rec["last_ts"] = ts
+
+    for r in by_repo.values():
+        if r["last_ts"]: r["last_ts"] = r["last_ts"].strftime("%Y-%m-%d")
+    return dict(by_repo)
+
+def by_org(repo_stats):
+    orgs = defaultdict(lambda: {
+        "repos": 0, "total": 0, "recent": 0,
+        "positive": 0, "negative": 0, "bot_closed": 0, "inconclusive": 0,
+        "last_ts": None,
+    })
+    for repo, rec in repo_stats.items():
+        org = repo.split("/")[0]
+        o = orgs[org]
+        o["repos"] += 1
+        for k in ("total", "recent", "positive", "negative", "bot_closed", "inconclusive"):
+            o[k] += rec[k]
+        if rec["last_ts"] and (o["last_ts"] is None or rec["last_ts"] > o["last_ts"]):
+            o["last_ts"] = rec["last_ts"]
+    return dict(orgs)
+
+def reception_rate(rec):
+    decided = rec["positive"] + rec["negative"]
+    return rec["positive"] / decided if decided else None
+
+def fmt_rate(r):
+    return f"{int(r*100):>3}%" if r is not None else "  —"
+
+def print_table(title, rows, window_days, name_col="name"):
+    print(f"\n{title}  (recent = last {window_days}d)")
+    header = f"{name_col:<42} {'recent':>6} {'all':>5} {'+ ':>4} {'-':>4} {'bot':>5} {'?':>4} {'rate':>5}  last"
+    print(header)
+    print("-" * (len(header) + 2))
+    for name, rec in rows:
+        print(f"{name:<42} {rec['recent']:>6} {rec['total']:>5} {rec['positive']:>4} {rec['negative']:>4} {rec['bot_closed']:>5} {rec['inconclusive']:>4} {fmt_rate(reception_rate(rec))}  {rec['last_ts'] or '—'}")
+
+def main():
+    args = sys.argv[1:]
+    window = 14
+    top = 10
+    mode = "both"
+    out_json = False
+    refresh = False
+    since = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--window": window = int(args[i+1]); i += 2
+        elif a == "--top": top = int(args[i+1]); i += 2
+        elif a == "--since":
+            s = args[i+1]
+            try:
+                if "T" in s: since = datetime.strptime(s.rstrip("Z"), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                else: since = datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except Exception as e:
+                print(f"ERROR: --since must be YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ ({e})", file=sys.stderr); sys.exit(2)
+            i += 2
+        elif a == "--org": mode = "org"; i += 1
+        elif a == "--repo": mode = "repo"; i += 1
+        elif a == "--json": out_json = True; i += 1
+        elif a == "--refresh": refresh = True; i += 1
+        elif a in ("-h", "--help"): print(__doc__); sys.exit(0)
+        else: i += 1
+
+    issues = fetch_issues(force_refresh=refresh)
+    repo_stats = aggregate(issues, window, since=since)
+    org_stats = by_org(repo_stats)
+
+    total_p = sum(r["positive"] for r in repo_stats.values())
+    total_n = sum(r["negative"] for r in repo_stats.values())
+    total_a = sum(r["bot_closed"] for r in repo_stats.values())
+    total_i = sum(r["inconclusive"] for r in repo_stats.values())
+    total_issues = total_p + total_n + total_a + total_i
+    overall = total_p / (total_p + total_n) if (total_p + total_n) else None
+
+    if out_json:
+        print(json.dumps({
+            "window_days": window,
+            "since": since.strftime("%Y-%m-%dT%H:%M:%SZ") if since else None,
+            "issue_count": total_issues,
+            "positive": total_p,
+            "negative": total_n,
+            "bot_closed": total_a,
+            "inconclusive": total_i,
+            "rate": overall,
+            "by_org": org_stats,
+            "by_repo": repo_stats,
+        }, indent=2))
+        return
+
+    sorted_orgs = sorted(org_stats.items(), key=lambda kv: (-kv[1]["recent"], -kv[1]["total"]))[:top]
+    sorted_repos = sorted(repo_stats.items(), key=lambda kv: (-kv[1]["recent"], -kv[1]["total"]))[:top]
+
+    if mode in ("org", "both"):
+        print_table("TOP ORGS by recent issue volume", sorted_orgs, window, name_col="org")
+    if mode in ("repo", "both"):
+        print_table("TOP REPOS by recent issue volume", sorted_repos, window, name_col="repo")
+
+    print(f"\nTotals: {total_issues} issues across {len(repo_stats)} repos")
+    if since: print(f"Window: since {since.strftime('%Y-%m-%d')}")
+    print(f"Reception: {total_p} positive, {total_n} negative, {total_a} bot-closed (already protected), {total_i} inconclusive")
+    print(f"Overall positive reception rate: {fmt_rate(overall)}  (bot-closed and inconclusive excluded)")
+
+if __name__ == "__main__":
+    main()

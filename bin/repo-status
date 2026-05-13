@@ -2,89 +2,91 @@
 set -euo pipefail
 
 # Usage: repo-status <owner/repo>
-# Single source of truth for whether a repo is available for pipeline work.
-# Returns JSON: {verdict: "clear"|"cooldown"|"evicted"|"banned", reason: "..."}
+# Rolls up per-repo state from existing files and emits a verdict.
 #
-# Checks (in order, first match wins):
-#   1. DENYLIST.md — permanent ban
-#   2. retro.jsonl permanent_eviction
-#   3. retro.jsonl cooldown_until (not yet expired)
-#   4. Drip queue rejection cooldown (closure within 7 days)
-#   5. All clear
+# Inputs (read-only):
+#   ~/.sweep/banlist.txt              — global ban (one repo per line, # comments ok)
+#   ~/.sweep/repos.jsonl              — append-only event log; eviction = "action":"evict"
+#   ~/.sweep/cooldown/<owner>-<repo>.{txt,json,ts}  — date string (YYYY-MM-DD), in the future = active
+#   ~/.sweep/DENYLIST*.txt + per-repo *-denylist.txt — text grep for the repo
+#
+# Output: JSON {repo, verdict, blocker, sources}
+#   verdict ∈ {clear, banned, evicted, cooldown, denylisted}
+#
+# This script is the single source of truth for "can I touch this repo right now?"
+# /ship calls it as a hard block. Modeled on org-gate.
 
 repo="${1:?Usage: repo-status <owner/repo>}"
-owner_repo=$(echo "$repo" | tr '/' '-')
+[[ "$repo" == */* ]] || { echo "ERROR: repo must be owner/name (got: $repo)" >&2; exit 2; }
+
+owner_repo="${repo/\//-}"
 sweep="$HOME/.sweep"
-now=$(date +%s)
+verdict="clear"
+blocker=""
+sources='[]'
 
-# 1. Denylist
-if [ -f "$sweep/DENYLIST.md" ] && grep -q "$repo" "$sweep/DENYLIST.md"; then
-  reason=$(grep "$repo" "$sweep/DENYLIST.md" | head -1 | sed 's/^- //')
-  jq -n --arg v "banned" --arg r "$reason" '{verdict: $v, reason: $r}'
+emit() {
+  jq -n \
+    --arg repo "$repo" \
+    --arg verdict "$verdict" \
+    --arg blocker "$blocker" \
+    --argjson sources "$sources" \
+    '{repo: $repo, verdict: $verdict, blocker: $blocker, sources: $sources}'
   exit 0
-fi
+}
 
-# 2. Permanent eviction in retro params
-retro="$sweep/repos/${owner_repo}/retro.jsonl"
-if [ -f "$retro" ]; then
-  # Read the latest status entry
-  latest_status=$(tail -r "$retro" | while IFS= read -r line; do
-    key=$(echo "$line" | jq -r '.key // empty')
-    if [ "$key" = "status" ]; then
-      echo "$line"
-      break
-    fi
-  done)
-
-  if [ -n "$latest_status" ]; then
-    val=$(echo "$latest_status" | jq -r '.value // empty')
-    reason=$(echo "$latest_status" | jq -r '.reason // empty')
-    case "$val" in
-      permanent_eviction)
-        jq -n --arg v "evicted" --arg r "$reason" '{verdict: $v, reason: $r}'
-        exit 0
-        ;;
-      evicted)
-        jq -n --arg v "evicted" --arg r "$reason" '{verdict: $v, reason: $r}'
-        exit 0
-        ;;
-      cooldown_*)
-        # Extract date from reason (looks for YYYY-MM-DD pattern)
-        cooldown_date=$(echo "$reason" | grep -oE '20[0-9]{2}-[0-9]{2}-[0-9]{2}' | tail -1)
-        if [ -n "$cooldown_date" ]; then
-          cooldown_epoch=$(date -j -f "%Y-%m-%d" "$cooldown_date" +%s 2>/dev/null || echo 0)
-          if [ "$cooldown_epoch" -gt "$now" ]; then
-            jq -n --arg v "cooldown" --arg r "Cooldown active until $cooldown_date. $reason" '{verdict: $v, reason: $r}'
-            exit 0
-          fi
-        fi
-        ;;
-    esac
+# 1. Global banlist
+if [ -f "$sweep/banlist.txt" ]; then
+  if grep -v '^[[:space:]]*#' "$sweep/banlist.txt" | grep -Fxq "$repo"; then
+    verdict="banned"
+    blocker="in $sweep/banlist.txt"
+    sources=$(echo "$sources" | jq '. + ["banlist.txt"]')
+    emit
   fi
 fi
 
-# 4. Rejection cooldown: any closure in drip queue within 7 days
-queue="$sweep/drip-queue/${owner_repo}.jsonl"
-if [ -f "$queue" ]; then
-  cutoff=$((now - 7 * 86400))
-  recent_closure=$(tail -r "$queue" | while IFS= read -r line; do
-    status=$(echo "$line" | jq -r '.status // empty')
-    ts=$(echo "$line" | jq -r '.ts // empty')
-    [ -z "$ts" ] && continue
-    entry_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$ts" +%s 2>/dev/null || echo 0)
-    if [ "$entry_epoch" -lt "$cutoff" ]; then
-      break
+# 2. Eviction in repos.jsonl (last event for this repo)
+if [ -f "$sweep/repos.jsonl" ]; then
+  last_action=$(jq -rc --arg r "$repo" 'select(.repo == $r) | {action, status, reason}' "$sweep/repos.jsonl" 2>/dev/null | tail -1 || true)
+  if [ -n "$last_action" ]; then
+    action=$(echo "$last_action" | jq -r '.action // empty')
+    status=$(echo "$last_action" | jq -r '.status // empty')
+    reason=$(echo "$last_action" | jq -r '.reason // empty')
+    if [ "$action" = "evict" ] || [ "$status" = "evicted" ]; then
+      verdict="evicted"
+      blocker="${reason:-evicted in repos.jsonl}"
+      sources=$(echo "$sources" | jq '. + ["repos.jsonl"]')
+      emit
     fi
-    if [ "$status" = "closed" ] || [ "$status" = "rejected" ]; then
-      echo "$ts"
-      break
-    fi
-  done)
-  if [ -n "$recent_closure" ]; then
-    jq -n --arg v "cooldown" --arg r "PR closed on $recent_closure. 7-day cooldown." '{verdict: $v, reason: $r}'
-    exit 0
   fi
 fi
 
-# 5. Clear
-jq -n '{verdict: "clear", reason: ""}'
+# 3. Cooldown (any of the three accidental extensions)
+for ext in txt json ts; do
+  cf="$sweep/cooldown/${owner_repo}.${ext}"
+  [ -f "$cf" ] || continue
+  # File contains a date string YYYY-MM-DD. JSON files may have wrapping.
+  date_str=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' "$cf" | head -1 || true)
+  [ -z "$date_str" ] && continue
+  cooldown_epoch=$(date -j -f "%Y-%m-%d" "$date_str" +%s 2>/dev/null || echo 0)
+  now=$(date +%s)
+  if [ "$cooldown_epoch" -gt "$now" ]; then
+    verdict="cooldown"
+    blocker="active until $date_str (per ${cf##*/})"
+    sources=$(echo "$sources" | jq --arg s "cooldown/${owner_repo}.${ext}" '. + [$s]')
+    emit
+  fi
+done
+
+# 4. Denylist files (global + per-repo). Match the repo string anywhere.
+for dl in "$sweep"/DENYLIST*.txt "$sweep"/*-denylist.txt; do
+  [ -f "$dl" ] || continue
+  if grep -Fq "$repo" "$dl" 2>/dev/null; then
+    verdict="denylisted"
+    blocker="listed in ${dl##*/}"
+    sources=$(echo "$sources" | jq --arg s "${dl##*/}" '. + [$s]')
+    emit
+  fi
+done
+
+emit

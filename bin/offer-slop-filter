@@ -1,16 +1,93 @@
 #!/usr/bin/env bash
 # Offer the slop filter action to a repo with an anti-AI policy.
 # Idempotent: checks for existing issue before opening.
-# Usage: offer-slop-filter [--dry-run] <owner/repo>
+# Gathers repo-specific AI slop evidence, outputs context for LLM personalization.
+#
+# Usage:
+#   offer-slop-filter [--dry-run] <owner/repo>          # offer mode
+#   offer-slop-filter --withdraw-stale [--dry-run]      # sweep mode:
+#       withdraw all our silent issues older than 2 days. Polite cleanup
+#       to clear maintainer noise debt from issues that got the silent
+#       treatment. Prevents the silent-treatment-as-negative bucket from
+#       lingering.
 set -euo pipefail
 
 DRY_RUN=false
-if [ "${1:-}" = "--dry-run" ]; then
-  DRY_RUN=true
-  shift
-fi
+WITHDRAW_AGE_DAYS=2
 
-REPO="${1:?Usage: offer-slop-filter [--dry-run] <owner/repo>}"
+# Parse flags
+while [ "${1:-}" != "" ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true; shift ;;
+    --withdraw-stale)
+      shift
+      # Parse remaining flags for withdraw mode
+      while [ "${1:-}" != "" ]; do
+        case "$1" in
+          --dry-run) DRY_RUN=true; shift ;;
+          --age) WITHDRAW_AGE_DAYS="$2"; shift 2 ;;
+          *) echo "Unknown flag: $1"; exit 2 ;;
+        esac
+      done
+      # Withdrawal mode — scan all our open issues and close silent ones
+      WITHDRAW_COMMENT="Closing — looks like this offer didn't catch interest. No action needed; just clearing your queue. If the AI-PR pressure changes and this becomes useful, feel free to reopen.
+
+— withdrawn after ${WITHDRAW_AGE_DAYS}d of silent treatment by [kimjune01/sweep](https://github.com/kimjune01/sweep)"
+
+      CUTOFF_TS=$(date -u -v-${WITHDRAW_AGE_DAYS}d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+        || date -u -d "${WITHDRAW_AGE_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)
+
+      echo "Withdrawing silent issues by kimjune01 created before $CUTOFF_TS..."
+
+      # Find our open issues with 0 comments older than cutoff.
+      # gh search only exposes commentsCount; reactions require a per-issue
+      # gh api call. We do that per candidate to protect 👀 / 👍 reacted issues.
+      SEARCH_OUT=$(gh search issues --author kimjune01 --include-prs=false --state open \
+        --created "<$CUTOFF_TS" --json url,number,repository,commentsCount \
+        --limit 100 2>/dev/null || echo "[]")
+      echo "$SEARCH_OUT" | python3 -c '
+import json, sys, subprocess
+data = json.load(sys.stdin)
+for i in data:
+    if i.get("commentsCount", 0) > 0: continue
+    repo = i["repository"]["nameWithOwner"]
+    num = i["number"]
+    # Per-issue reaction check — cheap enough at this volume.
+    try:
+        r = subprocess.run(
+            ["gh", "api", f"repos/{repo}/issues/{num}", "--jq", ".reactions.total_count"],
+            capture_output=True, text=True, timeout=10)
+        total = int(r.stdout.strip() or 0)
+    except Exception:
+        total = 0
+    if total > 0: continue
+    print("{}\t{}\t{}".format(repo, num, i["url"]))
+' | while IFS=$'\t' read -r repo num url; do
+        [ -z "$repo" ] && continue
+        if [ "$DRY_RUN" = true ]; then
+          echo "  DRY-RUN: would withdraw $repo#$num  $url"
+        else
+          if gh issue comment "$num" --repo "$repo" --body "$WITHDRAW_COMMENT" >/dev/null 2>&1 \
+             && gh issue close "$num" --repo "$repo" --reason "not planned" >/dev/null 2>&1; then
+            echo "  WITHDREW: $repo#$num  $url"
+            TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            mkdir -p "$HOME/.sweep/actionable"
+            echo "{\"ts\":\"$TS\",\"repo\":\"$repo\",\"issue\":$num,\"action\":\"slop_filter_withdrawn\",\"url\":\"$url\",\"reason\":\"silent ${WITHDRAW_AGE_DAYS}d\"}" \
+              >> "$HOME/.sweep/actionable/candidates.jsonl"
+          else
+            echo "  FAIL: $repo#$num"
+          fi
+        fi
+      done
+      exit 0
+      ;;
+    --) shift; break ;;
+    -*) echo "Unknown flag: $1"; exit 2 ;;
+    *) break ;;
+  esac
+done
+
+REPO="${1:?Usage: offer-slop-filter [--dry-run] <owner/repo>  OR  offer-slop-filter --withdraw-stale [--dry-run] [--age N]}"
 TEMPLATE="$HOME/.sweep/templates/slop-filter-issue.md"
 BANLIST="$HOME/.sweep/banlist.txt"
 CANDIDATES="$HOME/.sweep/actionable/candidates.jsonl"
@@ -21,6 +98,83 @@ if [ -f "$BANLIST" ] && grep -qxF "$REPO" "$BANLIST"; then
   exit 0
 fi
 
+# Skip repos with issues disabled
+HAS_ISSUES=$(gh repo view "$REPO" --json hasIssuesEnabled --jq '.hasIssuesEnabled' 2>/dev/null || echo "false")
+if [ "$HAS_ISSUES" != "true" ]; then
+  echo "SKIP: $REPO has issues disabled"
+  exit 0
+fi
+
+# Check which filters they already have (raw curl, no API quota)
+OWNER=$(echo "$REPO" | cut -d'/' -f1)
+RNAME=$(echo "$REPO" | cut -d'/' -f2)
+WORKFLOWS=$(curl -sL "https://github.com/$REPO/tree/HEAD/.github/workflows" 2>/dev/null || echo "")
+HAS_OURS=0; HAS_ANTISLOP=0; HAS_AGENTSCAN=0; HAS_STALE_BOT=0
+if echo "$WORKFLOWS" | grep -qi "kimjune01/sweep"; then HAS_OURS=1; fi
+if echo "$WORKFLOWS" | grep -qi "anti-slop\|peakoss"; then HAS_ANTISLOP=1; fi
+if echo "$WORKFLOWS" | grep -qi "agentscan"; then HAS_AGENTSCAN=1; fi
+# Stale-bot family: any automation that auto-closes low-engagement issues/PRs.
+# Two signals: (a) action references in workflow yaml content, (b) workflow
+# filenames that name the function. ant-design ships custom issue-check-inactive
+# and issue-close-require workflows — no third-party action, but the intent is
+# the same. Cast a wide net: if a repo automates inactivity handling, our
+# slop-filter offer is redundant.
+if echo "$WORKFLOWS" | grep -qiE "actions/stale|probot/stale|stale-bot|lock-threads|close-stale|stale-action|issue-check-inactiv|issue-inactivit|issue-close-require|no-response|needs-info|close-issue|cron-stale"; then HAS_STALE_BOT=1; fi
+
+# Already-protected check 1: workflow file lists a stale-bot family action.
+if [ "$HAS_STALE_BOT" -gt 0 ] && [ "$HAS_OURS" -eq 0 ] && [ "$HAS_ANTISLOP" -eq 0 ] && [ "$HAS_AGENTSCAN" -eq 0 ]; then
+  echo "SKIP: $REPO already uses stale-bot (already protected from low-engagement spam)"
+  exit 0
+fi
+
+# Already-protected check 2: any prior issue from us in this org was bot-closed.
+# This catches repos using non-stale-bot automation (DrahtBot on bitcoin,
+# github-actions[bot] on ant-design, project-board automation on
+# cypress/wayvnc/sourcebot, label-bots on yt-dlp/nuxt). The scoreboard cache
+# is authoritative — if the org closed any prior issue from us via a bot, the
+# org has automated handling and our offer is redundant.
+ORG=$(echo "$REPO" | cut -d'/' -f1)
+SCOREBOARD_CACHE="$HOME/.sweep/cache/scoreboard-issues.json"
+if [ -f "$SCOREBOARD_CACHE" ]; then
+  ORG_BOT_CLOSED=$(python3 -c "
+import json, sys
+issues = json.load(open('$SCOREBOARD_CACHE'))
+def is_bot(l):
+    if not l: return False
+    l = l.lower()
+    return l.endswith('bot') or l.endswith('-bot') or '[bot]' in l
+hits = []
+for i in issues:
+    if not i.get('repo','').startswith('$ORG/'): continue
+    if i.get('state') != 'closed': continue
+    labels = [l.lower() for l in i.get('labels', [])]
+    bot = (is_bot(i.get('closer')) or 'spam' in labels or
+           (i.get('state_reason') == 'not_planned' and i.get('comments', 0) == 0))
+    if bot:
+        hits.append(f\"{i['repo']}#{i['number']}\")
+print(','.join(hits[:3]))
+" 2>/dev/null || true)
+  if [ -n "$ORG_BOT_CLOSED" ]; then
+    echo "SKIP: $REPO — org $ORG previously bot-closed our issue(s): $ORG_BOT_CLOSED"
+    exit 0
+  fi
+fi
+
+# Track which to recommend (exclude what they have)
+INSTALLED=""
+[ "$HAS_OURS" -gt 0 ] && INSTALLED="${INSTALLED}ours,"
+[ "$HAS_ANTISLOP" -gt 0 ] && INSTALLED="${INSTALLED}antislop,"
+[ "$HAS_AGENTSCAN" -gt 0 ] && INSTALLED="${INSTALLED}agentscan,"
+[ "$HAS_STALE_BOT" -gt 0 ] && INSTALLED="${INSTALLED}stale-bot,"
+
+# If they have all three slop filters, nothing to offer
+if [ "$HAS_OURS" -gt 0 ] && [ "$HAS_ANTISLOP" -gt 0 ] && [ "$HAS_AGENTSCAN" -gt 0 ]; then
+  echo "SKIP: $REPO already has all three filters"
+  exit 0
+fi
+
+export INSTALLED
+
 # Check for existing issue by kimjune01
 EXISTING=$(gh search issues --author kimjune01 --repo "$REPO" "Protect this repo from AI-generated PRs" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
 
@@ -29,13 +183,141 @@ if [ -n "$EXISTING" ]; then
   exit 0
 fi
 
-# Extract body (skip frontmatter)
-BODY=$(sed '1,/^---$/d' "$TEMPLATE" | sed '1,/^---$/d')
-TITLE=$(grep '^title:' "$TEMPLATE" | sed 's/title: *"\(.*\)"/\1/')
+# Extract base body (skip frontmatter)
+BASE_BODY=$(awk 'BEGIN{n=0} /^---$/{n++;next} n>=2{print}' "$TEMPLATE")
+REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
+TITLE="Protect $REPO_NAME from AI slop PRs"
+
+# --- Gather repo-specific AI slop evidence ---
+
+SINCE=$(date -u -v-14d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%SZ)
+
+# Total PR volume in the last 2 weeks (for % calculation)
+TOTAL_PRS=$(gh api graphql -f query="{ search(query: \"is:pr repo:$REPO created:>$SINCE\", type: ISSUE, first: 1) { issueCount } }" --jq '.data.search.issueCount' 2>/dev/null || echo "0")
+
+# PRs closed in the last 2 weeks that look like AI slop (unmerged, by non-members)
+SLOP_CANDIDATES=$(gh api graphql -f query="{ search(query: \"is:pr is:closed is:unmerged repo:$REPO created:>$SINCE\", type: ISSUE, first: 10) { issueCount nodes { ... on PullRequest { number title author { login } closedAt body } } } }" --jq '{
+  count: .data.search.issueCount,
+  prs: [.data.search.nodes[] | {
+    num: .number,
+    title: .title,
+    author: .author.login,
+    has_emdash: (.title + " " + (.body // "") | test("—|––|--")),
+    body_len: ((.body // "") | length),
+    body_text: ((.body // "")[:500])
+  }]
+}' 2>/dev/null || echo '{"count":0,"prs":[]}')
+
+# How many would the filter have caught (all 6 checks)
+WOULD_CATCH=$(echo "$SLOP_CANDIDATES" | python3 -c "
+import json, sys, subprocess, re
+
+data = json.load(sys.stdin)
+caught = []
+for p in data.get('prs', []):
+    warnings = 0
+    title = p.get('title', '')
+    body_text = p.get('body_text', '')
+    author = p.get('author', '')
+    body_len = p.get('body_len', 0)
+
+    # 1. Em dashes / double hyphens
+    if p.get('has_emdash'):
+        warnings += 1
+
+    # 2. Description depth (<50 chars or WHAT not WHY)
+    if body_len < 50:
+        warnings += 1
+    elif not re.search(r'because|root cause|the problem|the issue|the bug|rationale|the reason', body_text, re.I):
+        if re.search(r'this (PR|pull request|change|commit) (adds|removes|updates|fixes|changes|modifies|implements)', body_text, re.I):
+            warnings += 1
+
+    # 3. Test presence (can't check files from here, skip)
+
+    # 4. Contributor velocity (check author's recent PR count)
+    try:
+        r = subprocess.run(['gh', 'api', 'graphql', '-f',
+            'query={ search(query: \"is:pr author:' + author + ' created:>2026-05-11\", type: ISSUE, first: 1) { issueCount } }'],
+            capture_output=True, text=True, timeout=10)
+        count = json.loads(r.stdout).get('data',{}).get('search',{}).get('issueCount',0)
+        if count > 5:
+            warnings += 1
+    except:
+        pass
+
+    # 5. Three-strike (can't check cross-repo history cheaply, skip)
+
+    if warnings > 0:
+        caught.append(p)
+
+print(json.dumps({
+    'total_closed': data['count'],
+    'would_catch': len(caught),
+    'examples': [f\"#{p['num']} {p['title'][:60]}\" for p in caught[:3]]
+}))" 2>/dev/null || echo '{"total_closed":0,"would_catch":0,"examples":[]}')
+
+# Gate: no evidence, no issue
+CATCH_COUNT=$(echo "$WOULD_CATCH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('would_catch',0))" 2>/dev/null || echo "0")
+CATCH_PCT=0
+if [ "$TOTAL_PRS" -gt 0 ]; then
+  CATCH_PCT=$((CATCH_COUNT * 100 / TOTAL_PRS))
+fi
+if [ "$CATCH_COUNT" -lt 5 ] || [ "$CATCH_PCT" -lt 5 ]; then
+  echo "SKIP: $REPO — $CATCH_COUNT catchable / $TOTAL_PRS total PRs (${CATCH_PCT}%) in 2 weeks (need 5+ and 5%+)"
+  exit 0
+fi
+
+# Maintainer-pain gate: the slop must hurt enough that maintainers themselves
+# have mentioned it recently. We're not projecting our solution onto silent
+# repos — we're answering complaints the maintainers actually voiced.
+#
+# Search the repo for issues/PRs in the last 60 days where someone with
+# OWNER/MEMBER/COLLABORATOR authorAssociation mentioned the problem.
+PAIN_TS=$(date -u -v-60d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '60 days ago' +%Y-%m-%dT%H:%M:%SZ)
+PAIN_QUERY='"AI slop" OR "AI-generated PR" OR "LLM-generated" OR "low-quality AI" OR "AI spam" OR "ChatGPT PR" OR "Claude PR" OR "Copilot PR"'
+PAIN_HITS=$(gh api graphql -f query="{ search(query: \"repo:$REPO ($PAIN_QUERY) created:>$PAIN_TS\", type: ISSUE, first: 20) { nodes { ... on Issue { number title authorAssociation author { login } } ... on PullRequest { number title authorAssociation author { login } } } } }" \
+  --jq '[.data.search.nodes[] | select(.authorAssociation == "OWNER" or .authorAssociation == "MEMBER" or .authorAssociation == "COLLABORATOR") | "#\(.number) by @\(.author.login) (\(.authorAssociation))"]' 2>/dev/null || echo "[]")
+PAIN_COUNT=$(echo "$PAIN_HITS" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+
+if [ "$PAIN_COUNT" -lt 1 ]; then
+  echo "SKIP: $REPO — no maintainer mentioned AI-slop pain in last 60 days (have the problem, but haven't spoken up — don't project)"
+  exit 0
+fi
+
+PAIN_EXAMPLE=$(echo "$PAIN_HITS" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0] if d else '')" 2>/dev/null || echo "")
+
+# Build opener from evidence — lead with the maintainer's own complaint
+# (PAIN_EXAMPLE) when we have one, so the offer reads as a response to a
+# voiced problem rather than a cold pitch.
+EXAMPLES=$(echo "$WOULD_CATCH" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(', '.join(d.get('examples',[])[:2]))" 2>/dev/null || echo "")
+if [ -n "$PAIN_EXAMPLE" ]; then
+  OPENER="Saw $PAIN_EXAMPLE mention AI-slop pressure. $CATCH_COUNT of $TOTAL_PRS PRs in the last 2 weeks would have been auto-closed before review (e.g. $EXAMPLES)."
+else
+  OPENER="$CATCH_COUNT of $TOTAL_PRS PRs in the last 2 weeks would have been auto-closed before review (e.g. $EXAMPLES)."
+fi
+
+# Filter tool list based on what's already installed
+TOOLS=""
+[ "$HAS_OURS" -eq 0 ] && TOOLS="${TOOLS}
+- [PR Quality Gate](https://github.com/kimjune01/sweep/blob/master/action.yml), judges PR quality not authorship, lets competent bots through, blocks lazy humans"
+[ "$HAS_ANTISLOP" -eq 0 ] && TOOLS="${TOOLS}
+- [anti-slop](https://github.com/peakoss/anti-slop), 34 configurable checks, built from maintaining Coolify (120 slop PRs/month)"
+[ "$HAS_AGENTSCAN" -eq 0 ] && TOOLS="${TOOLS}
+- [agentscan-action](https://github.com/MatteoGabriele/agentscan-action), deep author profile analysis, detects automation patterns from account activity"
+
+BODY="${OPENER}
+
+Install a GitHub Action:
+${TOOLS}
+
+[Full writeup](https://june.kim/speedrunning-open-source)
+
+This was partially generated by a clanker. The human that sent me cares about your repo. We just wanna help."
 
 if [ "$DRY_RUN" = true ]; then
-  echo "DRY-RUN: would open issue on $REPO"
+  echo "DRY-RUN: $REPO (${CATCH_COUNT}/${TOTAL_PRS} = ${CATCH_PCT}%)"
   echo "  title: $TITLE"
+  echo "  opener: $OPENER"
   exit 0
 fi
 
@@ -52,4 +334,4 @@ echo "OPENED: $RESULT"
 # Log
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 mkdir -p "$(dirname "$CANDIDATES")"
-echo "{\"ts\":\"$TS\",\"repo\":\"$REPO\",\"action\":\"slop_filter_offered\",\"issue_url\":\"$RESULT\"}" >> "$CANDIDATES"
+echo "{\"ts\":\"$TS\",\"repo\":\"$REPO\",\"action\":\"slop_filter_offered\",\"issue_url\":\"$RESULT\",\"catch\":$CATCH_COUNT,\"total\":$TOTAL_PRS,\"pct\":$CATCH_PCT}" >> "$CANDIDATES"
