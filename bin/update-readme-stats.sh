@@ -86,6 +86,43 @@ STREAK=$(gh api graphql -f query="{ merged: search(query: \"is:pr is:merged auth
 # Time series: cumulative merges by day
 MERGE_DATES=$(gh api graphql -f query="{ search(query: \"is:pr is:merged author:kimjune01 created:>$EPOCH sort:created-asc\", type: ISSUE, first: 100) { edges { node { ... on PullRequest { mergedAt } } } } }" --jq '[.data.search.edges[].node.mergedAt]' 2>/dev/null)
 
+# Time series: positive-reception issue dates (from scoreboard cache).
+# A "defense dispensed" event is an issue that landed positively. Date is
+# closed_at when the maintainer closed it as completed, else created_at
+# (best available proxy for open + engaged issues).
+ISSUE_POS_DATES=$(python3 << 'IPDEOF'
+import json, os, sys
+sys.path.insert(0, os.path.expanduser("~/.sweep/bin"))
+cache = os.path.expanduser("~/.sweep/cache/scoreboard-issues.json")
+if not os.path.exists(cache):
+    print("[]"); sys.exit(0)
+issues = json.load(open(cache))
+POSITIVE_LABELS = {"bug","accepted","confirmed","good first issue","help wanted","enhancement","ready","approved","triaged"}
+NEGATIVE_LABELS = {"spam","wontfix","invalid","no-repro","not-a-bug","abuse","duplicate-spam","low-quality","ai-slop"}
+BOT_LABELS = {"stale","auto-close","auto-closed","bot-closed","no-activity","abandoned","lifecycle/stale","lifecycle/rotten","needs-info","no-response"}
+def is_bot(l):
+    if not l: return False
+    l = l.lower()
+    return l.endswith("bot") or l.endswith("-bot") or "[bot]" in l
+def positive(i):
+    labels = {l.lower() for l in i.get("labels", [])}
+    if is_bot(i.get("closer")): return False
+    if labels & BOT_LABELS or "spam" in labels: return False
+    if i["state"] == "closed":
+        if i["state_reason"] == "completed": return True
+        return False
+    if labels & POSITIVE_LABELS: return True
+    if i.get("comments", 0) > 0: return True
+    return False
+dates = []
+for i in issues:
+    if not positive(i): continue
+    d = i.get("closed_at") or i.get("created_at")
+    if d: dates.append(d)
+print(json.dumps(dates))
+IPDEOF
+)
+
 # Clone/update the profile repo
 REPO_DIR="$HOME/Documents/kimjune01"
 if [ ! -d "$REPO_DIR" ]; then
@@ -94,36 +131,47 @@ fi
 
 cd "$REPO_DIR" && git pull --rebase origin main 2>/dev/null
 
-# Generate merge time-series chart (Mermaid xychart bar)
+# Generate per-day chart with two series: PRs merged + issues positively
+# received (defenses dispensed). The two primary directives.
 MERGE_CHART=$(python3 << CHARTEOF
 import json
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-dates_raw = json.loads('''$MERGE_DATES''')
-if not dates_raw:
+merge_raw = json.loads('''$MERGE_DATES''')
+issue_raw = json.loads('''$ISSUE_POS_DATES''')
+
+if not merge_raw and not issue_raw:
     exit()
 
-buckets = defaultdict(int)
-for d in dates_raw:
-    buckets[d[:10]] += 1
-start = datetime.strptime(min(buckets), "%Y-%m-%d")
-end = datetime.strptime(max(buckets), "%Y-%m-%d")
+merge_buckets = defaultdict(int)
+for d in merge_raw:
+    merge_buckets[d[:10]] += 1
+issue_buckets = defaultdict(int)
+for d in issue_raw:
+    issue_buckets[d[:10]] += 1
+
+all_days = set(merge_buckets) | set(issue_buckets)
+start = datetime.strptime(min(all_days), "%Y-%m-%d")
+end = datetime.strptime(max(all_days), "%Y-%m-%d")
 cur = start
-days, counts = [], []
+days, merges, defenses = [], [], []
 while cur <= end:
     day = cur.strftime("%Y-%m-%d")
     days.append(cur.strftime("%m-%d"))
-    counts.append(buckets.get(day, 0))
+    merges.append(merge_buckets.get(day, 0))
+    defenses.append(issue_buckets.get(day, 0))
     cur += timedelta(days=1)
 
 x = ", ".join(f'"{d}"' for d in days)
-y = ", ".join(str(c) for c in counts)
+ym = ", ".join(str(c) for c in merges)
+yd = ", ".join(str(c) for c in defenses)
 print(f'xychart-beta')
-print(f'    title "PRs merged per day"')
+print(f'    title "PRs merged + defenses dispensed per day"')
 print(f'    x-axis [{x}]')
-print(f'    y-axis "merged"')
-print(f'    bar [{y}]')
+print(f'    y-axis "count"')
+print(f'    bar [{ym}]')
+print(f'    bar [{yd}]')
 CHARTEOF
 )
 
