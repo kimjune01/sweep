@@ -1,6 +1,6 @@
 ---
 name: actionable
-description: Find work worth doing. Starts from intent, not repos — finds maintainer-acknowledged problems and maintainer-desired improvements with mechanical acceptance criteria. Reads retro parameters to score active repos and expand from what works.
+description: Find work worth doing. Starts from intent, not repos — finds maintainer-acknowledged problems and maintainer-desired improvements where receipts of reasoning are producible (hypothesis graph + test attestation). Reads retro parameters to score active repos and expand from what works.
 argument-hint: [--dry-run]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
@@ -15,7 +15,7 @@ Work worth doing is anything the maintainer wants done — bugs are a subset. Th
 
 An item where:
 1. **Maintainer signaled intent** — they opened it, commented, labeled it, added it to a milestone, listed it in a roadmap, pinned it, or wrote "PRs welcome"
-2. **Acceptance criteria are mechanical** — a test fails, a benchmark regresses, a conformance suite has a gap, a spec is documented, a checklist exists
+2. **Receipts of reasoning are producible** — the work can be defended with a hypothesis graph (reasoning trace) and test attestations (evidence). That's the limit. If it's a matter of reason, and the reason can be attested with tests, it qualifies. Diff size doesn't gate. Architectural depth doesn't gate. The constraint is whether the PR's reviewer will see receipts of the reasoning instead of vibes. A failing test plus the trace from claim to perturbation to verdict is the canonical receipt. Mechanical fixes produce trivial receipts. Substantive fixes produce richer ones. Both qualify.
 3. **Nobody's working on it** — no assigned contributor, no open PR addressing it
 4. **The repo has a harness** — CI + bench that gives a definitive yes/no before you submit
 5. **Estimated fix fits the merge ceiling** — check the repo's merged PR size distribution (from review schema or retro). If the median external merge is ~30 lines and the fix looks like 500+, score it down hard. Prior PRs at 10-50x the merge ceiling don't land regardless of quality.
@@ -140,6 +140,14 @@ Solo maintainer + popular tool + issue backlog + merge history = high-receptivit
 **Retro note (2026-05-10):** Maintainer-first search found pvolok/mprocs (2.5k★, 65 issues, solo Rust maintainer) via ecosystem graph from existing roster repos. Issue-first search misses repos where the maintainer hasn't labeled issues yet.
 
 **Retro note (2026-05-10):** Maintainer-first repos have 50-100+ open issues — pick the *easiest*, not the most interesting. On mprocs (65 issues) and onecli (228 issues), triage agents picked domain-heavy bugs (config-vs-state, security defaults) and gemini killed both. The maintainer doesn't need you to redesign their state model. They need the 30 boring items off their plate: typos, error messages, missing edge cases, doc fixes. For first contribution to a solo-maintainer repo, filter issues by estimated complexity ≤10 lines and labels like `docs`, `error-message`, `typo`, `good-first-issue`. Standing first, ambition second.
+
+**Retro note (2026-05-14):** Standing tier unlocks ambition. Cold repos still need mechanical first contributions. But once standing exists (3+ merges, no warnings, recent reviewer engagement), the hypothesis-graph format itself is the gate, not diff size. A 200-line refactor with H0/H1/H2 + perturbations + evidence is more contributable than a 5-line typo at a hostile repo. The reader of the PR is the hypothesis graph; reviewers who accept that format absorb larger work because the graph reduces their review cost. Use the warm/hot tier to take on architecturally substantive issues that still close cleanly under investigation. Tier table:
+
+| Standing | Issue criteria |
+|---|---|
+| Cold (0-2 merges) | mechanical only, ≤30 lines, label-tagged (`good first issue`, `bug`, `docs`) |
+| Warm (3+ merges, no warnings) | hypothesis-graph-tractable bugs and maintainer-acknowledged features, ≤150 lines |
+| Hot (5+ merges, recent positive review) | architecturally substantive issues with a closeable graph, no hard line cap; bug-hunt unlocked |
 
 ## What to skip
 
