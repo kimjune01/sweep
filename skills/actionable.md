@@ -20,6 +20,8 @@ An item where:
 4. **The repo has a harness** — CI + bench that gives a definitive yes/no before you submit
 5. **Estimated fix fits the merge ceiling** — check the repo's merged PR size distribution (from review schema or retro). If the median external merge is ~30 lines and the fix looks like 500+, score it down hard. Prior PRs at 10-50x the merge ceiling don't land regardless of quality.
 
+**Failure paths produce receipts too.** An investigation that can't reproduce the bug isn't waste. The hypothesis graph (here's what we tried, here's why each branch failed) plus a recommendation to close (or to mark "needs more info") is a real contribution to the maintainer's queue. Don't filter out issues just because reproduction looks uncertain — investigate, document, and either ship a fix or post the receipts and recommend close. Both outcomes reduce the issue backlog. The only true waste is investigating without producing artifacts.
+
 ### Intent signals (strongest to weakest)
 
 | Signal | Where to find it | Strength |
