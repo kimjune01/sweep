@@ -15,7 +15,13 @@ Work worth doing is anything the maintainer wants done — bugs are a subset. Th
 
 An item where:
 1. **Maintainer signaled intent** — they opened it, commented, labeled it, added it to a milestone, listed it in a roadmap, pinned it, or wrote "PRs welcome"
-2. **Receipts of reasoning are producible** — the work can be defended with a hypothesis graph (reasoning trace) and test attestations (evidence). That's the limit. If it's a matter of reason, and the reason can be attested with tests, it qualifies. Diff size doesn't gate. Architectural depth doesn't gate. The constraint is whether the PR's reviewer will see receipts of the reasoning instead of vibes. A failing test plus the trace from claim to perturbation to verdict is the canonical receipt. Mechanical fixes produce trivial receipts. Substantive fixes produce richer ones. Both qualify.
+2. **Receipts of reasoning are producible** — the work can be defended with a hypothesis graph (reasoning trace) and test attestations (evidence). The real outcomes are value delivered to maintainers and learning extracted by the pipeline. Both are unmeasurable. Merge rate is the most legible proxy, but optimizing the proxy is Goodhart.
+   
+   When a category of work hits high merge rate, that's a signal it's saturated, not a signal to do more of it. Saturation means the pipeline isn't learning anymore and the maintainer isn't getting marginal value beyond the obvious. The mix should ratchet toward harder work over time, the same way the detector floor ratchets up. Two tracks coexist:
+   - **Standing track** (mechanical fixes): high merge rate, low learning signal, low marginal value once a few have shipped per repo. Use sparingly at cold-tier repos to establish standing, then move on.
+   - **Learning track** (hypothesis-rich PRs): bugs with reproducers needing investigation, behavior disputes, performance regressions, conformance failures, architectural choices with measurable answers. Lower merge rate but every outcome — merge or close — teaches something falsifiable. Prefer this track.
+   
+   Diff size doesn't gate. Information-content does. Pick work where the maintainer gains real queue relief and the pipeline gains real evidence about what it can and can't do. Watch the merge rate, but don't optimize for it.
 3. **Nobody's working on it** — no assigned contributor, no open PR addressing it
 4. **The repo has a harness** — CI + bench that gives a definitive yes/no before you submit
 5. **Estimated fix fits the merge ceiling** — check the repo's merged PR size distribution (from review schema or retro). If the median external merge is ~30 lines and the fix looks like 500+, score it down hard. Prior PRs at 10-50x the merge ceiling don't land regardless of quality.
