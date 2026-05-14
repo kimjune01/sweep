@@ -309,7 +309,7 @@ ${MERGE_CHART}
 
 ## Issues generated
 
-**${IRATE}% positive reception** · [hypothesis graph](ISSUE_HYPOTHESIS_GRAPH.md)
+**${IRATE}% positive reception** · [hypothesis graph](https://github.com/kimjune01/sweep/blob/master/ISSUE_HYPOTHESIS_GRAPH.md)
 
 ${ISSUES_TOTAL} issues filed since ${ISSUE_EPOCH_DATE} (slop-filter campaign start) · ${ISSUES_POS} positive · ${ISSUES_NEG} negative · ${ISSUES_BOT} bot-closed (already protected) · ${ISSUES_INC} inconclusive
 
@@ -355,14 +355,14 @@ ${LEADERBOARD}
 | [ruff#25066](https://github.com/astral-sh/ruff/pull/25066) | 2 days | 0 | mainly produced by AI |
 | [llama.cpp#22873](https://github.com/ggml-org/llama.cpp/pull/22873) | 2 days | 1 | AI-generated PR detected |
 
-[hypothesis graph](HYPOTHESIS_GRAPH.md)
+[hypothesis graph](https://github.com/kimjune01/sweep/blob/master/HYPOTHESIS_GRAPH.md)
 
 ---
 
 [june.kim](https://june.kim) · AGPL where it matters
 READMEEOF
 
-git add README.md HYPOTHESIS_GRAPH.md ISSUE_HYPOTHESIS_GRAPH.md
+git add README.md
 git diff --cached --quiet || git commit -m "stats: ${MERGED}/${RESOLVED} PRs = ${RATE}% · issues ${ISSUES_POS}/${ISSUES_DECIDED} = ${IRATE}% (${UPDATED})"
 git push origin main 2>/dev/null
 
