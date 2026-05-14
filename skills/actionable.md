@@ -22,6 +22,8 @@ An item where:
    - **Learning track** (hypothesis-rich PRs): bugs with reproducers needing investigation, behavior disputes, performance regressions, conformance failures, architectural choices with measurable answers. Lower merge rate but every outcome — merge or close — teaches something falsifiable. Prefer this track.
    
    Diff size doesn't gate. Information-content does. Pick work where the maintainer gains real queue relief and the pipeline gains real evidence about what it can and can't do. Watch the merge rate, but don't optimize for it.
+   
+   **Calibration target: 50% merge rate.** Under shifting constraints (the criterion keeps ratcheting up), 50% is the rate that maximizes outcome entropy — each PR is genuinely uncertain, so each merge or close delivers the maximum bit of learning. Above 50% means the bar is too low (we're picking saturated work). Below 50% means over-reach (the work is wrong or the standing isn't there). Hold the rate near 50% by ratcheting difficulty up as the pipeline gets better. Same principle as active learning's uncertainty sampling: label the uncertain examples first because they teach the most.
 3. **Nobody's working on it** — no assigned contributor, no open PR addressing it
 4. **The repo has a harness** — CI + bench that gives a definitive yes/no before you submit
 5. **Estimated fix fits the merge ceiling** — check the repo's merged PR size distribution (from review schema or retro). If the median external merge is ~30 lines and the fix looks like 500+, score it down hard. Prior PRs at 10-50x the merge ceiling don't land regardless of quality.
