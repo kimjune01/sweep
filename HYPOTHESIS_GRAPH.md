@@ -752,3 +752,47 @@ Closed. No open edges. Recommendation to drain encoded above.
 | QA agents in flight (peak this session) | 6 |
 | Pipeline stages active | 5 of 7 (triage/investigate/implement/qa/ship — drip is automatic) |
 
+## H17: Hypothesis-graph link in PR body raises review-touch and merge rate
+
+**Prediction:** Appending a `## Hypothesis graph` section to a PR body (with a link to a public per-repo HG file in `kimjune01/sweep`) raises (a) the rate at which a maintainer leaves any review action within 7d, and (b) the eventual merge rate, vs PRs without the section. Mechanism: the HG surfaces the reasoning the maintainer would otherwise have to reconstruct, lowering review cost.
+
+**Status: PRE-REGISTERED (2026-05-14T11:28Z, retro 14).** Treatment launched, no outcomes yet.
+
+**Design:**
+- Treatment (n=12): one open PR per org, `## Hypothesis graph` section appended in-place, link verified 200 OK.
+  - wolfpld/tracy#1359, tracel-ai/cubecl#1331, sharkdp/bat#3741, dyc3/opentogethertube#2018, charmbracelet/glow#947, yonaskolb/XcodeGen#1622, JojiiOfficial/LiveBudsCli#140, fioncat/otree#134, clap-rs/clap#6376, crashappsec/chalk#667, elemaudio/elementary#80, fjall-rs/fjall#290.
+- Control (n≈84): remaining open external PRs without HG-in-body.
+- Pre-treatment baseline (full corpus n=236): with-HG=2 (own forks, 0 merged), without-HG=234 (94 merged, 42 closed, 98 open) → 69% review-touched merge rate among the closed-out subset.
+- Treatment group at t0: all OPEN, 0 merged, 0 review-touched.
+
+**Confounds acknowledged:**
+- Selection by org diversity, not random within open queue → unblinded.
+- HG link points to a sweep repo that itself discloses the pipeline → some maintainers may infer batch contribution and react adversely (interacts with [[feedback-batch-submission-detection]] and H10).
+- Treatment timing clustered in one wave (11:28–11:34Z) → calendar-day effects shared across treatment.
+
+**Falsification (at +7d, 2026-05-21):**
+- If treatment merge rate ≤ control merge rate, the link adds noise without value. Retire H17 and remove HG-in-body from default drip.
+- If treatment review-touch ≤ control review-touch but merge rate matches, the link is read but not load-bearing — keep as transparency artifact, not as merge lever.
+- Adverse signal (any treatment PR closed citing the sweep repo or the pipeline disclosure) counts double — 1 such closure ≥ 5x the prior of "neutral exposure."
+
+**Sub-hypothesis H17a (detection vector):** ≥1 of the 12 treatment PRs closes within 7d with a maintainer comment referencing the sweep repo, the HG file, or batch contribution. Falsifier: zero such closures, in which case disclosure-via-link is a free transparency win.
+
+**Repaired post-launch:** chalk (junebot link → sweep), clap-rs (main → master). Note as procedural — ensure pre-launch link verification covers fork remote names and default branch.
+
+**Sub-hypothesis H17b (maintainer-class moderates link reception):** the H17 effect is not uniform across maintainers. Scientist-class maintainers (academic PIs, grad-student-staffed compilers, formal-methods libraries) read a falsification log as a methods section, because for them the trace IS the product. Engineer-class maintainers (paid OSS, solo hobbyists, product tooling) read the same artifact as bot prose, because time-saved is the currency and a slow trace is overhead. Predicts: heterogeneity in H17's effect is partly explained by maintainer class.
+
+Initial evidence (n=2, both directions):
+- Confirming (scientist): EnzymeAD/Enzyme #2816 (wsmoses, MIT/UIUC) merged with no bot framing question; retrospective log posted 2026-05-14 at #issuecomment-4454053341.
+- Disconfirming for engineers: wild-linker/wild #1924 (davidlattimore, paid Rust linker work). Same format → "we want to talk to you, not your bot." Repo moved to `~/.sweep/human-only.txt`.
+
+Watchlist (scientist-class maintainers to monitor as new data arrives):
+- @wsmoses — EnzymeAD/Enzyme (LLVM/MLIR autodiff)
+- TBD — extend on encounter. Profile: academic affiliation, project = published artifact, reviews cite formal properties not just style.
+
+Falsifiers:
+- A second scientist-class maintainer closes a falsification-log PR citing bot disclosure → H17b falsified, Enzyme reception was wsmoses-specific not class-specific.
+- A second engineer-class maintainer accepts prose+link without friction → H17b narrows from "class moderates" to "format matters more than class."
+
+How to apply: tag scientist-class repos in repos.jsonl with `reception: scientist`; weight their merges/closures more heavily as H17b evidence than the engineer baseline.
+
+
