@@ -275,7 +275,7 @@ LBEOF
 )
 
 cat > README.md << READMEEOF
-## ${RATE}% merge rate · ${STREAK} streak (${UPDATED})
+## ${RATE}% merge rate (${UPDATED})
 
 [Speedrunning Open Source](https://june.kim/speedrunning-open-source) · [why the loop works](https://june.kim/does-iteration-mitigate-slop-slope) (mechanism explainer; data is in the verify block below)
 
@@ -333,7 +333,7 @@ sankey-beta
 
 </details>
 
-## Feed
+## Feed · 🔥 ${STREAK} streak
 
 ${FEED}
 
