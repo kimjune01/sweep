@@ -609,3 +609,146 @@ Each is reactive. Each preserves both contributors' standing. Pre-registration: 
 - harper#3336 pushback resolution: predict hippietrail accepts the test evidence and approves OR responds with a refined FP example. Falsifier: silent close.
 - jj#9459 macos-x86_64 rerun: predict yuja or another approver re-kicks the job within 7 days; PR merges. Falsifier: silent.
 - ai-policy CACHE_VERSION=2 false-positive rate: predict 0 new false-positive evictions in next 30 days. Falsifier: 1+ FP eviction caught by manual review.
+
+---
+
+## Investigation: zulip/zulip fix-klipy-locale (drip-queue stale entry, 2026-05-14)
+
+**Trigger:** `~/.sweep/drip-queue/zulip-zulip.jsonl` contains a 2026-05-13T04:44 entry on branch `fix-klipy-locale` (no `-format` suffix), status=triaged, reason="review backflow: fix locale code handling per maintainer feedback". Subsequent entries on same date moved to `fix-klipy-locale-format` (PR #39265). The bare `fix-klipy-locale` entry remained un-shipped.
+
+### H₀: the triaged entry is a fresh actionable item
+- **Null:** the entry is duplicate provenance for work already shipped on `fix-klipy-locale-format` (PR #39265).
+- **Perturbation:** `git branch -a | grep klipy` in /Users/junekim/Documents/zulip; `gh pr list --repo zulip/zulip --search klipy --state all`.
+- **Evidence:** Local repo has only `fix-klipy-locale-format` (no bare `fix-klipy-locale` branch). Remote search returns TWO open PRs for #39202: #39265 (ours, `fix-klipy-locale-format`) and #39284 (`fix-klipy-locale`, author `apoorvapendse` — the COLLABORATOR who reviewed our PR).
+- **Trajectory:** Divergent against H₀. The branch name `fix-klipy-locale` is occupied by a competing PR from a Zulip collaborator, not a stale internal branch.
+- **Status:** killed.
+- **Edge:** classify the duplicate-fix collision (H₁).
+
+### H₁: collision is harmless duplicate (we co-fix the same bug)
+- **Null:** collision damages standing or wastes pipeline budget per H16 (alt-fix-preempted).
+- **Perturbation:** read both PR conversations side by side, compare approaches and reviewer engagement.
+- **Evidence:**
+  - PR #39284 (apoorvapendse, COLLABORATOR, opened 2026-05-12T19:04:47Z) — manual `xx_YY` underscore mapping, `Tested locally for en-gb, zh-hans, Welsh, en-us`. Reviewer karlstolley asks "is there a library?", apoorvapendse proposes `Intl.Locale.maximize()`, karlstolley confirms browser support is fine, apoorvapendse retests. Active convergence on a cleaner approach.
+  - PR #39265 (kimjune01, NONE-association, opened earlier same day as commit 5c7adf65, then patched to BCP-47 hyphen mapping after apoorvapendse's drive-by review on #39265 itself). Hardcoded 51-locale enum table.
+  - apoorvapendse reviewed BOTH PRs; the collaborator reviewed ours in passing and continued investing in their own. No standing damage observed (review was substantive and constructive), but maintainer attention is split.
+- **Trajectory:** Convergent — this is exactly H16 (alt-fix-preempted): in-flight maintainer work overlapping our actionable-error fix, surfaced too late because the issue thread didn't show #39284 was already drafted.
+- **Status:** confirmed. Third instance of H16 (after Jaxx497/NoctaVox#21 and feldera#6219).
+- **Edge:** which fix lands?
+
+### H₂: maintainer-authored PR #39284 wins the merge race
+- **Null:** ours merges (or both merge as redundant fixes — Zulip won't merge two locale-rewrites).
+- **Perturbation:** read review trajectory and standing asymmetry.
+- **Evidence:**
+  - apoorvapendse is `COLLABORATOR`; ours is `NONE`.
+  - karlstolley (`CONTRIBUTOR`) is actively reviewing #39284, suggesting `Intl.Locale.maximize()`. No reviewer engagement on #39265 since our 2026-05-13 reply.
+  - apoorvapendse's `Intl.Locale.maximize()` direction is architecturally cleaner than our hardcoded enum (karlstolley: "rather than a manually maintained list").
+  - Klipy's actual locale enum (`en-GB, en-US, es-ES, es-419, ...`) is what BOTH PRs need to target. Ours hardcodes it. Theirs lets browser Intl handle the canonicalization with Klipy's documented `xx_YY` fallback behavior.
+- **Trajectory:** Divergent against ours. Architectural taste + standing asymmetry + active maintainer engagement on competitor.
+- **Status:** confirmed (high confidence by deduction; awaiting induction via merge outcome).
+- **Edge:** what should the pipeline do with the bare-name drip entry?
+
+### H₃: the bare `fix-klipy-locale` drip entry should be drained, not shipped
+- **Null:** ship it (would create a third PR for the same bug under our authorship).
+- **Perturbation:** check whether a remote branch `fix-klipy-locale` exists in our fork; check force-push/branch-collision risk.
+- **Evidence:**
+  - No local branch `fix-klipy-locale` exists. The drip entry has no commits to push.
+  - The branch name on the upstream repo `zulip/zulip` is OWNED by apoorvapendse's PR #39284. Pushing our branch with the same name to our fork would not collide upstream, but ANY ship attempt would either no-op (no commits) or duplicate PR #39265.
+  - Per [[feedback-batch-submission-detection]]: max 1 PR per repo per session, 48h cooldown. We already have #39265 active.
+  - Per [[feedback-stale-pr-heuristic]]: stale entries are signal, not noise. This entry's signal is "the QA-revert at 04:50:07Z left the bare-name entry orphaned when the next iteration moved to `-format` branch."
+- **Trajectory:** Divergent — ship is structurally a no-op or a duplicate. Drain.
+- **Status:** confirmed.
+- **Edge:** none. Frontier closes.
+
+### Provenance
+- **Origin commit:** 5c7adf65d1 (`gifs: Introduce KLIPY as a GIF provider.`) — the regression-introducing commit. Both fixes target it.
+- **Upstream issue search:** zulip/zulip#39202 (the bug); apoorvapendse comment on #39265 cites Klipy migrate-from-tenor docs as authoritative source. Both PRs verified against same docs.
+- **Adjacent clue synthesis:** apoorvapendse opened #39284 twelve hours before reviewing #39265 — meaning the COLLABORATOR was already mid-fix when our PR appeared. The H16 detection rule (`gh log --since=30d -- <touched files>`) would NOT have caught this, because #39284 was drafted, not committed to default branch. **Refines H16 detection:** also check `gh pr list --repo <r> --search "<file or symbol>" --state open` for in-flight work, not just merged commits.
+- **Risk assessment:** standing-neutral so far. apoorvapendse engaged constructively on #39265. Continued push on #39265 risks crossing into "competing with the collaborator's PR" — eviction-class behavior.
+
+### Diagnosis (TL;DR)
+Drip-queue entry `fix-klipy-locale` is **stale orphan** from a 2026-05-13T04:50:07Z QA-revert that bumped the next iteration to `fix-klipy-locale-format` but left the original entry behind. Branch does not exist locally, is not push-able, and the bug it targeted is already addressed by our own PR #39265 — which is itself in race with collaborator-authored PR #39284 (`Intl.Locale.maximize()` direction). **Action: /drain this entry. Do not ship.** Consider closing #39265 with a comment deferring to #39284 if reviewer momentum continues there past 7 days (per H16 alt-fix-preempted handling).
+
+### Reasoning mode table
+| Claim | Mode | Confidence |
+|---|---|---|
+| Branch `fix-klipy-locale` does not exist locally | Induction (git branch) | 99% |
+| PR #39284 exists and addresses #39202 | Induction (gh) | 99% |
+| #39284 has reviewer momentum on `Intl.Locale.maximize()` | Deduction (read comments) | 95% |
+| #39284 will merge before #39265 | Abduction (standing + taste) | 75% |
+| Drip entry is QA-revert orphan | Deduction (read jsonl timestamps) | 95% |
+| H16 detection rule needs `gh pr list` extension | Abduction | 70% |
+
+### Pruning log
+- H₀ killed by H₁ (induction: gh search returned competing PR).
+- H₂ alternate "both merge" killed by deduction (Zulip won't accept two competing locale rewrites for one bug).
+
+### Frontier
+Closed. No open edges. Recommendation to drain encoded above.
+
+## H14: Gemini-only QA fabricates findings under codex rate-limit
+
+**Prediction:** When codex is unavailable (quota / rate-limit), gemini-fallback adversarial review produces a measurable fraction of fabricated findings — claims about code that doesn't exist in the diff. The single-reviewer mode lacks the cross-check that catches gemini's hallucinations.
+
+**Status: CONFIRMED (N=3, 2026-05-14).** Codex rate-limited until 2026-05-17.
+
+**Evidence for:**
+- prometheus/client_ruby (dump-direct-file-store): gemini-3.1-pro repeatedly hallucinated an "@test_globset/target/CACHEDIR.TAG syntax error" across three rounds. Refuted by `grep -c test_globset = 0` on the actual diff and by green rspec.
+- open-telemetry/opentelemetry-python (event-logger): gemini wrongly assumed `event.trace_id` could be `None` (verified empirically: always int). Then wrongly compared `event.trace_id` against live current — actual diff computes span_context from `event.context`. Required two manual pushbacks before convergence.
+- jac3km4/redscript (formatter-trailing-comments): per-contra evidence — gemini caught a REAL bug (greedy LineFeed consumption deleting blank lines, 11+ snapshot deletions). So fabrication isn't categorical.
+
+**Pattern:** Gemini-only mode is high-recall (catches real bugs) but low-precision (also flags non-existent ones). Codex-as-tiebreak previously absorbed the false positives; without it, the human (or the QA agent itself) becomes the ground-truth check.
+
+**Falsification:** If a future codex window shows the same fabrication rate on identical diffs (gemini still flags non-existent things even when codex is available), the issue is gemini's calibration, not the rate-limit.
+
+**Implication:** Until 2026-05-17, every gemini-only PASS needs a manual ground-truth check on flagged-then-refuted claims. Document the refutation in the attestation. Don't ship without it. Consider adding a third reviewer (claude-as-judge?) to break ties when codex is out.
+
+## H15: Bot reviews can catch substantive bugs the pipeline misses
+
+**Prediction:** AI-powered review bots (pullfrog, coderabbit, etc.) running on PRs produce a non-zero rate of substantive bug catches. Filtering all bot comments per default skill rule discards real signal.
+
+**Status: CONFIRMED (N=1, 2026-05-14).**
+
+**Evidence for:**
+- dyc3/opentogethertube#2018: pullfrog (AI bot via pullfrog.com) reviewed our "hide Discord login when unconfigured" PR and flagged that we only addressed the authenticated `/api/user/account` path — the unauthenticated login button (the actual motivation for the issue) was still rendered. We had not caught this. Fix shipped (commit 08908d05); 37 tests pass.
+
+**Pattern:** Bot reviews CAN be substantive when the bot has been tuned to read diffs in context (pullfrog uses GPT). The skill rule "filter bot comments" is overbroad — it should filter *bot noise* (codecov stats, CLA reminders, dependabot pings) but not *bot review comments with code references*.
+
+**Falsification:** If a survey of bot review comments across N PRs finds <5% substantive content, the default-filter rule was correct and this is a one-off.
+
+**Pipeline change:** /pr-state should classify bot comments by content shape, not by author. A bot comment that includes specific line/file references and a falsifiable claim warrants /investigate; pure status pings stay filtered.
+
+## H16: PR motivation false positives hurt merge rate at zero benefit
+
+**Prediction:** PR descriptions that overclaim the motivation (e.g., "fixes a deprecation warning" when no warning fires) invite maintainer pushback even when the underlying refactor is correct. The cost is paid in merge rate; the benefit is zero (the refactor stands or falls on its own merits).
+
+**Status: CONFIRMED (N=1, 2026-05-14).**
+
+**Evidence for:**
+- open-telemetry/opentelemetry-python#5199 (event-logger): PR body claimed `LogRecord.__init__` "triggers a deprecation warning" because of deprecated kwargs. QA verified empirically: `@typing_extensions.deprecated` on `@overload` is type-checker-only — no runtime warning fires. The refactor still aligns with upstream's documented deprecation direction (a real, defensible motivation), but the false claim invited rejection. Body edited pre-ship to reframe as "contract migration."
+
+**Pattern:** Over-stated motivations are a credibility tax. A maintainer who notices one false claim discounts the entire PR. The fix is not stronger claims — it's accurate framing of why the refactor matters.
+
+**Pipeline change:** Pre-ship gate should ground-truth empirical claims in the PR body. Anything of the form "X triggers Y" should be runtime-verified before being asserted. Reframing language ("aligns with upstream direction", "matches the documented contract") is safer than mechanism claims when the mechanism hasn't been verified.
+
+### Session 10 new patterns (2026-05-14, mid-session)
+
+1. **Demote-key bug in tick.py.** /ship demote entries that lack the `issue` field stay invisible to tick.py because dedup uses `e.get("issue", e.get("branch"))`. boldsoftware/shelley and nicklockwood/SwiftFormat sat in dripped[] for hours despite being demoted. Fix: every drip-queue write must include `issue` if the original entry has one.
+2. **Codex rate-limit quietly degrades QA quality.** With codex out until 2026-05-17, gemini-only QA produces fabricated findings (H14). Every PR shipped during this window carries higher tail risk.
+3. **Bot reviews are an underused signal.** Filtering pullfrog/coderabbit by default discards real catches (H15).
+4. **Repos.jsonl status drift.** /triage skill writes drip queue picks but doesn't update repos.jsonl status from "ready" to "triaged". tick.py keeps reporting the same 9 ready repos every cycle. Infra-debt.
+5. **Org saturation floor confirmed (third instance).** 138 orgs blocked. Of 5 ship-eligible: 1 shipped (tracy), 2 hard-blocked (evicted/banned), 2 had broken gates. Effective ship count per wave ≤ 1. [[feedback-org-saturation-floor]] is now load-bearing — pipeline output is review-bound, not produce-bound.
+
+### Score (2026-05-14, mid-session)
+
+| Metric | Value |
+|--------|-------|
+| Open PRs (kimjune01) | ~163 |
+| Shipped (cumulative) | 137 |
+| Merged (cumulative) | 69 |
+| Merge rate (review-touched) | 55% (per opener stat in `(PR) → merged` post) |
+| Org saturation | 138 orgs with ≥1 open PR |
+| Active eviction cooldowns | fish-shell (until 2026-05-20), evicted: pallets, openbao, litestar, jellyfin-tui, cucumber, immich (perm), mprocs, scrapy |
+| Codex availability | rate-limited until 2026-05-17 |
+| QA agents in flight (peak this session) | 6 |
+| Pipeline stages active | 5 of 7 (triage/investigate/implement/qa/ship — drip is automatic) |
+
