@@ -23,7 +23,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import control_state, gh_io, observe, org_state, retro_state, seen
+from sweep import control_state, gh_io, observe, org_state, retro_state, seen, warm_orgs
 from sweep.io_safe import atomic_write_text
 from sweep.types import Message
 
@@ -171,6 +171,16 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
     if org_state.is_org_blocked(org):
         return False
     return True
+
+
+def _warm_first(repos: list[RepoCandidate]) -> list[RepoCandidate]:
+    """Stable partition: warm-org repos first, cold after. Star order is
+    preserved within each bucket."""
+    warm, cold = [], []
+    for r in repos:
+        org = org_state.org_of(r.name_with_owner)
+        (warm if warm_orgs.is_warm(org) else cold).append(r)
+    return warm + cold
 
 
 ACTIONABLE_LABELS = ("good first issue", "help wanted", "bug", "enhancement")
@@ -329,6 +339,8 @@ async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
     repos = await gh_search_repos_below_stars(
         cursor_before, req.budget, req.languages
     )
+
+    repos = _warm_first(repos)
 
     processed = 0
     issues_found = 0

@@ -1,7 +1,10 @@
-"""Outcomes — merged/closed PRs per day. The slow KPI to optimize for.
+"""Outcomes — merged/closed PRs in the last N days, plus the underlying records.
 
-One gh call per hour (cached). The cockpit consumes this; nothing else
-should need it.
+One gh call per hour (cached). Two consumers:
+  - cockpit reads the daily counts (merged_per_day, closed_per_day);
+  - retro reads the per-PR records (merged_records, closed_records) to
+    feed RETRO_GRAPH.md and the pipeline-level HYPOTHESIS_GRAPH.md
+    (one entry per PR outcome, classified against H0..HN).
 """
 
 from __future__ import annotations
@@ -52,17 +55,39 @@ def outcomes(days: int = 7) -> dict:
                 query,
                 state=state,
                 limit=200,
-                fields="repository,number,closedAt,updatedAt,state",
+                fields="repository,number,title,url,closedAt,updatedAt,state",
                 ttl=3600,
             )
         except subprocess.CalledProcessError:
             return []
 
     merged_prs = _query("merged", None)
+    # gh's --state closed returns merged PRs too, and the response's
+    # state field shape doesn't reliably read as "MERGED" for filtering.
+    # Dedupe by (repo, number) against the merged set instead.
+    merged_keys = {
+        (pr.get("repository", {}).get("nameWithOwner", ""), pr.get("number"))
+        for pr in merged_prs
+    }
     closed_prs = [
         pr for pr in _query("closed", "closed")
-        if pr.get("state") != "MERGED"
+        if (pr.get("repository", {}).get("nameWithOwner", ""), pr.get("number"))
+        not in merged_keys
     ]
+
+    def _record(pr: dict, outcome: str) -> dict:
+        full = pr.get("repository", {}).get("nameWithOwner", "")
+        return {
+            "repo": full,
+            "number": pr.get("number"),
+            "title": pr.get("title", ""),
+            "url": pr.get("url", ""),
+            "closed_at": pr.get("closedAt", ""),
+            "outcome": outcome,  # "merged" | "closed"
+        }
+
+    merged_records = [_record(pr, "merged") for pr in merged_prs]
+    closed_records = [_record(pr, "closed") for pr in closed_prs]
 
     def _bucket_by_day(prs: list[dict], date_key: str) -> list[int]:
         counts = [0] * days
@@ -95,6 +120,8 @@ def outcomes(days: int = 7) -> dict:
         "closed": sum(closed_per_day),
         "merged_per_day": merged_per_day,
         "closed_per_day": closed_per_day,
+        "merged_records": merged_records,
+        "closed_records": closed_records,
         "fetched_at": time.time(),
     }
     try:
@@ -110,5 +137,26 @@ def _empty(days: int, start: dt.date, end: dt.date) -> dict:
         "start": start.isoformat(), "end": end.isoformat(),
         "merged": 0, "closed": 0,
         "merged_per_day": [0] * days, "closed_per_day": [0] * days,
+        "merged_records": [], "closed_records": [],
         "fetched_at": time.time(),
     }
+
+
+def recent_merged_records(days: int = 7, *, repo: str | None = None) -> list[dict]:
+    """PR records (repo, number, title, url, closed_at, outcome) for PRs
+    merged in the last `days`. Filter to one repo with `repo="owner/name"`."""
+    recs = outcomes(days).get("merged_records", [])
+    return [r for r in recs if not repo or r.get("repo") == repo]
+
+
+def recent_closed_records(days: int = 7, *, repo: str | None = None) -> list[dict]:
+    """PR records for PRs closed-unmerged in the last `days`."""
+    recs = outcomes(days).get("closed_records", [])
+    return [r for r in recs if not repo or r.get("repo") == repo]
+
+
+def recent_records(days: int = 7, *, repo: str | None = None) -> list[dict]:
+    """Both merged and closed records, sorted by closed_at descending."""
+    recs = recent_merged_records(days, repo=repo) + recent_closed_records(days, repo=repo)
+    recs.sort(key=lambda r: r.get("closed_at", ""), reverse=True)
+    return recs
