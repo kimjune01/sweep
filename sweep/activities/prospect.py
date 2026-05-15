@@ -24,6 +24,7 @@ from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
 from sweep import gh_io, observe, org_state, seen
+from sweep.io_safe import atomic_write_text
 from sweep.types import Message
 
 
@@ -103,7 +104,10 @@ def _save_cursor(stars: int, *, lap_reset: bool = False) -> None:
         "last_run_at": now,
         "last_lap_reset_at": now if lap_reset else prior.get("last_lap_reset_at"),
     }
-    CURSOR_FILE.write_text(json.dumps(data, indent=2))
+    # Atomic — a crash mid-write would otherwise leave a truncated/empty
+    # cursor that _load_cursor reads as DEFAULT_CEILING, forcing a full
+    # lap reset. Same reason observe.cursor_set went through atomic_write.
+    atomic_write_text(CURSOR_FILE, json.dumps(data, indent=2))
 
 
 # ---------------------------------------------------------------- activities
