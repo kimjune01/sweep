@@ -19,6 +19,7 @@ from sweep.cli import board as _board
 from sweep.cli import punch as _punch
 from sweep.cli.inbox import inbox_app
 from sweep.cli.pr_state import pr_state_app
+from sweep.cli.prospect import prospect_app
 from sweep.cli.qa import qa_app
 
 
@@ -29,6 +30,7 @@ app = typer.Typer(
 )
 app.add_typer(qa_app, name="qa")
 app.add_typer(pr_state_app, name="pr-state")
+app.add_typer(prospect_app, name="prospect")
 app.add_typer(inbox_app, name="inbox")
 _punch.register(app)
 _board.register(app)
