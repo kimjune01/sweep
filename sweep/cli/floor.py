@@ -202,6 +202,32 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
             f"| `{spark}` | {oldest} | {status} |"
         )
 
+    _render_respondable(flow_states.get("respondable"))
+
+
+def _render_respondable(s: dict[str, list[dict]] | None) -> None:
+    """List respondable PRs under the table. This is the human's actionable
+    inbox — every other station belongs to an LLM actor. When the inbox is
+    empty the section is hidden entirely so the cockpit stays terse."""
+    if not s:
+        return
+    msgs = sorted(s.get("queued", []) + s.get("in_flight", []),
+                  key=lambda m: m.get("ts", ""))
+    if not msgs:
+        return
+    print()
+    print(f"## respondable ({len(msgs)})")
+    print()
+    for m in msgs:
+        repo = m.get("repo", "?")
+        pr = m.get("pr") or "-"
+        payload = m.get("payload") or {}
+        reason = payload.get("reason", "")
+        ts = (m.get("ts") or "")[:10]
+        url = f"https://github.com/{repo}/pull/{pr}"
+        suffix = f" — {reason}" if reason else ""
+        print(f"- [{repo}#{pr}]({url}){suffix}  _({ts})_")
+
 
 # ---------------------------------------------------------- rich render
 
