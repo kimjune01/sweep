@@ -51,7 +51,7 @@ def outcomes(days: int = 7) -> dict:
                 query,
                 state=state,
                 limit=200,
-                fields="repository,number,updatedAt,closedAt,state",
+                fields="repository,number,closedAt,updatedAt,state",
                 ttl=3600,
             )
         except subprocess.CalledProcessError:
@@ -76,7 +76,13 @@ def outcomes(days: int = 7) -> dict:
                 counts[idx] += 1
         return counts
 
-    merged_per_day = _bucket_by_day(merged_prs, "updatedAt")
+    # Merge date != update date: post-merge automation (CI, bot labels,
+    # auto-close of linked issues) bumps updatedAt past the actual merge
+    # day. For merged PRs, closedAt IS the merge timestamp (gh search prs
+    # exposes closedAt but not mergedAt; merge sets both close+merge in
+    # one transaction). Bucket by closedAt so the daily counts reflect
+    # when the work landed, not when the followup ran.
+    merged_per_day = _bucket_by_day(merged_prs, "closedAt")
     closed_per_day = _bucket_by_day(closed_prs, "closedAt")
 
     result = {
