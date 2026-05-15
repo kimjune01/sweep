@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,16 +39,27 @@ var controlDirPath string
 
 func flagPath(name string) string { return filepath.Join(controlDirPath, name) }
 
-func flagOn(name string) bool {
+// flagState returns presence, plus any anomaly that wasn't simple
+// absence. Treating permission-denied or IO errors as "off" hides
+// disagreement between the TUI and the CLI from the operator — the
+// bar would render OFF while the pipeline still thinks the flag is on.
+// Anomalies surface in the status line.
+func flagState(name string) (on bool, anomaly error) {
 	_, err := os.Stat(flagPath(name))
-	return err == nil
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
 }
 
 func setFlag(name string, on bool) error {
 	if on {
-		if err := os.MkdirAll(controlDirPath, 0o755); err != nil {
-			return err
-		}
+		// controlDirPath is created at startup, so OpenFile alone is
+		// enough here. If something removed the dir mid-run, the open
+		// fails and surfaces in the status line.
 		f, err := os.OpenFile(flagPath(name), os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return err
@@ -112,48 +124,78 @@ func tick() tea.Cmd {
 	return tea.Tick(refreshEvery, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-func snapshot() model {
-	return model{dryOn: flagOn(dryFlag), paused: flagOn(pauseFlag)}
+// snapshot reads both flag files and returns a model plus an anomaly
+// string (empty when both reads were clean ENOENT-or-present). Callers
+// merge the anomaly into m.status; toggle success clears it.
+func snapshot() (model, string) {
+	m := model{}
+	var anomalies []string
+	if on, err := flagState(dryFlag); err != nil {
+		anomalies = append(anomalies, fmt.Sprintf("dry: %v", err))
+	} else {
+		m.dryOn = on
+	}
+	if on, err := flagState(pauseFlag); err != nil {
+		anomalies = append(anomalies, fmt.Sprintf("paused: %v", err))
+	} else {
+		m.paused = on
+	}
+	return m, strings.Join(anomalies, "; ")
 }
 
 func (m model) Init() tea.Cmd { return tick() }
+
+// refresh re-snapshots and folds an optional status override in. If the
+// snapshot itself flagged an anomaly, that wins over the override —
+// data-integrity messages are more important than transient feedback.
+func refresh(prev model, override string) model {
+	s, anomaly := snapshot()
+	switch {
+	case anomaly != "":
+		s.status = anomaly
+	case override != "":
+		s.status = override
+	default:
+		s.status = prev.status
+	}
+	return s
+}
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
 		case "r":
 			// Manual refresh. The 5s ticker covers the common case;
 			// `r` is for operators who flipped a flag via CLI and want
 			// to see it immediately.
-			s := snapshot()
-			s.status = m.status
-			return s, nil
+			return refresh(m, m.status), nil
 		case "d":
-			next := !m.dryOn
-			if err := setFlag(dryFlag, next); err != nil {
+			if err := setFlag(dryFlag, !m.dryOn); err != nil {
 				m.status = fmt.Sprintf("dry toggle failed: %v", err)
-			} else {
-				m.dryOn = next
-				m.status = ""
+				return m, nil
 			}
-			return m, nil
+			// refresh re-reads disk rather than trusting `!m.dryOn` —
+			// if the write succeeded but disk disagrees (mid-flight CLI
+			// flip, fs weirdness), the bar shows what's actually there.
+			return refresh(m, ""), nil
 		case "p":
-			next := !m.paused
-			if err := setFlag(pauseFlag, next); err != nil {
+			if err := setFlag(pauseFlag, !m.paused); err != nil {
 				m.status = fmt.Sprintf("pause toggle failed: %v", err)
-			} else {
-				m.paused = next
-				m.status = ""
+				return m, nil
 			}
-			return m, nil
+			return refresh(m, ""), nil
 		case "f":
 			// Shell out to `sweep floor` with the alt screen released
 			// so glow's pager owns the terminal. ExecProcess restores
 			// our screen on return. The subprocess inherits CWD; floor
 			// reads only from ~/.sweep/ so CWD doesn't matter.
+			//
+			// The inflight tea.Tick survives the suspend — Bubble Tea
+			// queues the tickMsg until the program resumes, so the
+			// poll cadence continues unbroken after floor exits.
 			return m, tea.ExecProcess(exec.Command(floorCmd, floorArg), func(err error) tea.Msg {
 				if err != nil {
 					return statusMsg(fmt.Sprintf("sweep floor exited: %v", err))
@@ -163,13 +205,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tickMsg:
-		s := snapshot()
-		s.status = m.status
-		return s, tick()
+		return refresh(m, m.status), tick()
 
 	case statusMsg:
-		m.status = string(msg)
-		return m, nil
+		// Re-snapshot on subprocess return: 5s of `sweep floor` is
+		// enough time for the operator (or anything else) to flip a
+		// flag, and the bar should reflect that immediately.
+		return refresh(m, string(msg)), nil
 	}
 	return m, nil
 }
@@ -228,15 +270,32 @@ func flagBadge(on bool, glyph string) string {
 // needing a PTY for the Bubble Tea event loop. Reads flag state at
 // call time so the rendered output matches what an operator would see.
 func renderOnce() {
-	fmt.Print(snapshot().View())
+	m, anomaly := snapshot()
+	m.status = anomaly
+	fmt.Print(m.View())
 }
 
+// resolveControlDir resolves $HOME and ensures the control dir is
+// usable. Doing the MkdirAll + IsDir check once at startup means a
+// filesystem problem (regular file at ~/.sweep/control, parent dir
+// read-only) surfaces with a clear exit message instead of the first
+// toggle failing silently.
 func resolveControlDir() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("could not resolve home directory: %w", err)
 	}
 	controlDirPath = filepath.Join(home, ".sweep", "control")
+	if err := os.MkdirAll(controlDirPath, 0o755); err != nil {
+		return fmt.Errorf("could not create %s: %w", controlDirPath, err)
+	}
+	info, err := os.Stat(controlDirPath)
+	if err != nil {
+		return fmt.Errorf("could not stat %s: %w", controlDirPath, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s exists but is not a directory", controlDirPath)
+	}
 	return nil
 }
 
@@ -277,7 +336,9 @@ func main() {
 	//   • isatty extends past color: if stdin/stdout isn't a TTY (e.g.
 	//     `sweep-tui | cat`), Bubble Tea opens /dev/tty, fails cleanly,
 	//     and we print the error to stderr and exit 1 below.
-	p := tea.NewProgram(snapshot())
+	m, anomaly := snapshot()
+	m.status = anomaly
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "sweep-tui:", err)
 		os.Exit(1)

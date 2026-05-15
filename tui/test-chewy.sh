@@ -124,6 +124,25 @@ rm -f "$CONTROL/dry"
 [ "$dry_was" = yes ] && : > "$CONTROL/dry"
 
 echo
+echo "== Startup: control dir validation =="
+# A regular file where the control directory should be must fail at
+# startup with a clear message — not silently break on first toggle.
+TMPHOME=$(mktemp -d)
+mkdir -p "$TMPHOME/.sweep"
+: > "$TMPHOME/.sweep/control"   # regular file, not a directory
+set +e
+HOME="$TMPHOME" "$BIN" render >/dev/null 2>"$TMPHOME/err"
+rc=$?
+set -e
+assert "regular file at control path → non-zero exit" 1 "$rc"
+case "$(cat "$TMPHOME/err")" in
+  *"not a directory"*) v=yes ;;
+  *) v=no ;;
+esac
+assert "startup error names the problem" yes "$v"
+rm -rf "$TMPHOME"
+
+echo
 echo "----"
 printf "PASS=%d FAIL=%d\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
