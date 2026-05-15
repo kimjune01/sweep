@@ -12,7 +12,7 @@ import time
 
 import typer
 
-from sweep import glyphs, retro_state
+from sweep import control_state, glyphs, retro_state
 from sweep.inbox_state import inbox_states
 from sweep.system import system_status
 
@@ -221,6 +221,13 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
 
     runline = f"{len(running)} agents" if running else "0 agents"
     parts = [f"cpu {cpu:.0f}%", f"mem {mem:.0f}%", runline]
+    # Operator flags render only when active — quiet state stays quiet.
+    # 🚦 (traffic light) for pause; 🌵 (cactus, "rehearsing in the
+    # desert") for dry. Both can coexist.
+    if control_state.is_paused():
+        parts.append("🚦 PAUSED")
+    if control_state.is_dry():
+        parts.append("🌵 DRY")
     # Retro state appended only when there's something to flag — halt is
     # the strongest signal, actionable is softer. Quiet retros (empty-P
     # accumulating chains) don't earn cockpit space.
