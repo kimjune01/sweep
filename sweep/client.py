@@ -627,7 +627,7 @@ def punch(
     rich_mode: bool = typer.Option(False, "--rich", help="Render Rich panels instead of markdown"),
     no_outcomes: bool = typer.Option(False, "--no-outcomes", help="Skip the gh-backed outcomes fetch"),
     watch: bool = typer.Option(False, "--watch", "-w", help="Refresh continuously as a live dashboard"),
-    interval: int = typer.Option(30, "--interval", "-i", help="Refresh interval (seconds) when --watch"),
+    interval: int = typer.Option(5, "--interval", "-i", help="Refresh interval (seconds) when --watch"),
 ) -> None:
     """Factory-floor kanban view + per-station punch list.
 
