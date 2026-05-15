@@ -3,3 +3,6 @@ __pycache__/
 *.egg-info/
 .venv/
 .python-version
+
+# TUI build output
+/bin/sweep-tui
