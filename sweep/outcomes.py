@@ -12,6 +12,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from sweep import gh_io
+
 
 CACHE = Path.home() / ".sweep" / "cache" / "outcomes.json"
 CACHE_TTL = 3600.0
@@ -41,26 +43,22 @@ def outcomes(days: int = 7) -> dict:
     if not user:
         return _empty(days, start, end)
 
-    def _query(date_field: str, extra_filters: list[str]) -> list[dict]:
-        out = subprocess.run(
-            [
-                "gh", "search", "prs",
-                "--author", user,
-                f"--{date_field}", f">={start.isoformat()}",
-                *extra_filters,
-                "--limit", "200",
-                "--json", "repository,number,updatedAt,closedAt,state",
-            ],
-            capture_output=True, text=True, check=False,
-        )
+    def _query(date_qualifier: str, state: str | None) -> list[dict]:
+        query = f"author:{user} {date_qualifier}:>={start.isoformat()}"
         try:
-            return json.loads(out.stdout or "[]")
-        except json.JSONDecodeError:
+            return gh_io.search_prs(
+                query,
+                state=state,
+                limit=200,
+                fields="repository,number,updatedAt,closedAt,state",
+                ttl=3600,
+            )
+        except subprocess.CalledProcessError:
             return []
 
-    merged_prs = _query("merged-at", [])
+    merged_prs = _query("merged", None)
     closed_prs = [
-        pr for pr in _query("closed", ["--state", "closed"])
+        pr for pr in _query("closed", "closed")
         if pr.get("state") != "MERGED"
     ]
 

@@ -23,10 +23,25 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import shlex
 import sqlite3
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def _split_query(query: str) -> list[str]:
+    """Split a search-query string into separate argv tokens.
+
+    `gh search` treats each positional as one qualifier; combining them into
+    a single quoted string makes gh see the whole thing as the value of the
+    first qualifier (e.g. `gh search prs "author:X merged:>=Y"` → the API
+    receives `author:"X merged:>=Y"`, which matches nothing).
+
+    shlex preserves quoted spans, so `label:"good first issue","help wanted"`
+    becomes one token whose interior spaces survive.
+    """
+    return shlex.split(query) if query else []
 
 
 DB_PATH = Path.home() / ".sweep" / "cache" / "gh.db"
@@ -119,7 +134,7 @@ def _cached_json(endpoint: str, args: list[str], ttl: int) -> list | dict:
 def search_repos(query: str, *, sort: str = "stars", order: str = "desc",
                   limit: int = 30, fields: str | None = None,
                   ttl: int = 600) -> list[dict]:
-    args = ["search", "repos", query,
+    args = ["search", "repos", *_split_query(query),
             "--sort", sort, "--order", order, "--limit", str(limit),
             "--json", fields or "fullName,stargazersCount,openIssuesCount,pushedAt,isArchived,description"]
     return _cached_json("search_repos", args, ttl)
@@ -127,14 +142,14 @@ def search_repos(query: str, *, sort: str = "stars", order: str = "desc",
 
 def search_issues(query: str, *, limit: int = 30,
                    fields: str | None = None, ttl: int = 120) -> list[dict]:
-    args = ["search", "issues", query, "--limit", str(limit),
+    args = ["search", "issues", *_split_query(query), "--limit", str(limit),
             "--json", fields or "number,title,url,labels,updatedAt,repository"]
     return _cached_json("search_issues", args, ttl)
 
 
 def search_prs(query: str, *, state: str | None = None, limit: int = 30,
                 fields: str | None = None, ttl: int = 60) -> list[dict]:
-    args = ["search", "prs", query, "--limit", str(limit),
+    args = ["search", "prs", *_split_query(query), "--limit", str(limit),
             "--json", fields or "repository,number,title,url,createdAt,updatedAt,author,state"]
     if state:
         args = args[:-2] + ["--state", state] + args[-2:]
