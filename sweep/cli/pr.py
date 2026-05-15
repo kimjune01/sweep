@@ -88,25 +88,39 @@ def _render(repo: str, pr: int, data: dict) -> None:
     title = data.get("title") or "(no title)"
     url = data.get("url") or f"https://github.com/{repo}/pull/{pr}"
 
-    # Compute attestation status once. The pivot has three states:
-    #   no receipts at all   → absent (locality reads "not yet")
-    #   receipts + verdict=pass → ⛩️ attested (through the gate)
-    #   receipts + other verdict → 🚧 failing (blocked at the gate)
     msg_ids = _msg_ids_for(repo, pr)
     artifacts = _artifacts_for(msg_ids)
     verdict = _latest_qa_verdict(repo, pr) if artifacts else None
+    attested = bool(artifacts) and verdict == "pass"
 
     print(f"# {repo}#{pr} — {title}")
     print()
-    print(f"<{url}>")
-    print()
 
-    _render_hypothesis(repo)
-    _render_attest(artifacts=bool(artifacts), verdict=verdict)
-    _render_remote(data)
-    _render_origin(repo, data)
-    _render_receipts(msg_ids, artifacts)
-    _render_events(repo, pr)
+    # Each row is a user-intent label on the left and the resolution on
+    # the right. Skip rows whose data side is empty so quiet PRs read
+    # tight. "Do now" leads — it answers the question the operator
+    # actually has when they ran `sweep pr`: what's my next move.
+    rows: list[tuple[str, str]] = []
+    rows.append(("Do now", _do_now(repo, pr, url, data, artifacts, attested)))
+    rows.append(("GitHub", _github_cell(url, data)))
+
+    hypothesis = _hypothesis_cell(repo)
+    if hypothesis:
+        rows.append(("Hypothesis", hypothesis))
+
+    origin = _origin_cell(repo, data)
+    if origin:
+        rows.append(("Origin", origin))
+
+    receipts = _receipts_cell(msg_ids, artifacts)
+    if receipts:
+        rows.append(("Artifacts", receipts))
+
+    timeline = _timeline_cell(repo, pr)
+    if timeline:
+        rows.append(("Timeline", timeline))
+
+    _render_table(rows)
 
 
 # ---------------------------------------------------------------- sections
@@ -117,32 +131,35 @@ def _hypothesis_path(repo: str) -> Path:
     return REPOS_DIR / f"{slug}.md"
 
 
-def _render_hypothesis(repo: str) -> None:
-    """Terse bullets pulled from the maintainer-preferences section of the
-    repo's hypothesis file. Hidden when the file doesn't exist.
+def _render_table(rows: list[tuple[str, str]]) -> None:
+    """Two-column markdown table. Left column is intent labels; right is
+    the data resolving that intent. No header row — labels carry the
+    column meaning by themselves."""
+    if not rows:
+        return
+    print("|     |     |")
+    print("| --- | --- |")
+    for label, content in rows:
+        print(f"| {label} | {content} |")
 
-    The full file is reachable via the file:// link below the bullets;
-    a markdown viewer that handles file:// (Claude Code, glow with a
-    file handler, the system browser) opens it on click. Plain
-    terminals show the URL — still copy-pasteable."""
+
+def _hypothesis_cell(repo: str) -> str:
+    """Condense the hypothesis bullets into one table cell with a trailing
+    file:// link to the full graph. Bullets are joined with ` · ` so the
+    cell stays single-line. Empty cell → row hidden."""
     path = _hypothesis_path(repo)
     if not path.exists():
-        return
+        return ""
     bullets = _extract_bullets(path)
     if not bullets:
-        return
-    print("---")
-    print()
-    for b in bullets[:HYPOTHESIS_BULLETS]:
-        print(f"- {b}")
+        return ""
+    shown = bullets[:HYPOTHESIS_BULLETS]
+    body = " · ".join(shown)
     extra = len(bullets) - HYPOTHESIS_BULLETS
     if extra > 0:
-        print(f"- _… +{extra} more_")
-    print()
-    print(f"[Hypothesis Graph]({path.as_uri()})")
-    print()
-    print("---")
-    print()
+        body += f" · _+{extra} more_"
+    body += f" · [Hypothesis Graph]({path.as_uri()})"
+    return body
 
 
 def _extract_bullets(path: Path) -> list[str]:
@@ -188,36 +205,28 @@ MERGE_GLYPHS = {
 }
 
 
-def _render_attest(*, artifacts: bool, verdict: str | None) -> None:
-    """Local stats — attestation pivot. The PR is either ⛩️ Attested
-    (cascade ran and the verdict is pass) or 🚧 Unattested (anything
-    else: cascade hasn't run, is in flight, or returned a non-pass
-    verdict). Always rendered because the pivot is binary and load-
-    bearing — it determines whether sweep ships the PR.
-
-    Local properties only — what sweep knows from its own substrate.
-    Kept on a separate line from the remote stats below because
-    mixing local and remote facts confuses the operator about which
-    half of the system to interrogate when something's wrong."""
-    if artifacts and verdict == "pass":
-        glyph = "⛩️ Attested"
-    else:
-        glyph = "🚧 Unattested"
-    print(f"`{glyph}`")
-    print()
+def _do_now(repo: str, pr: int, url: str, data: dict,
+             artifacts: list[tuple[str, Path]], attested: bool) -> str:
+    """The next move given the current state. Attested → review.
+    Unattested with artifacts → inspect the latest receipt.
+    Unattested without artifacts → awaiting cascade."""
+    if attested:
+        return f"⛩️ [Review on GitHub]({url})"
+    if artifacts:
+        latest = artifacts[0][1]
+        return f"🚧 [Inspect cascade]({latest.as_uri()})"
+    return "🚧 Awaiting cascade"
 
 
-def _render_remote(data: dict) -> None:
-    """Remote stats — what GitHub knows about the PR. CI, review,
-    mergeable, draft, stale. Distinct line from the local attestation
-    state above so the operator can tell at a glance whether a problem
-    is sweep-side (no receipts / failing cascade) or GitHub-side (CI
-    red / review changes requested / merge conflict)."""
+def _github_cell(url: str, data: dict) -> str:
+    """Right-hand side of the GitHub row: PR link + remote stats. CI,
+    review decision, mergeable, draft, stale — facts GitHub owns."""
     ci_key = _ci_status(data.get("statusCheckRollup") or [])
     review = data.get("reviewDecision") or ""
     merge = data.get("mergeable") or ""
 
-    cells = [f"{CI_GLYPHS.get(ci_key, '·')} {ci_key}"]
+    cells = [f"[#{data.get('number') or '?'}]({url})"] if False else [f"<{url}>"]
+    cells.append(f"{CI_GLYPHS.get(ci_key, '·')} {ci_key}")
     if review:
         cells.append(REVIEW_GLYPHS.get(review, f"· {review}"))
     if merge:
@@ -225,8 +234,7 @@ def _render_remote(data: dict) -> None:
     if data.get("isDraft"):
         cells.append("📝 draft")
     cells.append(_stale(data.get("updatedAt", "")))
-    print(f"`{' · '.join(cells)}`")
-    print()
+    return " · ".join(cells)
 
 
 def _ci_status(rollup: list[dict]) -> str:
@@ -258,21 +266,16 @@ def _stale(updated: str) -> str:
     return f"{int(secs // 86400)}d stale"
 
 
-def _render_origin(repo: str, data: dict) -> None:
-    """Origin — issue references in the PR body, linked to GitHub.
-
-    Hypothesis is already linked at the top so it doesn't repeat here.
-    No header — these are pointer-shaped lines, distinct from the stats
-    line above and the bullet lists below."""
+def _origin_cell(repo: str, data: dict) -> str:
+    """Issue refs parsed from the PR body, linked. Empty string if none."""
     body = data.get("body") or ""
     refs = sorted(set(int(n) for n in REF_RE.findall(body)))
     if not refs:
-        return
+        return ""
     first = refs[0]
     url = f"https://github.com/{repo}/issues/{first}"
-    more = f" (+{len(refs)-1} more)" if len(refs) > 1 else ""
-    print(f"[issue #{first}]({url}){more}")
-    print()
+    more = f" · _+{len(refs)-1} more_" if len(refs) > 1 else ""
+    return f"[issue #{first}]({url}){more}"
 
 
 def _latest_qa_verdict(repo: str, pr: int) -> str | None:
@@ -310,20 +313,18 @@ def _artifacts_for(msg_ids: list[str]) -> list[tuple[str, Path]]:
     return artifacts
 
 
-def _render_receipts(msg_ids: list[str], artifacts: list[tuple[str, Path]]) -> None:
+def _receipts_cell(msg_ids: list[str], artifacts: list[tuple[str, Path]]) -> str:
+    """File:// linked artifact filenames joined with ` · `. Trailing
+    overflow link points at the msg_id's directory for the rest."""
     if not artifacts:
-        return
-    total = len(artifacts)
+        return ""
     shown = artifacts[:RECEIPTS_LIMIT]
-    # No header — locality names these: after origin pointers, before
-    # events. Filenames are file:// links so the operator opens the
-    # raw artifact in one click instead of switching to a terminal.
-    for msg_id, p in shown:
-        print(f"[{p.name}]({p.as_uri()}) _msg_id `{msg_id}`_")
-    if total > RECEIPTS_LIMIT:
+    parts = [f"[{p.name}]({p.as_uri()})" for _msg_id, p in shown]
+    extra = len(artifacts) - RECEIPTS_LIMIT
+    if extra > 0:
         dir_link = (ATTESTATIONS_DIR / msg_ids[0]).as_uri()
-        print(f"_… +{total - RECEIPTS_LIMIT} more — [more receipts]({dir_link})_")
-    print()
+        parts.append(f"[+{extra} more]({dir_link})")
+    return " · ".join(parts)
 
 
 def _msg_ids_for(repo: str, pr: int) -> list[str]:
@@ -354,10 +355,13 @@ def _msg_ids_for(repo: str, pr: int) -> list[str]:
     return seen
 
 
-def _render_events(repo: str, pr: int) -> None:
+def _timeline_cell(repo: str, pr: int) -> str:
+    """Recent events touching this PR, formatted compact: `5/15 5:30p
+    kind · extras`. Joined by ` · `. Tail link to `sweep observe events`
+    for the full feed."""
     rows: list[dict] = []
     if not observe.EVENTS.exists():
-        return
+        return ""
     try:
         for line in reversed(observe.EVENTS.read_text().splitlines()):
             if not line.strip():
@@ -371,24 +375,36 @@ def _render_events(repo: str, pr: int) -> None:
             if len(rows) >= 50:
                 break
     except OSError:
-        return
+        return ""
     if not rows:
-        return
+        return ""
     shown = rows[:EVENTS_LIMIT]
-    # No header — the timestamp-leading shape names these as events;
-    # locality (last section, after receipts) reinforces.
+    parts: list[str] = []
     for ev in shown:
-        ts = (ev.get("ts") or "")[:16]
+        ts = _fmt_ts(ev.get("ts") or "")
         kind = ev.get("kind", "?")
         extras = []
         if "verdict" in ev:
             extras.append(f"verdict={ev['verdict']}")
-        if "rounds" in ev:
-            extras.append(f"rounds={ev['rounds']}")
         if "error_type" in ev:
             extras.append(f"error={ev['error_type']}")
-        tail = " · ".join(extras)
-        print(f"`{ts}` `{kind}`{(' · ' + tail) if tail else ''}")
-    if len(rows) > EVENTS_LIMIT:
-        print(f"_… +{len(rows) - EVENTS_LIMIT} more · `sweep observe events --limit 50`_")
-    print()
+        tail = (" " + ",".join(extras)) if extras else ""
+        parts.append(f"{ts} {kind}{tail}")
+    extra = len(rows) - EVENTS_LIMIT
+    if extra > 0:
+        parts.append(f"_+{extra} more_")
+    return " · ".join(parts)
+
+
+def _fmt_ts(iso: str) -> str:
+    """ISO 8601 → `5/15 5:30p`. Year is implicit (current). Empty input
+    or parse failure returns the raw string trimmed."""
+    if not iso:
+        return ""
+    try:
+        t = dt.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return iso[:16]
+    hour = t.hour % 12 or 12
+    suffix = "a" if t.hour < 12 else "p"
+    return f"{t.month}/{t.day} {hour}:{t.minute:02d}{suffix}"
