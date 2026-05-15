@@ -57,14 +57,15 @@ def _inspect(actor: str) -> None:
 @inbox_app.callback(invoke_without_command=True)
 def inbox_default(
     ctx: typer.Context,
-    actor: str = typer.Argument(None, help="investigate | qa | drip | respondable | retro"),
+    actor: str = typer.Argument(None, help="triaged | investigate | qa | drip | respondable | retro"),
 ) -> None:
     """Read ~/.sweep/inbox/<actor>.jsonl, dedupe by msg_id."""
     if actor is None:
         print(ctx.get_help())
         raise typer.Exit(0)
-    if actor not in {"investigate", "qa", "drip", "respondable", "retro"}:
+    valid = {"triaged", "investigate", "qa", "drip", "respondable", "retro"}
+    if actor not in valid:
         raise typer.BadParameter(
-            f"unknown actor {actor!r}; pick investigate|qa|drip|respondable|retro"
+            f"unknown actor {actor!r}; pick one of {'|'.join(sorted(valid))}"
         )
     _inspect(actor)

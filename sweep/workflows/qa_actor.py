@@ -19,9 +19,6 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
-    import subprocess
-    import time
-
     from sweep.activities.qa import (
         codex_review,
         gemini_review,

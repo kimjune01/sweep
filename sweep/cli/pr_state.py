@@ -59,7 +59,7 @@ def pr_state_run(
     asyncio.run(run())
 
 
-@pr_state_app.command("classify")
+@pr_state_app.command("scan")
 def pr_state_classify_run(
     limit: int = typer.Option(50, help="max PRs to classify"),
 ) -> None:
