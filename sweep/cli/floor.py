@@ -35,6 +35,17 @@ FLOW_NAMES: dict[str, str] = {
 }
 FLOW_ORDER = ("triaged", "investigate", "qa", "drip", "retro", "respondable")
 
+# Per-intent glyphs for the respondable list under the table. The intent
+# names the action the human is being asked to take; the glyph is the
+# visual category so the list scans by shape. Unknown intents fall back
+# to `·` so the bullet column stays aligned.
+RESPONDABLE_GLYPHS: dict[str, str] = {
+    "respond":      "💬",   # maintainer engaged — write a comment
+    "force-push":   "⬆️",   # rebase / squash / signed-commit required
+    "manual-merge": "🤝",   # maintainer wants you to hit the button
+    "sign-off":     "🖋",   # DCO / CLA — your name, not a bot's
+}
+
 
 def register(app: typer.Typer) -> None:
     """Attach the floor command to a top-level Typer app."""
@@ -219,12 +230,14 @@ def _render_respondable(s: dict[str, list[dict]] | None) -> None:
     for m in msgs:
         repo = m.get("repo", "?")
         pr = m.get("pr") or "-"
+        intent = m.get("intent", "")
         payload = m.get("payload") or {}
         reason = payload.get("reason", "")
         ts = (m.get("ts") or "")[:10]
         url = f"https://github.com/{repo}/pull/{pr}"
+        glyph = RESPONDABLE_GLYPHS.get(intent, "·")
         suffix = f" — {reason}" if reason else ""
-        print(f"- [{repo}#{pr}]({url}){suffix}  _({ts})_")
+        print(f"- {glyph} [{repo}#{pr}]({url}){suffix}  _({ts})_")
 
 
 # ---------------------------------------------------------- rich render
