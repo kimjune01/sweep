@@ -340,5 +340,245 @@ def models_cmd() -> None:
     print(models.describe())
 
 
+# ----- punch list: cross-inbox actionable view
+
+
+def _read_inbox(actor: str) -> tuple[list[dict], set[str]]:
+    """Return (unacked messages, all_acked_msg_ids)."""
+    inbox = Path.home() / ".sweep" / "inbox" / f"{actor}.jsonl"
+    if not inbox.exists():
+        return [], set()
+    seen: dict[str, dict] = {}
+    for line in inbox.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            m = json.loads(line)
+            if m.get("msg_id"):
+                seen[m["msg_id"]] = m
+        except json.JSONDecodeError:
+            pass
+
+    acks_path = Path.home() / ".sweep" / "inbox" / "_acks.jsonl"
+    acked: set[str] = set()
+    if acks_path.exists():
+        for line in acks_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                a = json.loads(line)
+                if a.get("msg_id"):
+                    acked.add(a["msg_id"])
+            except json.JSONDecodeError:
+                pass
+    return [m for mid, m in seen.items() if mid not in acked], acked
+
+
+SPARK_CHARS = " ▁▂▃▄▅▆▇█"  # 9 levels including empty
+
+
+def _sparkline(counts: list[int]) -> str:
+    """Render counts as a Unicode block sparkline."""
+    if not counts:
+        return ""
+    peak = max(counts) or 1
+    return "".join(SPARK_CHARS[min(8, int(round(c * 8 / peak)))] for c in counts)
+
+
+def _bucketize(timestamps: list[str], bucket_minutes: int, n_buckets: int) -> list[int]:
+    """Bucket ISO 8601 timestamps into the most-recent n_buckets windows of bucket_minutes."""
+    if not timestamps:
+        return [0] * n_buckets
+    now = dt.datetime.now(dt.timezone.utc)
+    edges = [now - dt.timedelta(minutes=bucket_minutes * (n_buckets - i)) for i in range(n_buckets + 1)]
+    counts = [0] * n_buckets
+    for ts in timestamps:
+        try:
+            t = dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            continue
+        for i in range(n_buckets):
+            if edges[i] <= t < edges[i + 1]:
+                counts[i] += 1
+                break
+    return counts
+
+
+def _oldest_age_str(msgs: list[dict]) -> str:
+    if not msgs:
+        return "—"
+    now = dt.datetime.now(dt.timezone.utc)
+    oldest = None
+    for m in msgs:
+        ts = m.get("ts", "")
+        try:
+            t = dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if oldest is None or t < oldest:
+                oldest = t
+        except (ValueError, AttributeError):
+            continue
+    if oldest is None:
+        return "—"
+    delta = now - oldest
+    secs = int(delta.total_seconds())
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m"
+    if secs < 86400:
+        return f"{secs // 3600}h"
+    return f"{secs // 86400}d"
+
+
+@app.command("punch")
+def punch(
+    include_wait: bool = typer.Option(False, "--include-wait", help="Also show retro/wait audits"),
+    spark_minutes: int = typer.Option(10, help="Sparkline bucket size in minutes"),
+    spark_buckets: int = typer.Option(12, help="Number of sparkline buckets (default 12 × 10min = 2h)"),
+    rich_mode: bool = typer.Option(False, "--rich", help="Render Rich panels instead of markdown"),
+) -> None:
+    """Factory-floor kanban view + per-station punch list.
+
+    Default output is GitHub-flavored markdown — renders in Claude Code, looks
+    fine in a plain terminal, and pipes cleanly to files / clipboard. Use
+    --rich for Rich panels in a live terminal.
+    """
+    ACTIONABLE = ["drip", "investigate", "qa"]
+    if include_wait:
+        ACTIONABLE = ACTIONABLE + ["retro"]
+
+    BOUND = {"qa": 3, "drip": 5, "investigate": 5, "retro": None}
+    ACTION_HINT = {
+        "qa":          "re-attest (CI failed / gates stale)",
+        "drip":        "advance status (close / rebase / ship)",
+        "investigate": "respond to maintainer",
+        "retro":       "audit only (wait bucket)",
+    }
+
+    sections: dict[str, list[dict]] = {}
+    for actor in ACTIONABLE:
+        msgs, _ = _read_inbox(actor)
+        sections[actor] = sorted(msgs, key=lambda x: x.get("ts", ""))
+
+    def _status_for(actor: str, wip: int, bound: int | None) -> str:
+        if wip == 0:
+            return "idle"
+        if bound is not None and wip > bound:
+            return "**ANDON**"
+        if actor == "retro":
+            return "history"
+        return "working"
+
+    rows: list[tuple[str, int, str, str, str, str]] = []
+    for actor in ACTIONABLE:
+        msgs = sections[actor]
+        wip = len(msgs)
+        bound = BOUND.get(actor)
+        sparks = _bucketize([m.get("ts", "") for m in msgs], spark_minutes, spark_buckets)
+        spark = _sparkline(sparks) or "·" * spark_buckets
+        bound_str = "∞" if bound is None else str(bound)
+        rows.append((
+            actor,
+            wip,
+            bound_str,
+            _oldest_age_str(msgs),
+            spark,
+            _status_for(actor, wip, bound),
+        ))
+
+    if rich_mode:
+        _punch_rich(rows, sections, ACTIONABLE, ACTION_HINT, include_wait, spark_buckets)
+        return
+
+    # --- markdown output ----------------------------------------------------
+    print("# coding factory — kanban")
+    print()
+    print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
+    print()
+    print(f"| station | WIP / bound | oldest | flow ({spark_minutes}m × {spark_buckets}) | status |")
+    print( "|---|---:|---|---|---|")
+    for actor, wip, bound_str, oldest, spark, status in rows:
+        print(f"| → {actor} | {wip} / {bound_str} | {oldest} | `{spark}` | {status} |")
+    print()
+
+    total = sum(len(sections[a]) for a in ACTIONABLE if a != "retro")
+    if total == 0 and not include_wait:
+        print("_nothing actionable — pipeline idle_")
+        return
+
+    for actor in ACTIONABLE:
+        msgs = sections[actor]
+        if not msgs:
+            continue
+        if actor == "retro" and not include_wait:
+            continue
+        print(f"## {actor} ({len(msgs)}) — {ACTION_HINT[actor]}")
+        print()
+        for m in msgs:
+            repo = m.get("repo", "?")
+            pr = m.get("pr") or "-"
+            payload = m.get("payload") or {}
+            reason = payload.get("reason", "")
+            ts = m.get("ts", "")[:19]
+            print(f"- **{repo}#{pr}** — {reason}  _({ts})_")
+        print()
+
+
+def _punch_rich(rows, sections, actionable, action_hint, include_wait, spark_buckets):
+    """Rich-rendered fallback (--rich)."""
+    from rich.columns import Columns
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
+
+    console = Console()
+
+    source = Panel(
+        Text("pr-state\n(dispatcher)\n\nreads GitHub\nroutes by bucket", justify="center"),
+        title="intake",
+        border_style="dim",
+        width=18,
+        padding=(0, 1),
+    )
+    panels = []
+    for actor, wip, bound_str, oldest, spark, status in rows:
+        if status.startswith("**ANDON"):
+            border, color, label = "red", "red bold", "ANDON"
+        elif status == "idle":
+            border, color, label = "green", "green", "idle"
+        elif status == "history":
+            border, color, label = "dim", "dim", "history"
+        else:
+            border, color, label = "yellow", "yellow", "working"
+        body = Text()
+        body.append("WIP   ", style="dim"); body.append(f"{wip}", style="bold"); body.append(f" / {bound_str}\n", style="dim")
+        body.append(f"old   {oldest}\n", style="dim")
+        body.append("flow  ", style="dim"); body.append(spark, style="cyan"); body.append("\n")
+        body.append(label, style=color)
+        panels.append(Panel(body, title=f"[bold]{actor}[/]", border_style=border, width=22, padding=(0, 1)))
+
+    console.print()
+    console.print(Text("                       coding factory — kanban", style="bold dim"))
+    console.print()
+    console.print(Columns([source] + panels, equal=False, padding=(0, 1)))
+    console.print()
+
+    for actor in actionable:
+        msgs = sections[actor]
+        if not msgs:
+            continue
+        if actor == "retro" and not include_wait:
+            continue
+        console.print(f"[bold]{actor}[/] ({len(msgs)}) — [dim]{action_hint[actor]}[/]")
+        for m in msgs:
+            intent = m.get("intent", "?")
+            repo = m.get("repo", "?")
+            pr = m.get("pr") or "-"
+            payload = m.get("payload") or {}
+            reason = payload.get("reason", "")
+            console.print(f"  [bold cyan]{repo}#{pr}[/]  [{intent}]  {reason}")
+        console.print()
+
+
 if __name__ == "__main__":
     app()
