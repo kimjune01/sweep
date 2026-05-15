@@ -148,7 +148,7 @@ Write the final graph document with:
    - Abduction (proposed from observation): 60-85% confidence
 5. **Pruning log** — what died, which experiment or codex round killed it
 
-6. **Gemini volley.** Send the hypothesis graph to `/gemini`: "Review this diagnosis. Is the causal chain sound? Any overclaimed conclusions? Any alternative explanations that fit the same evidence? Any experiments that should have been run but weren't?" Apply feedback, re-send. Five rounds max. The volley [won't converge to zero findings](/does-iteration-mitigate-slop-slope) — it oscillates. That's fine. Iterate enough that the structure is sound; unresolved gaps become frontier edges in the graph.
+6. **Gemini volley.** Send the hypothesis graph to `/gemini`: "Review this diagnosis. Is the causal chain sound? Any overclaimed conclusions? Any alternative explanations that fit the same evidence? Any experiments that should have been run but weren't?" Apply feedback, re-send. Five rounds max. The volley [won't converge to zero findings](https://june.kim/does-iteration-mitigate-slop-slope) — it oscillates. That's fine. Iterate enough that the structure is sound; unresolved gaps become frontier edges in the graph.
 
 If the diagnosis implies a code change, continue to Phase 4.5 and the prework/ship pipeline. If the frontier is still open, return to Phase 3. Don't stop to ask — the graph document records the state.
 
@@ -169,7 +169,7 @@ Check whether the investigation has produced a load-bearing observation that ret
 
 ### Phase 5: Prework
 
-When a surviving hypothesis implies a code change, build the [prework](/prework) artifacts before touching production. Keep all prework in one directory: `prework/<slug>/` in the worktree (e.g., `prework/matvec-stride/`). The directory ships with the branch and gets deleted when the PR merges. Only create a standalone experiment repo when the prework needs to outlive the PR — provenance for a controversial change, or a reusable benchmark that applies across repos.
+When a surviving hypothesis implies a code change, build the [prework](https://june.kim/prework) artifacts before touching production. Keep all prework in one directory: `prework/<slug>/` in the worktree (e.g., `prework/matvec-stride/`). The directory ships with the branch and gets deleted when the PR merges. Only create a standalone experiment repo when the prework needs to outlive the PR — provenance for a controversial change, or a reusable benchmark that applies across repos.
 
 1. **Prework artifacts.** Build these in `prework/<slug>/`:
    - `reference.py` — ground truth (numpy, BLAS, or known-good implementation)
@@ -197,7 +197,7 @@ When a surviving hypothesis implies a code change, build the [prework](/prework)
    - Tests that exercise the affected code path (e.g., `test_jit.py` for JIT changes, `test_gguf.py` for GGUF changes)
    - Any tests tagged with the feature name (`-k "prune or gguf or jit"`)
 
-3. **Gate.** All tests must pass before proceeding to Phase 6. If tests fail, classify: is it a real regression (fix broke something) or a pre-existing failure (missing deps, hardware-specific skip)? Only real regressions block. Feed compiler/test errors back to the implementer and let it fix mechanically — [compiler feedback has 0% false-positive rate vs ~40% for LLM reviewers](/does-iteration-mitigate-slop-slope).
+3. **Gate.** All tests must pass before proceeding to Phase 6. If tests fail, classify: is it a real regression (fix broke something) or a pre-existing failure (missing deps, hardware-specific skip)? Only real regressions block. Feed compiler/test errors back to the implementer and let it fix mechanically — [compiler feedback has 0% false-positive rate vs ~40% for LLM reviewers](https://june.kim/does-iteration-mitigate-slop-slope).
 
 ### Phase 6: Benchmark
 

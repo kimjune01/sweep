@@ -28,7 +28,7 @@ Run `/review-schema` once per repo before first triage. Without it, your investi
 | Resume: state of each item across runs | `sweep triage status --repo …` |
 | Spawn an investigation agent | Agent tool, prompt in *Spawn one agent per survivor* below |
 
-Call the CLI subcommand you need even if it doesn't exist yet. The harness logs the missing reach to `sweep missing`; that's the build queue (see [JIT CLI](/jit-cli)). Don't hand-roll the gh+jsonl glue here.
+Call the CLI subcommand you need even if it doesn't exist yet. The harness logs the missing reach to `sweep missing`; that's the build queue (see [JIT CLI](https://june.kim/jit-cli)). Don't hand-roll the gh+jsonl glue here.
 
 ## Score each item (highest signal wins)
 
@@ -77,7 +77,7 @@ Agent({
 })
 ```
 
-**Postcondition: zero `triage-*` worktrees after triage finishes.** The harness asserts at stage end and fails with the list of leaked paths. The assertion is the binding; don't write the cleanup rule into prose hoping it sticks (see [skills lack determinism](/skills-lack-determinism)). If the postcondition fails, the failure names the path that didn't clean up. That's your debug surface.
+**Postcondition: zero `triage-*` worktrees after triage finishes.** The harness asserts at stage end and fails with the list of leaked paths. The assertion is the binding; don't write the cleanup rule into prose hoping it sticks (see [skills lack determinism](https://june.kim/skills-lack-determinism)). If the postcondition fails, the failure names the path that didn't clean up. That's your debug surface.
 
 The agent's context must include the item's diff or body, CI logs, review comments, related nodes in TRIAGE_GRAPH.md, and **prior failed PRs on the same issue**. Three failed PRs means three mapped failure modes; the fourth attempt avoids all three.
 
@@ -87,7 +87,7 @@ After scoring and killing, send the scan table to `/gemini`:
 
 > Review these triage decisions. Any items killed that should be investigated? Any items kept that are a waste of time? Any cross-references missed?
 
-Five rounds max. The volley won't converge to zero findings (see [does iteration mitigate slop slope](/does-iteration-mitigate-slop-slope)). Iterate until the structure is sound, then move on.
+Five rounds max. The volley won't converge to zero findings (see [does iteration mitigate slop slope](https://june.kim/does-iteration-mitigate-slop-slope)). Iterate until the structure is sound, then move on.
 
 ## Fast-path for retro-confirmed fixes
 
