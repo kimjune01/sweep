@@ -66,26 +66,27 @@ async def call(
                 messages=[{"role": "user", "content": user}],
             )
         except anthropic.APIError as e:
-            # Record the failed attempt so the attestation chain has no
-            # silent gaps. Provider errors are inherently transient (429,
-            # 5xx, network timeouts) so the caller decides whether to
-            # retry; we just make sure the failure is observable.
-            duration_ms = int((time.time() - t0) * 1000)
-            attestations.record_call(
-                key=key,
-                model_id=model.model_id,
-                model_nick=model.nick,
-                provider=model.provider,
-                duration_ms=duration_ms,
-                input_tokens=0,
-                output_tokens=0,
+            # Capture the failure as an observe event (with the call's
+            # provenance and the error class/message) but do NOT write a
+            # row to the attestation log. Writing under the success key
+            # would poison the cache: the next retry would find an error
+            # string instead of hitting the wire, and the verdict parser
+            # would treat it as a reviewer opinion ("revise"). The chain
+            # is allowed to have no row for a failed attempt; retro reads
+            # the observe event to know it happened.
+            from sweep import observe
+            observe.event(
+                "llm_error",
                 msg_id=msg_id,
                 repo=repo,
                 pr=pr,
-                prompt=f"SYSTEM: {system}\n\nUSER: {user}",
-                response=f"<error: {type(e).__name__}: {str(e)[:500]}>",
-                response_id=None,
+                model=model.model_id,
+                provider=model.provider,
+                error_type=type(e).__name__,
+                error_message=str(e)[:500],
+                duration_ms=int((time.time() - t0) * 1000),
             )
+            observe.incr(f"llm_error:{model.provider}")
             raise
         duration_ms = int((time.time() - t0) * 1000)
         response_text = "".join(
