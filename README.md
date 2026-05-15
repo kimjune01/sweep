@@ -10,23 +10,25 @@ Two tools, same repo.
 
 Scans GitHub for repos with acknowledged bugs, picks the actionable ones, writes failing tests and minimal fixes, runs codex + gemini as adversarial reviewers, captures each reviewer's raw response as a tamper-evident receipt, and ships through a paced drip queue. The supervisor (a Temporal workflow) restarts crashed work, halts on contract violations, and exposes a deep-linked Web UI for one-hop investigation when something goes wrong.
 
+Status: see [ROADMAP.md](ROADMAP.md) for what's shipped, what's next, and what's deferred.
+
 ## Architecture
 
 ```
                   ┌────────────────────────────────────────┐
                   │           GitHub (the world)            │
                   └─────────────────┬──────────────────────┘
-                                    │ gh / API
+                                    │ gh / API (via gh_io cache)
                                     ▼
                   ┌─────────────────────────────────────────┐
                   │  pr-state workflow (classifier/dispatcher) │
-                  │  buckets: qa | investigate | rebase | …  │
+                  │  buckets: qa | drip | respondable | …    │
                   └────────┬─────────┬──────────┬────────────┘
                            │ signal  │ signal   │ signal
                            ▼         ▼          ▼
                   ┌──────────┐ ┌──────────┐ ┌──────────┐
-                  │ QaActor  │ │  Drip    │ │ Investig.│  (long-running workflows)
-                  │  WIP=1   │ │  WIP=1   │ │  WIP=1   │
+                  │ QaActor  │ │  inbox   │ │  inbox   │  (Temporal + jsonl)
+                  │ WIP=1    │ │ jsonl    │ │ jsonl    │
                   └────┬─────┘ └────┬─────┘ └────┬─────┘
                        │            │            │
                        ▼            ▼            ▼
@@ -36,6 +38,14 @@ Scans GitHub for repos with acknowledged bugs, picks the actionable ones, writes
                   │  gemini_review, qa_one_entry, …      │
                   │  Each writes a hashed receipt to     │
                   │  ~/.sweep/attestations/<msg_id>/     │
+                  └────────────────┬────────────────────┘
+                                    │
+                                    ▼
+                  ┌─────────────────────────────────────┐
+                  │  observe.py — events.jsonl +         │
+                  │  counters.db (forward pass)          │
+                  │  retro pager — SOAP one-pagers       │
+                  │  ~/.sweep/retros/  (backward pass)   │
                   └─────────────────────────────────────┘
 ```
 
@@ -46,7 +56,7 @@ Two operational modes:
 | **Terminal** | Manual dev / debug one entry / experiment | Markdown skills in `~/.claude/skills/` invoked from a Claude session. No Temporal. State files written directly to `~/.sweep/`. |
 | **Hyper-supervision** | Unattended autonomous runs | Temporal server + Python worker. Workflows orchestrate, activities execute, history is the audit log. No long-running Claude session. |
 
-Skills and Python activities share the same contract — one `msg_id`, one repo, one branch, gates produced with hashed artifacts — so the two modes are interchangeable per entry, not per pipeline. Skills are useful for ad-hoc; production runs through Temporal.
+Skills and Python activities share the same contract — one `msg_id`, one repo, one branch, gates produced with hashed artifacts — so the two modes are interchangeable per entry, not per pipeline.
 
 ## Prerequisites
 
@@ -54,7 +64,7 @@ Skills and Python activities share the same contract — one `msg_id`, one repo,
 - `gh auth status` passes
 - `uv` ([installation](https://docs.astral.sh/uv/getting-started/installation/))
 - `temporal` CLI ([installation](https://docs.temporal.io/cli)) — single binary, `temporal server start-dev` is enough
-- `ANTHROPIC_API_KEY` set in env (for Haiku-in-tests; Opus/Sonnet for prod)
+- `ANTHROPIC_API_KEY` set in env (Haiku for tests; Sonnet/Opus for prod)
 - `OPENAI_API_KEY` set in env (for codex review)
 - A working directory you don't mind cloning repos into (`~/Documents/` by default)
 
@@ -73,7 +83,7 @@ uv sync
 ### 2. Create state directory
 
 ```bash
-mkdir -p ~/.sweep/{attestations,inbox}
+mkdir -p ~/.sweep/{attestations,inbox,retros}
 ln -s ~/Documents/sweep/bin ~/.sweep/bin
 ln -s ~/Documents/sweep/templates ~/.sweep/templates
 ```
@@ -81,7 +91,7 @@ ln -s ~/Documents/sweep/templates ~/.sweep/templates
 ### 3. Install the skills (terminal mode)
 
 ```bash
-for skill in actionable drip investigate qa retro review-schema sweep triage pr-state; do
+for skill in drip investigate pr-state prospect qa retro review-schema sweep triage; do
   mkdir -p ~/.claude/skills/"$skill"
   ln ~/Documents/sweep/skills/"$skill".md ~/.claude/skills/"$skill"/skill.md
 done
@@ -107,9 +117,28 @@ The worker registers `QaActor`, `PrStateWorkflow`, and all activities against ta
 
 ### 5. Drive the pipeline
 
-The CLI is `sweep` (Typer subcommands grouped by actor). Top-level groups: `qa`, `pr-state`, `inbox`.
+`sweep` is the CLI (Typer subcommands grouped by concern). Top-level groups:
+
+| Group | What it does |
+|-------|--------------|
+| `sweep floor` | Factory-floor cockpit — status line + compressed flow + per-station table + human inbox |
+| `sweep kanban` | Per-station swim lanes with PR detail |
+| `sweep qa` | QA activities (test / codex / gemini / full) + actor signal/status/clear |
+| `sweep pr-state` | Classifier + dispatcher (classify / run / scan / route / workflow) |
+| `sweep prospect` | Sweep GitHub for actionable issues |
+| `sweep inbox` | Per-actor inbox inspector |
+| `sweep attest` | Attestation log + gh-cache stats |
+| `sweep observe` | Counters + events + cursor for retro |
+| `sweep retro` | SOAP one-pager pager — list / status / show / discard / record |
+| `sweep models` | Model registry, role defaults, adversary cascade |
 
 ```bash
+# Watch the factory floor (single status + compressed flow + table + inbox)
+uv run sweep floor
+
+# Drill into swim lanes
+uv run sweep kanban
+
 # QA — standalone activities (no Temporal needed)
 uv run sweep qa test    --repo owner/repo --branch fix-x --worktree . --test-cmd 'pytest -x'
 uv run sweep qa codex   --repo owner/repo --branch fix-x --worktree .
@@ -121,30 +150,44 @@ uv run sweep qa actor signal     # signal QaActor with a fake msg
 uv run sweep qa actor status     # query depth + halted
 uv run sweep qa actor clear      # clear andon halt
 
-# pr-state — classifier + dispatcher
+# pr-state
 uv run sweep pr-state classify --repo owner/repo --pr 123
-uv run sweep pr-state run --limit 30           # standalone; writes to inboxes
-uv run sweep pr-state workflow --limit 30      # Temporal one-shot
+uv run sweep pr-state scan --limit 30     # all open PRs → classified.jsonl
+uv run sweep pr-state route               # classified.jsonl → per-actor inboxes
+uv run sweep pr-state workflow --limit 30 # Temporal one-shot
 
-# Inbox inspection (per-actor, read-only)
+# Inbox + observability
 uv run sweep inbox qa
-uv run sweep inbox drip
-uv run sweep inbox investigate
-uv run sweep inbox retro
+uv run sweep observe counters
+uv run sweep observe events --limit 20
+uv run sweep retro status
 ```
 
-`--help` works at every level: `sweep`, `sweep qa`, `sweep qa actor`, etc. Watch live workflows in the Temporal Web UI at <http://localhost:8233>. Click into a workflow's history to see every activity call, input/output, and the hashed receipt path.
+`--help` works at every level: `sweep`, `sweep qa`, `sweep qa actor`. Watch live workflows in the Temporal Web UI at <http://localhost:8233>. Click into a workflow's history to see every activity call, input/output, and the hashed receipt path.
+
+### Bonus: markdown-piped rendering
+
+`sweep floor` and `sweep kanban` emit GitHub-flavored markdown. Same bytes render in three places:
+
+```bash
+brew install charmbracelet/tap/glow
+uv run sweep floor | glow -      # styled terminal
+uv run sweep floor | pbcopy      # paste into a GitHub comment, Notion, anywhere
+uv run sweep floor               # plain terminal — still scannable
+```
+
+The dual-rendering property is intentional: no second binary, no curses, no lock-in to any viewport.
 
 ## Pipeline
 
 ```
 gh search ──► pr-state ──┬─► QaActor       ──► codex/gemini volley ──► gates
-                         ├─► InvestigateActor ► respond to reviewer
-                         ├─► DripActor       ► close / rebase / ship
-                         └─► retro            ► audit only (wait bucket)
+                         ├─► drip inbox       ► close / rebase / ship
+                         ├─► respondable      ► human Attend (your inbox)
+                         └─► retro            ► audit / SOAP one-pagers
 ```
 
-Each `Actor` is a long-running Temporal workflow. `pr-state` runs as a recurring workflow (cron-scheduled), classifies every open authored PR into a bucket, and signals the matching actor with a `Message`. The actor's signal handler dedupes on `msg_id` (idempotent receivers), the workflow processes one message at a time (WIP=1 — the activity signature accepts only one repo + one branch), and posts an ack when done.
+`pr-state` runs as a recurring workflow (cron-scheduled), classifies every open authored PR into a bucket, and signals the matching actor with a `Message`. The actor's signal handler dedupes on `msg_id` (idempotent receivers), the workflow processes one message at a time (WIP=1 — the activity signature accepts only one repo + one branch), and posts an ack when done.
 
 ### Receipts and attestations
 
@@ -159,9 +202,13 @@ class GateAttestation:
     verbatim_excerpt: str  # must substring-match artifact contents
     rounds: int
     provenance: str      # "codex" | "opus-fallback" | "haiku-test"
+    pinned_head_sha: str | None  # qa gates blow when PR head moves
+    pinned_base_sha: str | None  # rebase gates blow when base advances
 ```
 
 The activity that calls codex/gemini is the only thing that ever writes to the artifact path. The downstream gate-pr-create hook re-hashes the file at push time — mismatch or missing artifact → block. The agent cannot fabricate bytes that hash to a value it doesn't know.
+
+The full chain is in SQLite (`~/.sweep/attestations/llm.db`) with a Merkle-chain `chain_hash` per row. Tampering any past row breaks every subsequent row's hash. `sweep attest verify` walks the chain; concurrent writers are serialized with `BEGIN IMMEDIATE` so the chain can't fork under load.
 
 ### Andon (postcondition failures halt the line)
 
@@ -181,22 +228,55 @@ Failed assertion → `ApplicationError(non_retryable=True)` → Temporal records
 
 The andon path runs on **every** invocation — there's no dev/prod split for assertions. Pulling the cord is just a test that runs in production. The test scaffolding uses Haiku (variance ~15%) to exercise the assertion paths ~14× more often than Opus would, so by the time you flip to Opus the gate logic is battle-tested.
 
+### Observability — events, counters, cursor
+
+`sweep/observe.py` is the substrate for the forward pass (what happened) and the backward pass (read it back, fold into prescriptions).
+
+- **events.jsonl** — append-only line per mutation. `qa_converged`, `prospect_pass`, `llm_error`, `pipeline_halted` so far.
+- **counters.db** — SQLite UPSERT totals: `gh_hit:<endpoint>`, `qa_volley`, `qa_verdict:<bucket>`, `prospect_repos_visited`, `halted_skip:<actor>`.
+- **events.cursor** — atomic-written watermark for "retro has read up to here." Retro advances explicitly; forward pass never auto-advances.
+
+```bash
+sweep observe counters              # all counters
+sweep observe events --limit 20     # tail events.jsonl
+sweep observe cursor                # offset + unread count
+```
+
+### Retro pager — SOAP one-pagers (the backward pass)
+
+The pipeline writes one SOAP one-pager per cycle to `~/.sweep/retros/`. The cap is 2 files: a third would-be file halts the forward pass until you clear one. Quiet cycles (empty-P rounds) append into the active chain so they don't burn cap slots.
+
+The morphism: `retro file → code/skill changes → git history`. The retro file is ephemeral staging; git is the persistent record of what was acted on. Discard the file once you've committed.
+
+```bash
+sweep retro status                  # 0/2 running, 2/2 HALTED, etc.
+sweep retro list                    # pending retros
+sweep retro show <slug>             # read one
+sweep retro discard <slug>          # I've attended; resume forward pass
+```
+
+The cap-of-2 is a learning rate matcher: the pipe's improvement rate is bounded by the human's fold rate. The forward pass can't outpace the human's wetware Consolidate.
+
 ### Kanban + investigation
 
-Each per-PR workflow tags itself with search attributes (`bucket`, `repo`, `pr`, `msg_id`). A kanban view is just `client.list_workflows("WorkflowType='PrPipeline'")` grouped by `bucket`. Click any card → land on the Temporal Web UI page for that workflow execution → full event history, activity inputs/outputs, retry traces, signal log. O(1) investigation.
+Each per-PR workflow tags itself with search attributes (`bucket`, `repo`, `pr`, `msg_id`). The Temporal Web UI gives one-hop investigation: click any card → full event history, activity inputs/outputs, retry traces, signal log.
+
+`sweep floor` is the operator's view (status + flow + table + inbox). `sweep kanban` is the swim-lane drill-down.
 
 ## Pipeline stages
 
 | Stage | Actor / workflow | Output |
 |-------|-----------------|--------|
-| Discover | `actionable` (terminal mode) or scheduled crawl | `repos.jsonl` entries |
-| Plan repo | `review-schema` workflow | repo's gate/signal/tiebreaker profile |
-| Triage | `TriageActor` | branch + failing test in `~/Documents/<repo>` |
-| QA | `QaActor` | gates with hashed receipts; verdict pass/fail |
-| Drip | `DripActor` | staleness check, push, PR created (one per org at a time) |
+| Discover | `prospect` (terminal or scheduled) | `triaged.jsonl` entries |
+| Plan repo | `review-schema` skill | repo's gate/signal/tiebreaker profile |
+| Triage | `triage` skill | branch + failing test in `~/Documents/<repo>` |
+| QA | `QaActor` (Temporal) | gates with hashed receipts; verdict pass/fail |
+| Drip | `drip` inbox + skill | staleness check, push, PR created (one per org at a time) |
 | Ship | `gh pr create` (gated by hook) | PR open on GitHub |
-| Monitor | `pr-state` (recurring) | bucket signal to whichever actor next |
-| Retro | `retro` batch workflow | parameter updates feeding back into `actionable` scoring |
+| Monitor | `pr-state` workflow (recurring) | bucket signal to whichever actor next |
+| Retro | `retro` skill + `observe` substrate | SOAP one-pagers → commits → next forward pass |
+
+The Temporal-side coverage is currently `QaActor` + `PrStateWorkflow`. Drip / Triage / Investigate run as skills in terminal mode while the actor wrappers are scoped to land in future passes (see [ROADMAP.md](ROADMAP.md)).
 
 ## Rules
 
