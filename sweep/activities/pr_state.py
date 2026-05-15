@@ -218,7 +218,9 @@ async def route_classified() -> dict:
     """Read classified.jsonl, route each PR to its bucket's inbox.
 
     Runs on its own takt — cheap, rule-based, can re-run if routing logic
-    changes. Idempotent per (repo, pr) within a minute via msg_id dedup.
+    changes. Idempotent per (repo, pr, classification_ts): two cron firings
+    over the same classified.jsonl produce the same msg_ids, and downstream
+    inbox readers dedup on msg_id.
     """
     if not CLASSIFIED_INBOX.exists():
         return {"read": 0, "routed": {}, "skipped_acked": 0}
@@ -235,11 +237,16 @@ async def route_classified() -> dict:
             pass
 
     routed: dict[str, int] = {}
+    now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
     for (repo, pr), r in latest.items():
         bucket = r.get("bucket", "wait")
         actor, intent = BUCKET_ROUTING.get(bucket, ("retro", "audit"))
-        ts = dt.datetime.now(dt.timezone.utc)
-        ts_minute = ts.strftime("%Y-%m-%dT%H:%MZ")
+        # Stable msg_id from the classification record itself, not call time:
+        # otherwise every cron firing of route_classified produces a new id
+        # for the same (repo, pr) and the actor inbox accumulates duplicates.
+        # The classification's `ts` is the watermark.
+        record_ts = r.get("ts", "")
+        ts_minute = record_ts[:16].replace(":", "-") if record_ts else "unknown"
         slug = repo.replace("/", "-")
         msg = Message(
             msg_id=f"router-{ts_minute}-{slug}-{pr}",
@@ -253,14 +260,14 @@ async def route_classified() -> dict:
                 "signals": r.get("signals", {}),
                 "reason": r.get("reason", ""),
             },
-            ts=ts.isoformat(),
+            ts=now_iso,
         )
         inbox = INBOX_DIR / f"{actor}.jsonl"
         with open(inbox, "a") as f:
             f.write(json.dumps(asdict(msg)) + "\n")
         routed[actor] = routed.get(actor, 0) + 1
 
-    return {"read": len(latest), "routed": routed}
+    return {"read": len(latest), "routed": routed, "skipped_acked": 0}
 
 
 @activity.defn
