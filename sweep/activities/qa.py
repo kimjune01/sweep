@@ -116,22 +116,25 @@ async def gemini_review(req: QaOneEntryRequest, diff: str, round_num: int) -> Ga
     return att
 
 
-@activity.defn
 async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
-    """The full QA pipeline for one entry. Composed of three activities above.
+    """Terminal-mode convenience composer. NOT an @activity.defn — the
+    production path is QaActor composing test_attestation + codex_review +
+    gemini_review as independent workflow.execute_activity calls.
 
-    This activity is the one that fails loudly if the contract breaks. The
-    workflow catches ApplicationError(non_retryable=True) and triggers andon.
+    This wrapper exists so you can:
+      - call the full qa pipeline from a script without standing up Temporal
+      - debug end-to-end behavior in an interactive python shell
+      - sanity-check the whole flow against Haiku-as-fixture
+
+    Each sub-activity (test_attestation, codex_review, gemini_review) is its
+    own @activity.defn and can be called independently for development in
+    isolation. This composer just chains them inline.
     """
     if not req.msg_id:
         raise ApplicationError("msg_id required", non_retryable=True)
 
     start = time.time()
-    test_att = await activity.execute_activity(
-        test_attestation, req, start_to_close_timeout=300
-    ) if False else await test_attestation(req)
-    # NOTE: in the workflow we'd compose these as workflow.execute_activity
-    # calls; the qa_one_entry shape above is for direct (terminal-mode) use.
+    test_att = await test_attestation(req)
 
     diff = subprocess.run(
         ["git", "-C", req.worktree, "diff", "origin/HEAD..."],
@@ -141,9 +144,8 @@ async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
 
     codex_att = await codex_review(req, diff)
     gemini_first = await gemini_review(req, diff, 1)
-    gemini_last = gemini_first  # placeholder — real volley would round-trip
+    gemini_last = gemini_first
 
-    elapsed = time.time() - start
     result = QaOneEntryResult(
         msg_id=req.msg_id,
         verdict="pass",
@@ -152,12 +154,10 @@ async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
         codex=codex_att,
         gemini_first=gemini_first,
         gemini_last=gemini_last,
-        elapsed_seconds=elapsed,
+        elapsed_seconds=time.time() - start,
     )
 
-    # Postcondition.
-    assert result.bugs_found is not None and isinstance(result.bugs_found, int)
-    assert result.codex.artifact_path and Path(result.codex.artifact_path).exists()
-    assert result.gemini_last.artifact_path and Path(result.gemini_last.artifact_path).exists()
-
+    assert isinstance(result.bugs_found, int)
+    assert Path(result.codex.artifact_path).exists()
+    assert Path(result.gemini_last.artifact_path).exists()
     return result

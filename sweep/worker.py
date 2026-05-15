@@ -15,7 +15,6 @@ from temporalio.worker import Worker
 from sweep.activities.qa import (
     codex_review,
     gemini_review,
-    qa_one_entry,
     test_attestation,
 )
 from sweep.workflows.qa_actor import QaActor
@@ -30,7 +29,7 @@ async def main() -> None:
         client,
         task_queue=QA_TASK_QUEUE,
         workflows=[QaActor],
-        activities=[qa_one_entry, test_attestation, codex_review, gemini_review],
+        activities=[test_attestation, codex_review, gemini_review],
     )
     logging.info("worker up on task queue=%s", QA_TASK_QUEUE)
     await worker.run()
