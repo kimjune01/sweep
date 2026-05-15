@@ -19,7 +19,6 @@ from __future__ import annotations
 import typer
 
 from sweep import models as _models
-from sweep.cli import floor as _floor
 from sweep.cli import kanban as _kanban
 from sweep.cli import punch as _punch
 from sweep.cli.attest import attest_app
@@ -45,7 +44,6 @@ app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
 _punch.register(app)
 _kanban.register(app)
-_floor.register(app)
 
 
 @app.command("models")

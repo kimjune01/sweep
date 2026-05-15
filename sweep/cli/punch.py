@@ -7,7 +7,7 @@ import time
 
 import typer
 
-from sweep import glyphs, org_state
+from sweep import glyphs, org_state, retro_state
 from sweep.inbox_state import inbox_states
 from sweep.outcomes import outcomes as fetch_outcomes
 from sweep.system import system_status
@@ -153,6 +153,19 @@ def _render_markdown(rows, sections, in_flight_ids, actionable, include_wait,
     running = sys.get("running", [])
 
     print("# coding factory — kanban")
+    print()
+    # Andon: retro pager state + halt flag. 📋 takes precedence over 🌱
+    # when both apply; quiet floors render plain "running" with no emoji.
+    retros = retro_state.list_retros()
+    halted = retro_state.is_halted()
+    actionable_count = sum(1 for r in retros if retro_state.has_prescription(r))
+    if halted:
+        andon_state = "📋 HALTED"
+    elif actionable_count > 0:
+        andon_state = f"🌱 {actionable_count} actionable"
+    else:
+        andon_state = "running"
+    print(f"`andon`  retros {len(retros)}/{retro_state.RETRO_CAP}  ·  pipeline {andon_state}")
     print()
     runline = f"**{len(running)} agents running**" if running else "_no agents running_"
     print(f"`system`  cpu {cpu:.0f}%  ·  mem {mem:.0f}%  ·  {runline}")
