@@ -174,11 +174,15 @@ func boxFor(name, label string) string {
 	return itemBox.Render(label)
 }
 
+// Chewy TUI "emoji width": macOS Terminal.app and some tmux setups
+// measure 🌵/🚦 as 1 cell instead of 2. Trailing space pads defensively
+// so the right edge of the box doesn't shift when the flag flips. The
+// glyph stays in both states; the OFF form pads to match cell-count.
 func flagBadge(name, glyph string) string {
 	if flagOn(name) {
-		return fmt.Sprintf("%s ON", glyph)
+		return fmt.Sprintf("%s  ON", glyph)
 	}
-	return "OFF"
+	return fmt.Sprintf("%s OFF", glyph)
 }
 
 func main() {
