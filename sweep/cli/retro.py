@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import typer
 
-from sweep import retro_state
+from sweep import observe, retro_state
 
 
 retro_app = typer.Typer(help="Retro pager — SOAP one-pagers", no_args_is_help=True)
@@ -58,3 +58,60 @@ def retro_discard(slug: str = typer.Argument(..., help="retro slug (filename wit
     if not retro_state.is_halted():
         n = len(retro_state.list_retros())
         print(f"pipeline running ({n}/{retro_state.RETRO_CAP})")
+
+
+@retro_app.command("record")
+def retro_record(
+    subjective: str = typer.Option(..., "--subjective", "-s",
+                                    help="S — what the system said (events)"),
+    objective: str = typer.Option(..., "--objective", "-o",
+                                   help="O — what the counters/derivations show"),
+    assessment: str = typer.Option(..., "--assessment", "-a",
+                                    help="A — diagnosis, naming codebase components"),
+    plan: str = typer.Option(..., "--plan", "-p",
+                              help="P — concrete commits to make, or '(none)' for an empty-P round"),
+    slug: str = typer.Option(None, "--slug",
+                              help="round slug; default is YYYY-MM-DD-HHMM UTC"),
+) -> None:
+    """Record one SOAP round.
+
+    Argparse enforces the SOAP shape (all four sections required). The
+    substrate decides whether this round opens a new file or appends to
+    the active empty-P chain. The observe cursor advances to current
+    EOF on success, so the next record() reads only fresh events.
+
+    Cap behavior: if a NEW file would push the directory past the cap,
+    record refuses with exit code 1. Appending to an existing empty-P
+    chain is always allowed (the backward pass must keep folding even
+    under halt).
+    """
+    # Snapshot the events range for this round, then advance the cursor.
+    events_from = observe.cursor_get()
+    observe.events_since_cursor(advance=True)
+    events_to = observe.cursor_get()
+
+    block_slug = slug or retro_state.slug_for_now()
+    round_block = retro_state.ROUND_TEMPLATE.format(
+        slug=block_slug,
+        events_from=events_from,
+        events_to=events_to,
+        subjective=subjective.strip(),
+        objective=objective.strip(),
+        assessment=assessment.strip(),
+        plan=plan.strip(),
+    )
+    try:
+        path = retro_state.record_round(round_block, slug=block_slug)
+    except RuntimeError as e:
+        # Cap reached. Rewind the cursor so the next attempt (after the
+        # human clears a pager) sees the same events range.
+        observe.cursor_set(events_from)
+        raise typer.Exit(code=1) from e
+
+    appended = (retro_state.most_recent_retro() is not None
+                and path.name != f"{block_slug}.md")
+    n = len(retro_state.list_retros())
+    halted = " (PIPELINE HALTED)" if retro_state.is_halted() else ""
+    mode = "appended to" if appended else "created"
+    print(f"{mode} {path.name}  events {events_from}..{events_to}  "
+          f"retros {n}/{retro_state.RETRO_CAP}{halted}")
