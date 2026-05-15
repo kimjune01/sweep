@@ -417,11 +417,25 @@ SPARK_CHARS = " ▁▂▃▄▅▆▇█"  # 9 levels including empty
 
 
 def _sparkline(counts: list[int]) -> str:
-    """Render counts as a Unicode block sparkline."""
+    """Render counts as a Unicode block sparkline. Peak-relative."""
     if not counts:
         return ""
     peak = max(counts) or 1
     return "".join(SPARK_CHARS[min(8, int(round(c * 8 / peak)))] for c in counts)
+
+
+def _sparkline_pct(counts: list[int], cap: int | None) -> str:
+    """Render counts as % of cap (full block = at cap, clamped to 1.0).
+
+    When cap is None or 0, falls back to peak-relative (_sparkline).
+    """
+    if not counts:
+        return ""
+    if not cap:
+        return _sparkline(counts)
+    return "".join(
+        SPARK_CHARS[min(8, int(round(min(c / cap, 1.0) * 8)))] for c in counts
+    )
 
 
 def _bucketize(timestamps: list[str], bucket_minutes: int, n_buckets: int) -> list[int]:
@@ -486,7 +500,15 @@ def punch(
     if include_wait:
         ACTIONABLE = ACTIONABLE + ["retro"]
 
-    BOUND = {"qa": 3, "drip": 5, "investigate": 5, "retro": None}
+    # Two caps per station — queue (backpressure) vs in-flight (concurrency).
+    # Queue cap = max backlog before we stop delivering. In-flight cap = max
+    # parallel workers draining the inbox. None = unbounded.
+    CAPS: dict[str, dict[str, int | None]] = {
+        "qa":          {"queued": 3, "in_flight": 2},
+        "drip":        {"queued": 5, "in_flight": 1},  # one push at a time
+        "investigate": {"queued": 5, "in_flight": 3},
+        "retro":       {"queued": None, "in_flight": None},  # unbounded batch
+    }
     ACTION_HINT = {
         "qa":          "re-attest (CI failed / gates stale)",
         "drip":        "advance status (close / rebase / ship)",
@@ -501,39 +523,43 @@ def punch(
         states[actor] = s
         sections[actor] = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
 
-    def _status_for(actor: str, queued: int, in_flight: int, limit: int | None) -> str:
-        total_open = queued + in_flight
-        if total_open == 0:
+    def _status_for(actor: str, queued: int, in_flight: int,
+                    q_cap: int | None, f_cap: int | None) -> str:
+        if queued + in_flight == 0:
             return "idle"
-        if limit is not None and queued >= limit:
-            return f"**capped** ({limit})"
+        flags = []
+        if q_cap is not None and queued >= q_cap:
+            flags.append(f"**queue capped** ({queued}/{q_cap})")
+        if f_cap is not None and in_flight >= f_cap:
+            flags.append(f"**in-flight capped** ({in_flight}/{f_cap})")
+        if flags:
+            return ", ".join(flags)
         if actor == "retro":
             return "history"
         if in_flight > 0:
             return "working"
         return "queued"
 
-    rows: list[tuple[str, int, int, str, str, str, str]] = []
+    rows: list[tuple[str, int, int, str, str, str]] = []
     for actor in ACTIONABLE:
         s = states[actor]
         queued = len(s["queued"])
         in_flight = len(s["in_flight"])
-        limit = BOUND.get(actor)
+        q_cap = CAPS.get(actor, {}).get("queued")
+        f_cap = CAPS.get(actor, {}).get("in_flight")
         sparks = _bucketize(
             [m.get("ts", "") for m in (s["queued"] + s["in_flight"])],
             spark_minutes, spark_buckets,
         )
-        spark = _sparkline(sparks) or "·" * spark_buckets
-        limit_str = "∞" if limit is None else str(limit)
+        spark = _sparkline_pct(sparks, q_cap) or "·" * spark_buckets
         oldest = _oldest_age_str(s["queued"] + s["in_flight"])
         rows.append((
             actor,
             queued,
             in_flight,
-            limit_str,
             oldest,
             spark,
-            _status_for(actor, queued, in_flight, limit),
+            _status_for(actor, queued, in_flight, q_cap, f_cap),
         ))
 
     if rich_mode:
@@ -545,9 +571,9 @@ def punch(
     print()
     print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
     print()
-    print(f"| station | queued | in-flight | oldest | flow ({spark_minutes}m × {spark_buckets}) | status |")
+    print(f"| station | queued | in-flight | oldest | flow ({spark_minutes}m × {spark_buckets}, % of cap) | status |")
     print( "|---|---:|---:|---|---|---|")
-    for actor, queued, in_flight, _limit_str, oldest, spark, status in rows:
+    for actor, queued, in_flight, oldest, spark, status in rows:
         print(f"| → {actor} | {queued} | {in_flight} | {oldest} | `{spark}` | {status} |")
     print()
 
@@ -591,23 +617,24 @@ def _punch_rich(rows, sections, actionable, action_hint, include_wait, spark_buc
         padding=(0, 1),
     )
     panels = []
-    for actor, queued, in_flight, limit_str, oldest, spark, status in rows:
+    for actor, queued, in_flight, oldest, spark, status in rows:
+        plain_status = status.replace("**", "")
         if "capped" in status:
-            border, color, label = "red", "red bold", f"capped ({limit_str})"
+            border, color = "red", "red bold"
         elif status == "idle":
-            border, color, label = "green", "green", "idle"
+            border, color = "green", "green"
         elif status == "history":
-            border, color, label = "dim", "dim", "history"
+            border, color = "dim", "dim"
         elif status == "queued":
-            border, color, label = "blue", "blue", "queued"
+            border, color = "blue", "blue"
         else:
-            border, color, label = "yellow", "yellow", "working"
+            border, color = "yellow", "yellow"
         body = Text()
         body.append("queued    ", style="dim"); body.append(f"{queued}\n", style="bold")
         body.append("in-flight ", style="dim"); body.append(f"{in_flight}\n", style="bold")
         body.append(f"oldest    {oldest}\n", style="dim")
         body.append("flow      ", style="dim"); body.append(spark, style="cyan"); body.append("\n")
-        body.append(label, style=color)
+        body.append(plain_status, style=color)
         panels.append(Panel(body, title=f"[bold]{actor}[/]", border_style=border, width=22, padding=(0, 1)))
 
     console.print()
