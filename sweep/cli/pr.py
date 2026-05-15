@@ -88,11 +88,13 @@ def _render(repo: str, pr: int, data: dict) -> None:
     title = data.get("title") or "(no title)"
     url = data.get("url") or f"https://github.com/{repo}/pull/{pr}"
 
-    # Compute attestation status once — it's the pivot point of a PR and
-    # gets a state cell in the stats line plus the receipts list below.
+    # Compute attestation status once. The pivot has three states:
+    #   no receipts at all   → absent (locality reads "not yet")
+    #   receipts + verdict=pass → ⛩️ attested (through the gate)
+    #   receipts + other verdict → 🚧 failing (blocked at the gate)
     msg_ids = _msg_ids_for(repo, pr)
     artifacts = _artifacts_for(msg_ids)
-    attested = bool(artifacts)
+    verdict = _latest_qa_verdict(repo, pr) if artifacts else None
 
     print(f"# {repo}#{pr} — {title}")
     print()
@@ -100,7 +102,8 @@ def _render(repo: str, pr: int, data: dict) -> None:
     print()
 
     _render_hypothesis(repo)
-    _render_state(data, attested=attested)
+    _render_attest(artifacts=bool(artifacts), verdict=verdict)
+    _render_remote(data)
     _render_origin(repo, data)
     _render_receipts(msg_ids, artifacts)
     _render_events(repo, pr)
@@ -179,24 +182,33 @@ MERGE_GLYPHS = {
 }
 
 
-def _render_state(data: dict, *, attested: bool) -> None:
-    """Stats line — emoji-leading state cells, dot-separated. No header
-    needed: the shape (single line of short cells) names it, same as the
-    cpu/mem/agents line on floor.
+def _render_attest(*, artifacts: bool, verdict: str | None) -> None:
+    """Local stats — attestation pivot. ⛩️ (torii) means the cascade
+    passed; 🚧 means receipts exist but the verdict isn't pass yet.
+    Absent means the cascade hasn't run.
 
-    Attestation leads — it's the pivot point of a PR. Pre-attestation
-    is just code; post-attestation has cascade receipts and a verdict
-    chain. 🔏 (lock-with-ink-pen) renders the "signed and sealed"
-    semantic; absence of the cell means the PR hasn't been through qa
-    yet, by locality."""
+    Local properties only — what sweep knows from its own substrate.
+    Kept on a separate line from the remote stats below because
+    mixing local and remote facts confuses the operator about which
+    half of the system to interrogate when something's wrong."""
+    if not artifacts:
+        return
+    glyph = "⛩️ attested" if verdict == "pass" else "🚧 failing"
+    print(f"`{glyph}`")
+    print()
+
+
+def _render_remote(data: dict) -> None:
+    """Remote stats — what GitHub knows about the PR. CI, review,
+    mergeable, draft, stale. Distinct line from the local attestation
+    state above so the operator can tell at a glance whether a problem
+    is sweep-side (no receipts / failing cascade) or GitHub-side (CI
+    red / review changes requested / merge conflict)."""
     ci_key = _ci_status(data.get("statusCheckRollup") or [])
     review = data.get("reviewDecision") or ""
     merge = data.get("mergeable") or ""
 
-    cells: list[str] = []
-    if attested:
-        cells.append("🔏 attested")
-    cells.append(f"{CI_GLYPHS.get(ci_key, '·')} {ci_key}")
+    cells = [f"{CI_GLYPHS.get(ci_key, '·')} {ci_key}"]
     if review:
         cells.append(REVIEW_GLYPHS.get(review, f"· {review}"))
     if merge:
@@ -256,6 +268,28 @@ def _render_origin(repo: str, data: dict) -> None:
     if hypo.exists():
         print(f"hypothesis — `cat {hypo}`")
     print()
+
+
+def _latest_qa_verdict(repo: str, pr: int) -> str | None:
+    """Return the verdict of the most recent qa_converged event for this
+    repo+pr, or None if no qa_converged event has fired yet."""
+    if not observe.EVENTS.exists():
+        return None
+    try:
+        for line in reversed(observe.EVENTS.read_text().splitlines()):
+            if not line.strip():
+                continue
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (ev.get("kind") == "qa_converged"
+                    and ev.get("repo") == repo
+                    and ev.get("pr") == pr):
+                return ev.get("verdict")
+    except OSError:
+        return None
+    return None
 
 
 def _artifacts_for(msg_ids: list[str]) -> list[tuple[str, Path]]:
