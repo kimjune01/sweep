@@ -167,6 +167,11 @@ func (m model) View() string {
 	return out + "\n"
 }
 
+// Chewy TUI "len(s) is a bug": every label here is a literal so byte
+// length and cell width agree. If a future change feeds user-supplied
+// strings into a box, use go-runewidth (already an indirect dep via
+// charm) to size — `len(s)` will undercount CJK and emoji and overflow
+// the border.
 func boxFor(name, label string) string {
 	if flagOn(name) {
 		return itemBoxOn.Render(label)
@@ -186,6 +191,29 @@ func flagBadge(name, glyph string) string {
 }
 
 func main() {
+	// tea.NewProgram options, mapped to Chewy TUI heuristics:
+	//
+	//   • NO tea.WithAltScreen() — "alt screen vs inline": this is a
+	//     thin one-line bar, not a fullscreen view. Stay inline so the
+	//     terminal scrollback keeps the operator's prior output. If a
+	//     future change wants quit-to-restore behavior, mode ?1049 is
+	//     the option to add — not ?47.
+	//
+	//   • NO mouse / bracketed-paste options yet. When mouse arrives,
+	//     use tea.WithMouseCellMotion (DEC mode ?1006), not ?1000. When
+	//     a paste target arrives, enable bracketed paste (?2004).
+	//
+	//   • NO tea.WithoutSignalHandler — Bubble Tea's default routes
+	//     Ctrl-C back to SIGINT so backgrounded sessions can be killed
+	//     normally. The "ctrl+c" case in Update is belt-and-suspenders.
+	//
+	//   • Synchronized Output (DEC mode ?2026) is emitted by Bubble
+	//     Tea's standard renderer in v1.2+ — no flag needed. The bar
+	//     should not tear under the `r`/`d`/`p` keypress refresh.
+	//
+	//   • isatty extends past color: if stdin/stdout isn't a TTY (e.g.
+	//     `sweep-tui | cat`), Bubble Tea opens /dev/tty, fails cleanly,
+	//     and we print the error to stderr and exit 1 below.
 	p := tea.NewProgram(model{})
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "sweep-tui:", err)
