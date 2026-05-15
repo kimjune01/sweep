@@ -12,14 +12,21 @@ import logging
 from temporalio.client import Client
 from temporalio.worker import Worker
 
+from sweep.activities.pr_state import (
+    classify_one_pr,
+    deliver_to_inbox,
+    gh_pr_view,
+    gh_search_open_authored,
+)
 from sweep.activities.qa import (
     codex_review,
     gemini_review,
     test_attestation,
 )
+from sweep.workflows.pr_state_workflow import PrStateWorkflow
 from sweep.workflows.qa_actor import QaActor
 
-QA_TASK_QUEUE = "qa-tq"
+SWEEP_TASK_QUEUE = "sweep-tq"
 
 
 async def main() -> None:
@@ -27,11 +34,16 @@ async def main() -> None:
     client = await Client.connect("localhost:7233")
     worker = Worker(
         client,
-        task_queue=QA_TASK_QUEUE,
-        workflows=[QaActor],
-        activities=[test_attestation, codex_review, gemini_review],
+        task_queue=SWEEP_TASK_QUEUE,
+        workflows=[QaActor, PrStateWorkflow],
+        activities=[
+            # qa
+            test_attestation, codex_review, gemini_review,
+            # pr-state
+            gh_search_open_authored, gh_pr_view, classify_one_pr, deliver_to_inbox,
+        ],
     )
-    logging.info("worker up on task queue=%s", QA_TASK_QUEUE)
+    logging.info("worker up on task queue=%s", SWEEP_TASK_QUEUE)
     await worker.run()
 
 

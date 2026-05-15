@@ -59,6 +59,47 @@ class QaOneEntryRequest:
     issue: int | None = None
 
 
+Bucket = Literal["close", "investigate", "rebase", "qa", "ship", "wait"]
+
+# Each bucket has a destination inbox + intent verb the receiver consumes.
+BUCKET_ROUTING: dict[str, tuple[str, str]] = {
+    "close":       ("drip",        "close"),
+    "investigate": ("investigate", "respond"),
+    "rebase":      ("drip",        "rebase"),
+    "qa":          ("qa",          "reattest"),
+    "ship":        ("drip",        "ship"),
+    "wait":        ("retro",       "audit"),
+}
+
+
+@dataclass
+class PrLiveState:
+    """Live state of an open PR pulled from gh."""
+
+    repo: str
+    pr: int
+    branch: str
+    title: str
+    url: str
+    review_decision: str  # APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED / ""
+    mergeable: str  # MERGEABLE / CONFLICTING / UNKNOWN / ""
+    ci: str  # green / failing / pending / unknown
+    activity_h: float  # hours since updatedAt
+    maintainer_question: bool
+    is_draft: bool
+    failing_check: str = ""  # name of one failing check, for reason
+
+
+@dataclass
+class PrStateResult:
+    repo: str
+    pr: int
+    branch: str
+    bucket: Bucket
+    signals: dict
+    reason: str
+
+
 @dataclass
 class QaOneEntryResult:
     msg_id: str
