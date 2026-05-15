@@ -65,18 +65,29 @@ func setFlag(name string, on bool) error {
 // Two visual states per toggle: ON is bright + bold so the eye picks it
 // up across the bar; OFF is dim so an idle cockpit reads quiet. The
 // keybinding glyph stays normal weight so the action is always legible.
-
+//
+// Chewy TUI: "adaptive colors over hardcoded ANSI." Each color is an
+// AdaptiveColor so the bar stays legible on iTerm2 Solarized Light *and*
+// default xterm dark. Lip Gloss / termenv handle OSC 11 background
+// detection automatically and pick the right side. Lip Gloss also
+// honors NO_COLOR by dropping styling on the floor — no extra wiring
+// needed here. The 256-color codes downsample cleanly to the nearest
+// 16-color slot on TERM=xterm.
 var (
+	dimColor = lipgloss.AdaptiveColor{Light: "240", Dark: "8"}   // off-state border + hints
+	onColor  = lipgloss.AdaptiveColor{Light: "166", Dark: "11"}  // on-state border + label (orange on light, yellow on dark)
+	keyColor = lipgloss.AdaptiveColor{Light: "27", Dark: "6"}    // keybinding glyph
+
 	itemBox = lipgloss.NewStyle().
 		Padding(0, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("8"))
+		BorderForeground(dimColor)
 	itemBoxOn = itemBox.Copy().
-			BorderForeground(lipgloss.Color("11")).
-			Foreground(lipgloss.Color("11")).
+			BorderForeground(onColor).
+			Foreground(onColor).
 			Bold(true)
-	keyStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	hintStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	keyStyle  = lipgloss.NewStyle().Foreground(keyColor).Bold(true)
+	hintStyle = lipgloss.NewStyle().Foreground(dimColor)
 )
 
 // --------------- model
