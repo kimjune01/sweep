@@ -27,6 +27,7 @@ from sweep import missing_calls, models as _models
 from sweep.cli import floor as _floor
 from sweep.cli import kanban as _kanban
 from sweep.cli import missing as _missing
+from sweep.cli import wish as _wish
 from sweep.cli import pr as _pr
 from sweep.cli.attest import attest_app
 from sweep.cli.control import dry_app, pause_app
@@ -58,6 +59,7 @@ _floor.register(app)
 _kanban.register(app)
 _pr.register(app)
 _missing.register(app)
+_wish.register(app)
 
 
 @app.command("models")

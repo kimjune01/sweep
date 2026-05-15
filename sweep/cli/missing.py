@@ -44,12 +44,17 @@ def missing(
         print(json.dumps(rows, indent=2))
     else:
         if not rows:
-            print("# wishlist empty — no missing calls recorded")
+            print("# wishlist empty — no missing calls or wishes recorded")
         else:
-            print(f"# {len(rows)} distinct missing calls")
+            print(f"# {len(rows)} distinct missing calls (votes = reaches + 3·wishes)")
             for r in rows:
                 argv_str = " ".join(r["argv"])
-                print(f"  [{r['count']:3d}×] sweep {argv_str}")
+                tag = ""
+                if r["wish_count"]:
+                    tag = f" (W:{r['wish_count']} R:{r['reach_count']})"
+                elif r["reach_count"]:
+                    tag = f" (R:{r['reach_count']})"
+                print(f"  [{r['votes']:3d} votes]{tag} sweep {argv_str}")
                 if r["reasons"]:
                     for rsn in r["reasons"]:
                         print(f"           reason: {rsn}")
