@@ -27,6 +27,7 @@ from sweep.cli.observe import observe_app
 from sweep.cli.pr_state import pr_state_app
 from sweep.cli.prospect import prospect_app
 from sweep.cli.qa import qa_app
+from sweep.cli.retro import retro_app
 
 
 app = typer.Typer(
@@ -40,6 +41,7 @@ app.add_typer(prospect_app, name="prospect")
 app.add_typer(inbox_app, name="inbox")
 app.add_typer(attest_app, name="attest")
 app.add_typer(observe_app, name="observe")
+app.add_typer(retro_app, name="retro")
 _punch.register(app)
 _board.register(app)
 
