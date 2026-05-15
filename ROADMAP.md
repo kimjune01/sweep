@@ -46,6 +46,7 @@ The branch `temporal-pipeline` is 87 commits ahead of `master`. Below is what's 
 - Soft-pause: `prospect_one_pass`, `qa_one_entry`, and `route_classified` no-op at takt entry (counters `paused_skip:*`). In-flight work completes; clears manually.
 - `sweep floor` status line surfaces 🚦 PAUSED and 🌵 DRY when active.
 - `tui/` — Bubble Tea + Glamour TUI built to `bin/sweep-tui`. Wraps `sweep floor --plain`, refreshes every 5s, `d`/`p`/`r`/`q` keybinds. File-backed so flags persist across launches.
+- Chewy TUI audit pass (May 2026). Walked `tui/main.go` against the [Chewy TUI](https://june.kim/chewy-tui) palette and pitfalls. Now load-bearing: adaptive light/dark colors via `lipgloss.AdaptiveColor` (legible on Solarized Light *and* xterm dark), defensive trailing-space padding on the 🌵/🚦 emoji so the right edge holds on macOS Terminal.app, and anchor comments at every `tea.NewProgram` option and color declaration mapping the choice back to a named heuristic (alt-screen vs inline, mouse mode ?1006 not ?1000, bracketed paste ?2004, Synchronized Output ?2026 emitted by Bubble Tea's default renderer, NO_COLOR via termenv, Ctrl-C → SIGINT, isatty fallback on `sweep-tui | cat`, `len(s)` vs runewidth). Piped invocation exits 1 with a stderr message; verified.
 
 ### Hardening
 
