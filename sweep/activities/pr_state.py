@@ -16,7 +16,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import models
+from sweep import gh_io, models
 from sweep.io_safe import atomic_write_text
 from sweep.types import (
     BUCKET_ROUTING,
@@ -43,17 +43,13 @@ async def gh_search_open_authored(limit: int = 50) -> list[dict]:
         ["gh", "api", "user", "--jq", ".login"],
         capture_output=True, text=True, check=True,
     ).stdout.strip()
-    out = subprocess.run(
-        [
-            "gh", "search", "prs",
-            "--author", user,
-            "--state", "open",
-            "--limit", str(limit),
-            "--json", "repository,number,title,url,createdAt,updatedAt,author",
-        ],
-        capture_output=True, text=True, check=True,
+    return gh_io.search_prs(
+        f"author:{user}",
+        state="open",
+        limit=limit,
+        fields="repository,number,title,url,createdAt,updatedAt,author",
+        ttl=60,
     )
-    return json.loads(out.stdout or "[]")
 
 
 @activity.defn
@@ -61,27 +57,21 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     """Pull live state for one PR. Independently callable for development."""
     if "/" not in repo:
         raise ApplicationError("repo must be owner/repo", non_retryable=True)
-    out = subprocess.run(
-        [
-            "gh", "pr", "view", str(pr),
-            "--repo", repo,
-            "--json",
-            "state,mergeable,reviewDecision,reviews,statusCheckRollup,isDraft,"
-            "comments,headRefName,updatedAt,title,url",
-        ],
-        capture_output=True, text=True,
-    )
-    if out.returncode != 0:
+    try:
+        data = gh_io.pr_view(repo, pr, ttl=60)
+    except subprocess.CalledProcessError as e:
         raise ApplicationError(
-            f"gh pr view failed: {out.stderr[:300]}",
+            f"gh pr view failed: {(e.stderr or '')[:300]}",
             non_retryable=False,  # transient — retryable
         )
-    data = json.loads(out.stdout)
+    if not data:
+        raise ApplicationError(
+            f"gh pr view returned empty for {repo}#{pr}",
+            non_retryable=False,
+        )
 
     # Inline code-review comments live on a separate REST endpoint
-    # (not exposed via `gh pr view --json`). Fetch via gh_io so repeats
-    # within the TTL window are free.
-    from sweep import gh_io
+    # (not exposed via `gh pr view --json`).
     try:
         data["_inline_comments"] = gh_io.pr_inline_comments(repo, pr)
     except Exception:
