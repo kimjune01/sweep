@@ -25,7 +25,11 @@ def board(
         s = inbox_states(actor)
         msgs = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
         items[actor] = [
-            f"{m.get('repo', '?')}#{m.get('pr', '-')}" for m in msgs
+            (
+                f"[{m.get('repo', '?')}#{m.get('pr', '-')}]"
+                f"(https://github.com/{m.get('repo', '')}/pull/{m.get('pr', '')})"
+            )
+            for m in msgs
         ]
 
     height = max((len(items[a]) for a in cols), default=0)

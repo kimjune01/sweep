@@ -183,7 +183,8 @@ def _render_markdown(rows, sections, actionable, include_wait, spark_minutes,
                 payload = m.get("payload") or {}
                 reason = payload.get("reason", "")
                 ts = m.get("ts", "")[:19]
-                print(f"- **{repo}#{pr}** — {reason}  _({ts})_")
+                url = f"https://github.com/{repo}/pull/{pr}"
+                print(f"- **[{repo}#{pr}]({url})** — {reason}  _({ts})_")
             print()
 
     if no_outcomes:
