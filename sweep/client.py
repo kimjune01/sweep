@@ -495,10 +495,10 @@ def punch(
     print()
     print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
     print()
-    print(f"| station | WIP / bound | oldest | flow ({spark_minutes}m × {spark_buckets}) | status |")
-    print( "|---|---:|---|---|---|")
+    print(f"| station | WIP | bound | oldest | flow ({spark_minutes}m × {spark_buckets}) | status |")
+    print( "|---|---:|---:|---|---|---|")
     for actor, wip, bound_str, oldest, spark, status in rows:
-        print(f"| → {actor} | {wip} / {bound_str} | {oldest} | `{spark}` | {status} |")
+        print(f"| → {actor} | {wip} | {bound_str} | {oldest} | `{spark}` | {status} |")
     print()
 
     total = sum(len(sections[a]) for a in ACTIONABLE if a != "retro")
