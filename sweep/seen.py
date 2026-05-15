@@ -22,30 +22,54 @@ SEEN_DIR = Path.home() / ".sweep" / "seen"
 ISSUES_FILE = SEEN_DIR / "issues.txt"
 
 
-def _load(path: Path) -> set[str]:
-    if not path.exists():
-        return set()
-    return {line.strip() for line in path.read_text().splitlines() if line.strip()}
+# Process-lifetime cache of the seen set. Lazy-loaded on first access.
+# Reloaded if the underlying file's mtime changes (another process appended).
+# O(1) membership lookup; the file is the durable form, the set is the index.
+_cache: set[str] | None = None
+_cache_mtime: float = 0.0
+
+
+def _seen() -> set[str]:
+    global _cache, _cache_mtime
+    if not ISSUES_FILE.exists():
+        if _cache is None:
+            _cache = set()
+            _cache_mtime = 0.0
+        return _cache
+    mtime = ISSUES_FILE.stat().st_mtime
+    if _cache is None or mtime > _cache_mtime:
+        _cache = {
+            line.strip()
+            for line in ISSUES_FILE.read_text().splitlines()
+            if line.strip()
+        }
+        _cache_mtime = mtime
+    return _cache
 
 
 def has_seen(key: str) -> bool:
-    """Has this prospect-key been surfaced before?"""
-    return key in _load(ISSUES_FILE)
+    """O(1) — set membership against the cached seen set."""
+    return key in _seen()
 
 
 def mark_seen(key: str) -> None:
-    """Append the key to the seen set. Idempotent on repeat — file is a set."""
-    if has_seen(key):
+    """Append to the file; update the cache in place. O(1)."""
+    s = _seen()
+    if key in s:
         return
     SEEN_DIR.mkdir(parents=True, exist_ok=True)
     with open(ISSUES_FILE, "a") as f:
         f.write(f"{key}\n")
+    s.add(key)
+    # Keep cache mtime in sync with the file we just wrote.
+    global _cache_mtime
+    _cache_mtime = ISSUES_FILE.stat().st_mtime
 
 
 def filter_unseen(keys: list[str]) -> list[str]:
-    """Return only keys not already in the seen set."""
-    seen = _load(ISSUES_FILE)
-    return [k for k in keys if k not in seen]
+    """Return only keys not already seen. O(n) on input, O(1) per check."""
+    s = _seen()
+    return [k for k in keys if k not in s]
 
 
 def issue_key(repo: str, issue: int) -> str:
