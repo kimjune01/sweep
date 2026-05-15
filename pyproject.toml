@@ -7,3 +7,17 @@ dependencies = [
     "temporalio>=1.27.2",
     "typer>=0.25.1",
 ]
+
+[project.scripts]
+sweep = "sweep.client:app"
+sweep-worker = "sweep.worker:main"
+
+[build-system]
+requires = ["uv_build>=0.5"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.uv.build-backend]
+module-root = ""

@@ -29,7 +29,7 @@ from sweep.workflows.qa_actor import QaActor
 SWEEP_TASK_QUEUE = "sweep-tq"
 
 
-async def main() -> None:
+async def _amain() -> None:
     logging.basicConfig(level=logging.INFO)
     client = await Client.connect("localhost:7233")
     worker = Worker(
@@ -47,5 +47,10 @@ async def main() -> None:
     await worker.run()
 
 
+def main() -> None:
+    """Console-script entry. `sweep-worker` invokes this."""
+    asyncio.run(_amain())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

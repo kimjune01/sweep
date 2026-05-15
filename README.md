@@ -100,7 +100,7 @@ In another terminal:
 
 ```bash
 cd ~/Documents/sweep
-uv run python -m sweep.worker
+uv run sweep-worker
 ```
 
 The worker registers `QaActor`, `PrStateWorkflow`, and all activities against task queue `sweep-tq` and waits for signals.
@@ -111,26 +111,26 @@ The CLI is `sweep` (Typer subcommands grouped by actor). Top-level groups: `qa`,
 
 ```bash
 # QA — standalone activities (no Temporal needed)
-uv run python -m sweep.client qa test    --repo owner/repo --branch fix-x --worktree . --test-cmd 'pytest -x'
-uv run python -m sweep.client qa codex   --repo owner/repo --branch fix-x --worktree .
-uv run python -m sweep.client qa gemini  --repo owner/repo --branch fix-x --worktree . --round 1
-uv run python -m sweep.client qa full    --repo owner/repo --branch fix-x --worktree . --test-cmd 'pytest -x'
+uv run sweep qa test    --repo owner/repo --branch fix-x --worktree . --test-cmd 'pytest -x'
+uv run sweep qa codex   --repo owner/repo --branch fix-x --worktree .
+uv run sweep qa gemini  --repo owner/repo --branch fix-x --worktree . --round 1
+uv run sweep qa full    --repo owner/repo --branch fix-x --worktree . --test-cmd 'pytest -x'
 
 # QA — Temporal QaActor (worker must be up)
-uv run python -m sweep.client qa actor signal     # signal QaActor with a fake msg
-uv run python -m sweep.client qa actor status     # query depth + halted
-uv run python -m sweep.client qa actor clear      # clear andon halt
+uv run sweep qa actor signal     # signal QaActor with a fake msg
+uv run sweep qa actor status     # query depth + halted
+uv run sweep qa actor clear      # clear andon halt
 
 # pr-state — classifier + dispatcher
-uv run python -m sweep.client pr-state classify --repo owner/repo --pr 123
-uv run python -m sweep.client pr-state run --limit 30           # standalone; writes to inboxes
-uv run python -m sweep.client pr-state workflow --limit 30      # Temporal one-shot
+uv run sweep pr-state classify --repo owner/repo --pr 123
+uv run sweep pr-state run --limit 30           # standalone; writes to inboxes
+uv run sweep pr-state workflow --limit 30      # Temporal one-shot
 
 # Inbox inspection (per-actor, read-only)
-uv run python -m sweep.client inbox qa
-uv run python -m sweep.client inbox drip
-uv run python -m sweep.client inbox investigate
-uv run python -m sweep.client inbox retro
+uv run sweep inbox qa
+uv run sweep inbox drip
+uv run sweep inbox investigate
+uv run sweep inbox retro
 ```
 
 `--help` works at every level: `sweep`, `sweep qa`, `sweep qa actor`, etc. Watch live workflows in the Temporal Web UI at <http://localhost:8233>. Click into a workflow's history to see every activity call, input/output, and the hashed receipt path.
