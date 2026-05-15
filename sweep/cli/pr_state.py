@@ -1,4 +1,11 @@
-"""`sweep pr-state …` — classify, deliver, or run the Temporal workflow."""
+"""`sweep pr-state …` — classify / run / scan / route / workflow.
+
+  classify   one PR (read-only)
+  run        all open PRs → deliver_to_inbox (legacy coupled path)
+  scan       all open PRs → classified.jsonl (decoupled half 1)
+  route      classified.jsonl → per-actor inboxes (decoupled half 2)
+  workflow   Temporal: PrStateWorkflow once
+"""
 
 from __future__ import annotations
 

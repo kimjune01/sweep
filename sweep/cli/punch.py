@@ -235,7 +235,10 @@ def _render_outcomes(days: int) -> None:
         print(f"| merge ratio | {ratio:.0f}% |")
     else:
         print("| merge ratio | — _(no outcomes)_ |")
-    print(f"| daily merge rate | {merged / days:.1f} |")
+    if days > 0:
+        print(f"| daily merge rate | {merged / days:.1f} |")
+    else:
+        print("| daily merge rate | — |")
     print()
     print("```")
     print(f"day   {day_labels}    ← oldest → today")

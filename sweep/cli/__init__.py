@@ -2,9 +2,13 @@
 
 Each subgroup lives in its own module:
   cli/qa.py        — qa test/codex/gemini/full, qa actor signal/status/clear
-  cli/pr_state.py  — pr-state classify/run/workflow
+  cli/pr_state.py  — pr-state classify / run / scan / route / workflow
+  cli/prospect.py  — prospect sweep + cursor
   cli/inbox.py     — inbox inspector
+  cli/attest.py    — attestation log + gh-cache stats
+  cli/observe.py   — counters, events, cursor for retro
   cli/punch.py     — punch (cockpit + outcomes)
+  cli/board.py     — kanban swim lanes
 
 The console-script entry point is `sweep.cli:app` (also re-exported as
 `sweep.client:app` for backward compatibility).
