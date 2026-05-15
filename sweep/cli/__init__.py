@@ -15,6 +15,7 @@ from __future__ import annotations
 import typer
 
 from sweep import models as _models
+from sweep.cli import board as _board
 from sweep.cli import punch as _punch
 from sweep.cli.inbox import inbox_app
 from sweep.cli.pr_state import pr_state_app
@@ -30,6 +31,7 @@ app.add_typer(qa_app, name="qa")
 app.add_typer(pr_state_app, name="pr-state")
 app.add_typer(inbox_app, name="inbox")
 _punch.register(app)
+_board.register(app)
 
 
 @app.command("models")
