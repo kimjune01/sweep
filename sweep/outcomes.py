@@ -36,10 +36,11 @@ def outcomes(days: int = 7) -> dict:
     end = dt.datetime.now(dt.timezone.utc).date()
     start = end - dt.timedelta(days=days - 1)
 
-    user = subprocess.run(
-        ["gh", "api", "user", "--jq", ".login"],
-        capture_output=True, text=True, check=False,
-    ).stdout.strip()
+    try:
+        u = gh_io.api("user", ttl=86400)  # identity rarely changes
+    except subprocess.CalledProcessError:
+        u = {}
+    user = (u.get("login") if isinstance(u, dict) else "") or ""
     if not user:
         return _empty(days, start, end)
 

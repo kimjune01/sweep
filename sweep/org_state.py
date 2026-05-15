@@ -28,10 +28,11 @@ CACHE_TTL = 300.0  # 5 min
 
 def _refresh() -> dict:
     """Pull open PR list from gh, group by org."""
-    user = subprocess.run(
-        ["gh", "api", "user", "--jq", ".login"],
-        capture_output=True, text=True, check=False,
-    ).stdout.strip()
+    try:
+        u = gh_io.api("user", ttl=86400)  # identity rarely changes
+    except subprocess.CalledProcessError:
+        u = {}
+    user = (u.get("login") if isinstance(u, dict) else "") or ""
     if not user:
         return {"orgs": {}, "fetched_at": time.time(), "user": ""}
 
