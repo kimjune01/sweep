@@ -505,8 +505,8 @@ def punch(
         total_open = queued + in_flight
         if total_open == 0:
             return "idle"
-        if limit is not None and queued > limit:
-            return "**STALLED**"
+        if limit is not None and queued >= limit:
+            return f"**capped** ({limit})"
         if actor == "retro":
             return "history"
         if in_flight > 0:
@@ -545,10 +545,10 @@ def punch(
     print()
     print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
     print()
-    print(f"| station | queued | in-flight | limit | oldest | flow ({spark_minutes}m × {spark_buckets}) | status |")
-    print( "|---|---:|---:|---:|---|---|---|")
-    for actor, queued, in_flight, limit_str, oldest, spark, status in rows:
-        print(f"| → {actor} | {queued} | {in_flight} | {limit_str} | {oldest} | `{spark}` | {status} |")
+    print(f"| station | queued | in-flight | oldest | flow ({spark_minutes}m × {spark_buckets}) | status |")
+    print( "|---|---:|---:|---|---|---|")
+    for actor, queued, in_flight, _limit_str, oldest, spark, status in rows:
+        print(f"| → {actor} | {queued} | {in_flight} | {oldest} | `{spark}` | {status} |")
     print()
 
     total = sum(len(sections[a]) for a in ACTIONABLE if a != "retro")
@@ -592,8 +592,8 @@ def _punch_rich(rows, sections, actionable, action_hint, include_wait, spark_buc
     )
     panels = []
     for actor, queued, in_flight, limit_str, oldest, spark, status in rows:
-        if "STALLED" in status:
-            border, color, label = "red", "red bold", "STALLED"
+        if "capped" in status:
+            border, color, label = "red", "red bold", f"capped ({limit_str})"
         elif status == "idle":
             border, color, label = "green", "green", "idle"
         elif status == "history":
@@ -605,7 +605,6 @@ def _punch_rich(rows, sections, actionable, action_hint, include_wait, spark_buc
         body = Text()
         body.append("queued    ", style="dim"); body.append(f"{queued}\n", style="bold")
         body.append("in-flight ", style="dim"); body.append(f"{in_flight}\n", style="bold")
-        body.append("limit     ", style="dim"); body.append(f"{limit_str}\n", style="dim")
         body.append(f"oldest    {oldest}\n", style="dim")
         body.append("flow      ", style="dim"); body.append(spark, style="cyan"); body.append("\n")
         body.append(label, style=color)
