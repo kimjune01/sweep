@@ -20,6 +20,7 @@ writes through.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -118,9 +119,20 @@ def _last_p_content(text: str) -> str:
     return body.strip()
 
 
+_EMPTY_P_RE = re.compile(
+    r"^\s*[-*]?\s*[(_]*\s*(none|empty|n/?a|nothing|—|-)\s*[)_]*\s*\.?\s*$",
+    re.IGNORECASE,
+)
+
+
 def has_prescription(retro: RetroFile) -> bool:
     """True if the file's last P section has non-whitespace content beyond
-    the conventional "(none)" placeholder."""
+    the conventional empty-marker placeholder.
+
+    Accepts a wide range of empty markers because LLM drafters phrase them
+    inconsistently: "(none)", "- none", "_none_", "N/A", "nothing
+    actionable", "—". If every non-blank line in the P body matches the
+    empty pattern, treat the section as empty (append-mode next firing)."""
     try:
         text = retro.path.read_text()
     except OSError:
@@ -128,9 +140,10 @@ def has_prescription(retro: RetroFile) -> bool:
     body = _last_p_content(text)
     if not body:
         return False
-    # Treat conventional placeholders as "still empty" so the skill can
-    # write "(none)" in a round and still expect append-mode next firing.
-    return body.lower() not in {"(none)", "none", "_none_", "—", "-"}
+    lines = [ln for ln in body.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    return not all(_EMPTY_P_RE.match(ln) for ln in lines)
 
 
 def record_round(round_block: str, *, slug: str | None = None) -> Path:
