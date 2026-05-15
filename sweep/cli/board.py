@@ -59,6 +59,8 @@ def board(
     max_rows = max((len(display[a]) for a, _ in cols), default=0)
     headers = [f"{label} ({counts[a]})" for a, label in cols]
 
+    print("# sweep board — PRs by station")
+    print()
     print("| " + " | ".join(headers) + " |")
     print("|" + "|".join("---" for _ in cols) + "|")
     if max_rows == 0:
