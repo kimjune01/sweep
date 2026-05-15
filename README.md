@@ -20,7 +20,7 @@ Two operator views — both emit GitHub-flavored markdown, both render styled in
 
 One screen: status line, compressed pipeline flow, per-station table, human inbox under the table.
 
-> `cpu 0% · mem 46% · 0 agents · 🌱 1 actionable`
+> `cpu 0% · mem 46% · 0 agents · 🌱 retro`
 >
 > `Triage ~ Investigate ~ ⌊8⌋ QA ~ ⌊1⌋ Drip ~ ⌊19⌋ In Review ~ Respondable`  _| `sweep kanban`_
 >

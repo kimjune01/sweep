@@ -196,9 +196,12 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
         parts.append("📋 HALTED")
     else:
         retros = retro_state.list_retros()
-        actionable = sum(1 for r in retros if retro_state.has_prescription(r))
+        actionable = any(retro_state.has_prescription(r) for r in retros)
         if actionable:
-            parts.append(f"🌱 {actionable} actionable")
+            # Names the kind of thing waiting, not a count — the inbox below
+            # carries the slug. Multiplicity is implicit; the operator's job
+            # is "go look at retro," not "count retros."
+            parts.append("🌱 retro")
     print(f"`{' · '.join(parts)}`")
     print()
 
