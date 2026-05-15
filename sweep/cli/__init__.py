@@ -23,6 +23,7 @@ from sweep.cli import floor as _floor
 from sweep.cli import kanban as _kanban
 from sweep.cli import pr as _pr
 from sweep.cli.attest import attest_app
+from sweep.cli.control import dry_app, pause_app
 from sweep.cli.inbox import inbox_app
 from sweep.cli.observe import observe_app
 from sweep.cli.pr_state import pr_state_app
@@ -43,6 +44,8 @@ app.add_typer(inbox_app, name="inbox")
 app.add_typer(attest_app, name="attest")
 app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
+app.add_typer(dry_app, name="dry")
+app.add_typer(pause_app, name="pause")
 _floor.register(app)
 _kanban.register(app)
 _pr.register(app)
