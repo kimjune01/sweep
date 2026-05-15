@@ -230,7 +230,7 @@ def _has_related_pr(repo: str, issue_number: int) -> bool:
     the same session don't re-fetch.
     """
     try:
-        events = asyncio.run(gh_io.issue_events(repo, issue_number))
+        events = gh_io.issue_events(repo, issue_number)
     except Exception:
         return False  # don't block on transient gh failures
     for ev in events:

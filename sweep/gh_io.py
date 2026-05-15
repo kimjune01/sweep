@@ -6,8 +6,12 @@ expiry-based, not forever — GitHub state moves, so a stale read is worse
 than a fresh fetch.
 
 Calling pattern:
-    prs = await gh_io.search_prs(f"author:@me is:open", ttl=60)
-    state = await gh_io.pr_view("hyperium/hyper", 4068, ttl=60)
+    prs = gh_io.search_prs(f"author:@me is:open", ttl=60)
+    state = gh_io.pr_view("hyperium/hyper", 4068, ttl=60)
+
+Functions are synchronous — the underlying work is just subprocess + sqlite,
+nothing to await. Activities call them directly; Temporal runs activities on
+a worker thread pool so blocking on subprocess inside an activity is fine.
 
 Forensics: every cache hit / miss is timestamped in ~/.sweep/cache/gh.db.
 Easy to ask "how many gh calls did this prospect run actually fire" by
@@ -112,24 +116,24 @@ def _cached_json(endpoint: str, args: list[str], ttl: int) -> list | dict:
 # ------------------------------------------------------------ public API
 
 
-async def search_repos(query: str, *, sort: str = "stars", order: str = "desc",
-                        limit: int = 30, fields: str | None = None,
-                        ttl: int = 600) -> list[dict]:
+def search_repos(query: str, *, sort: str = "stars", order: str = "desc",
+                  limit: int = 30, fields: str | None = None,
+                  ttl: int = 600) -> list[dict]:
     args = ["search", "repos", query,
             "--sort", sort, "--order", order, "--limit", str(limit),
             "--json", fields or "fullName,stargazersCount,openIssuesCount,pushedAt,isArchived,description"]
     return _cached_json("search_repos", args, ttl)
 
 
-async def search_issues(query: str, *, limit: int = 30,
-                        fields: str | None = None, ttl: int = 120) -> list[dict]:
+def search_issues(query: str, *, limit: int = 30,
+                   fields: str | None = None, ttl: int = 120) -> list[dict]:
     args = ["search", "issues", query, "--limit", str(limit),
             "--json", fields or "number,title,url,labels,updatedAt,repository"]
     return _cached_json("search_issues", args, ttl)
 
 
-async def search_prs(query: str, *, state: str | None = None, limit: int = 30,
-                      fields: str | None = None, ttl: int = 60) -> list[dict]:
+def search_prs(query: str, *, state: str | None = None, limit: int = 30,
+                fields: str | None = None, ttl: int = 60) -> list[dict]:
     args = ["search", "prs", query, "--limit", str(limit),
             "--json", fields or "repository,number,title,url,createdAt,updatedAt,author,state"]
     if state:
@@ -137,8 +141,8 @@ async def search_prs(query: str, *, state: str | None = None, limit: int = 30,
     return _cached_json("search_prs", args, ttl)
 
 
-async def pr_view(repo: str, pr: int, *,
-                  fields: str | None = None, ttl: int = 60) -> dict:
+def pr_view(repo: str, pr: int, *,
+             fields: str | None = None, ttl: int = 60) -> dict:
     if "/" not in repo:
         raise ValueError(f"repo must be owner/repo, got {repo!r}")
     args = ["pr", "view", str(pr), "--repo", repo, "--json",
@@ -148,9 +152,9 @@ async def pr_view(repo: str, pr: int, *,
     return result if isinstance(result, dict) else {}
 
 
-async def pr_list(repo: str, *, state: str = "open", limit: int = 30,
-                   search: str | None = None,
-                   fields: str | None = None, ttl: int = 60) -> list[dict]:
+def pr_list(repo: str, *, state: str = "open", limit: int = 30,
+             search: str | None = None,
+             fields: str | None = None, ttl: int = 60) -> list[dict]:
     args = ["pr", "list", "--repo", repo, "--state", state,
             "--limit", str(limit), "--json",
             fields or "number,title,author,state,mergedAt,closedAt,updatedAt"]
@@ -159,21 +163,21 @@ async def pr_list(repo: str, *, state: str = "open", limit: int = 30,
     return _cached_json("pr_list", args, ttl)
 
 
-async def issue_view(repo: str, issue: int, *,
-                      fields: str | None = None, ttl: int = 300) -> dict:
+def issue_view(repo: str, issue: int, *,
+                fields: str | None = None, ttl: int = 300) -> dict:
     args = ["issue", "view", str(issue), "--repo", repo, "--json",
             fields or "number,title,body,labels,state,author,createdAt,updatedAt,comments"]
     result = _cached_json("issue_view", args, ttl)
     return result if isinstance(result, dict) else {}
 
 
-async def issue_events(repo: str, issue: int, *, ttl: int = 300) -> list[dict]:
+def issue_events(repo: str, issue: int, *, ttl: int = 300) -> list[dict]:
     """Cross-reference + label + assignment events. Used for dedup-against-PRs."""
     args = ["api", f"repos/{repo}/issues/{issue}/events", "--paginate"]
     return _cached_json("issue_events", args, ttl)
 
 
-async def pr_inline_comments(repo: str, pr: int, *, ttl: int = 120) -> list[dict]:
+def pr_inline_comments(repo: str, pr: int, *, ttl: int = 120) -> list[dict]:
     """Inline (code-line) review comments on a PR.
 
     Distinct from issue-conversation comments. These are the threaded
@@ -186,7 +190,7 @@ async def pr_inline_comments(repo: str, pr: int, *, ttl: int = 120) -> list[dict
     return _cached_json("pr_inline_comments", args, ttl)
 
 
-async def api(path: str, *, paginate: bool = False, ttl: int = 300) -> list | dict:
+def api(path: str, *, paginate: bool = False, ttl: int = 300) -> list | dict:
     """Raw REST API call. For endpoints not covered by typed methods above."""
     args = ["api", path]
     if paginate:
@@ -194,7 +198,7 @@ async def api(path: str, *, paginate: bool = False, ttl: int = 300) -> list | di
     return _cached_json("api", args, ttl)
 
 
-async def api_graphql(query: str, *, ttl: int = 300) -> dict:
+def api_graphql(query: str, *, ttl: int = 300) -> dict:
     args = ["api", "graphql", "-f", f"query={query}"]
     result = _cached_json("api_graphql", args, ttl)
     return result if isinstance(result, dict) else {}

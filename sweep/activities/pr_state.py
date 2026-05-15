@@ -83,7 +83,7 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     # within the TTL window are free.
     from sweep import gh_io
     try:
-        data["_inline_comments"] = await gh_io.pr_inline_comments(repo, pr)
+        data["_inline_comments"] = gh_io.pr_inline_comments(repo, pr)
     except Exception:
         data["_inline_comments"] = []
 
