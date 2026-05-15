@@ -29,6 +29,7 @@ from sweep.types import (
 PR_STATE_MODEL = models.default_for("orchestrate")
 
 INBOX_DIR = Path.home() / ".sweep" / "inbox"
+CLASSIFIED_INBOX = INBOX_DIR / "classified.jsonl"
 
 
 # ------------------------------------------------------------ gh wrappers
@@ -197,10 +198,87 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
 
 
 @activity.defn
+async def deposit_classified(result: PrStateResult) -> str:
+    """Write one PrStateResult to classified.jsonl as the unrouted record.
+
+    Routing happens later (route_classified). Decoupling classification
+    from routing means rule changes don't require re-classifying — and
+    once Sonnet is wired into classify_reviews, that's the expensive part
+    we don't want to repay.
+    """
+    ts = dt.datetime.now(dt.timezone.utc)
+    record = {
+        "ts": ts.isoformat(),
+        "repo": result.repo,
+        "pr": result.pr,
+        "branch": result.branch,
+        "bucket": result.bucket,
+        "signals": result.signals,
+        "reason": result.reason,
+    }
+    CLASSIFIED_INBOX.parent.mkdir(parents=True, exist_ok=True)
+    with open(CLASSIFIED_INBOX, "a") as f:
+        f.write(json.dumps(record) + "\n")
+    return str(CLASSIFIED_INBOX)
+
+
+@activity.defn
+async def route_classified() -> dict:
+    """Read classified.jsonl, route each PR to its bucket's inbox.
+
+    Runs on its own takt — cheap, rule-based, can re-run if routing logic
+    changes. Idempotent per (repo, pr) within a minute via msg_id dedup.
+    """
+    if not CLASSIFIED_INBOX.exists():
+        return {"read": 0, "routed": {}, "skipped_acked": 0}
+
+    # Dedup: latest record per (repo, pr).
+    latest: dict[tuple[str, int], dict] = {}
+    for line in CLASSIFIED_INBOX.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            r = json.loads(line)
+            latest[(r["repo"], r["pr"])] = r
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    routed: dict[str, int] = {}
+    for (repo, pr), r in latest.items():
+        bucket = r.get("bucket", "wait")
+        actor, intent = BUCKET_ROUTING.get(bucket, ("retro", "audit"))
+        ts = dt.datetime.now(dt.timezone.utc)
+        ts_minute = ts.strftime("%Y-%m-%dT%H:%MZ")
+        slug = repo.replace("/", "-")
+        msg = Message(
+            msg_id=f"router-{ts_minute}-{slug}-{pr}",
+            sender="router",
+            intent=intent,
+            repo=repo,
+            pr=pr,
+            branch=r.get("branch"),
+            payload={
+                "bucket": bucket,
+                "signals": r.get("signals", {}),
+                "reason": r.get("reason", ""),
+            },
+            ts=ts.isoformat(),
+        )
+        inbox = INBOX_DIR / f"{actor}.jsonl"
+        with open(inbox, "a") as f:
+            f.write(json.dumps(asdict(msg)) + "\n")
+        routed[actor] = routed.get(actor, 0) + 1
+
+    return {"read": len(latest), "routed": routed}
+
+
+@activity.defn
 async def deliver_to_inbox(result: PrStateResult) -> str:
     """Append one message to the bucket's destination inbox. Returns the path
-    written. Idempotent via msg_id — same minute, same bucket, same PR ⇒ same
-    msg_id ⇒ receivers dedupe."""
+    written. Direct synchronous routing — kept for the one-shot CLI path
+    (sweep pr-state run). Prefer deposit_classified + route_classified for
+    the Temporal/cron flow.
+    """
     actor, intent = BUCKET_ROUTING[result.bucket]
     ts = dt.datetime.now(dt.timezone.utc)
     ts_minute = ts.strftime("%Y-%m-%dT%H:%MZ")
