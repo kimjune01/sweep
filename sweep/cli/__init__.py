@@ -20,6 +20,7 @@ import typer
 
 from sweep import models as _models
 from sweep.cli import board as _board
+from sweep.cli import floor as _floor
 from sweep.cli import punch as _punch
 from sweep.cli.attest import attest_app
 from sweep.cli.inbox import inbox_app
@@ -44,6 +45,7 @@ app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
 _punch.register(app)
 _board.register(app)
+_floor.register(app)
 
 
 @app.command("models")
