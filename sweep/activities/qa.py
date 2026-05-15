@@ -225,11 +225,29 @@ async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
     start = time.time()
     test_att = await test_attestation(req)
 
-    diff = subprocess.run(
+    diff_proc = subprocess.run(
         ["git", "-C", req.worktree, "diff", "origin/HEAD..."],
         capture_output=True,
         text=True,
-    ).stdout
+    )
+    if diff_proc.returncode != 0:
+        # `git diff origin/HEAD...` exits 128 when origin/HEAD is unset
+        # (worktrees added via `git worktree add`, shallow clones without
+        # --no-single-branch, repos provisioned without `gh repo clone`).
+        # Falling through silently sends an empty diff to both reviewers,
+        # who then return verdict: pass on nothing. Fail loud instead.
+        raise ApplicationError(
+            f"git diff failed (rc={diff_proc.returncode}): "
+            f"{(diff_proc.stderr or '')[:300]}",
+            non_retryable=True,
+        )
+    diff = diff_proc.stdout
+    if not diff.strip():
+        raise ApplicationError(
+            "git diff returned empty — no changes between origin/HEAD and "
+            "the fix branch; nothing for reviewers to attest",
+            non_retryable=True,
+        )
 
     codex_att = await codex_review(req, diff)
     gemini_first = await gemini_review(req, diff, 1)
