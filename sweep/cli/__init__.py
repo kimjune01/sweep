@@ -9,6 +9,8 @@ Each subgroup lives in its own module:
   cli/observe.py   — counters, events, cursor for retro
   cli/floor.py     — factory-floor cockpit (status + flow + table)
   cli/kanban.py    — kanban swim lanes (per-station PR detail)
+  cli/drip.py      — drip queue list + enqueue
+  cli/missing.py   — `sweep missing` wishlist (unknown-call log)
 
 The console-script entry point is `sweep.cli:app` (also re-exported as
 `sweep.client:app` for backward compatibility).
@@ -16,14 +18,19 @@ The console-script entry point is `sweep.cli:app` (also re-exported as
 
 from __future__ import annotations
 
+import sys
+
+import click
 import typer
 
-from sweep import models as _models
+from sweep import missing_calls, models as _models
 from sweep.cli import floor as _floor
 from sweep.cli import kanban as _kanban
+from sweep.cli import missing as _missing
 from sweep.cli import pr as _pr
 from sweep.cli.attest import attest_app
 from sweep.cli.control import dry_app, pause_app
+from sweep.cli.drip import drip_app
 from sweep.cli.inbox import inbox_app
 from sweep.cli.observe import observe_app
 from sweep.cli.pr_state import pr_state_app
@@ -44,11 +51,13 @@ app.add_typer(inbox_app, name="inbox")
 app.add_typer(attest_app, name="attest")
 app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
+app.add_typer(drip_app, name="drip")
 app.add_typer(dry_app, name="dry")
 app.add_typer(pause_app, name="pause")
 _floor.register(app)
 _kanban.register(app)
 _pr.register(app)
+_missing.register(app)
 
 
 @app.command("models")
@@ -57,5 +66,28 @@ def models_cmd() -> None:
     print(_models.describe())
 
 
+def main() -> None:
+    """Run the Typer app, logging unknown-call failures to the
+    missing-calls wishlist. Re-raises so the user / agent still sees
+    the standard error output and exit code."""
+    try:
+        app(standalone_mode=False)
+    except click.exceptions.UsageError as e:
+        # Typer/click raises UsageError for unknown commands ("No such
+        # command 'foo'.") and unknown options ("No such option: --bar").
+        # Either is a wishlist signal — an agent reached for it.
+        try:
+            missing_calls.record(sys.argv[1:], str(e))
+        except Exception:
+            pass  # never let logging failure mask the real error
+        # Emit the original error message + exit code the way click would.
+        e.show()
+        sys.exit(e.exit_code if e.exit_code is not None else 2)
+    except click.exceptions.Abort:
+        sys.exit(1)
+    except SystemExit:
+        raise
+
+
 if __name__ == "__main__":
-    app()
+    main()

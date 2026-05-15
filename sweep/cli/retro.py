@@ -8,12 +8,61 @@ log carries the receipt" signal.
 
 from __future__ import annotations
 
+import json
+
 import typer
 
-from sweep import observe, retro_state
+from sweep import observe, retro_params, retro_state
 
 
 retro_app = typer.Typer(help="Retro pager — SOAP one-pagers", no_args_is_help=True)
+
+
+@retro_app.command("params")
+def retro_params_cmd(
+    repo: str = typer.Option(..., help="owner/repo"),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON (default: human)"),
+    history: bool = typer.Option(False, "--history", help="Show every update, not just resolved values"),
+) -> None:
+    """Print per-repo retro parameters (last-value-wins per key)."""
+    if history:
+        rows = retro_params.history(repo)
+        if json_out:
+            print(json.dumps(rows, indent=2))
+        else:
+            if not rows:
+                print(f"# no retro params for {repo}")
+            else:
+                for r in rows:
+                    val = json.dumps(r.get("value"))
+                    print(f"  {r.get('ts')}  {r.get('key')} = {val}")
+                    print(f"      reason: {r.get('reason', '')}")
+        return
+    resolved = retro_params.resolved(repo)
+    if json_out:
+        print(json.dumps(resolved, indent=2))
+    else:
+        if not resolved:
+            print(f"# no retro params for {repo}")
+            return
+        for k, v in sorted(resolved.items()):
+            print(f"  {k} = {json.dumps(v)}")
+
+
+@retro_app.command("set")
+def retro_set(
+    repo: str = typer.Option(..., help="owner/repo"),
+    key: str = typer.Option(..., help="param key (e.g. merge_rate, cooldown_until)"),
+    value: str = typer.Option(..., help="param value — parsed as JSON if possible, else string"),
+    reason: str = typer.Option(..., help="one-line reason for the update"),
+) -> None:
+    """Append a parameter update to the repo's retro params file."""
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        parsed = value  # plain string
+    entry = retro_params.append(repo, key=key, value=parsed, reason=reason)
+    print(json.dumps(entry, separators=(",", ":")))
 
 
 @retro_app.command("list")

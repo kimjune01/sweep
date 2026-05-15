@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sweep = "sweep.client:app"
+sweep = "sweep.client:main"
 sweep-worker = "sweep.worker:main"
 
 [build-system]

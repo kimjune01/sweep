@@ -7,10 +7,10 @@ the refactor.
 
 from __future__ import annotations
 
-from sweep.cli import app
+from sweep.cli import app, main
 
-__all__ = ["app"]
+__all__ = ["app", "main"]
 
 
 if __name__ == "__main__":
-    app()
+    main()
