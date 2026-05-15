@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from sweep import gh_io
+from sweep.io_safe import atomic_write_text
 
 
 CACHE = Path.home() / ".sweep" / "cache" / "outcomes.json"
@@ -96,9 +97,8 @@ def outcomes(days: int = 7) -> dict:
         "closed_per_day": closed_per_day,
         "fetched_at": time.time(),
     }
-    CACHE.parent.mkdir(parents=True, exist_ok=True)
     try:
-        CACHE.write_text(json.dumps(result))
+        atomic_write_text(CACHE, json.dumps(result))
     except OSError:
         pass
     return result

@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 from sweep import gh_io
+from sweep.io_safe import atomic_write_text
 
 
 CACHE = Path.home() / ".sweep" / "cache" / "org_state.json"
@@ -65,9 +66,8 @@ def _refresh() -> dict:
         "fetched_at": time.time(),
         "user": user,
     }
-    CACHE.parent.mkdir(parents=True, exist_ok=True)
     try:
-        CACHE.write_text(json.dumps(result))
+        atomic_write_text(CACHE, json.dumps(result))
     except OSError:
         pass
     return result
