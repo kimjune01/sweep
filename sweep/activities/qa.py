@@ -97,12 +97,28 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     def _run(args: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(args, cwd=worktree, capture_output=True, text=True)
 
-    _run(["git", "checkout", "--quiet", "HEAD"])
+    # Reset the worktree to a known clean state before swapping branches.
+    # A dirty worktree would cause the subsequent `git checkout default`
+    # to fail silently (under check=False) and the master/fix invariant
+    # to be tested against the wrong tree.
+    head_co = _run(["git", "checkout", "--quiet", "HEAD"])
+    if head_co.returncode != 0:
+        raise ApplicationError(
+            f"git checkout HEAD failed (rc={head_co.returncode}): "
+            f"{(head_co.stderr or '')[:300]}",
+            non_retryable=True,
+        )
     default = _run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).stdout.strip()
     default = default.split("/", 1)[1] if "/" in default else "main"
 
     _heartbeat({"stage": "checkout_master"})
-    _run(["git", "checkout", "--quiet", default])
+    master_co = _run(["git", "checkout", "--quiet", default])
+    if master_co.returncode != 0:
+        raise ApplicationError(
+            f"git checkout {default} failed (rc={master_co.returncode}): "
+            f"{(master_co.stderr or '')[:300]}",
+            non_retryable=True,
+        )
     _heartbeat({"stage": "test_on_master"})
     master_run = _run(shlex.split(req.test_cmd))
     log.append(f"master ({default}) exit={master_run.returncode}")
@@ -113,7 +129,13 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
         )
 
     _heartbeat({"stage": "checkout_fix"})
-    _run(["git", "checkout", "--quiet", req.branch])
+    fix_co = _run(["git", "checkout", "--quiet", req.branch])
+    if fix_co.returncode != 0:
+        raise ApplicationError(
+            f"git checkout {req.branch} failed (rc={fix_co.returncode}): "
+            f"{(fix_co.stderr or '')[:300]}",
+            non_retryable=True,
+        )
     _heartbeat({"stage": "test_on_fix"})
     fix_run = _run(shlex.split(req.test_cmd))
     log.append(f"fix ({req.branch}) exit={fix_run.returncode}")
