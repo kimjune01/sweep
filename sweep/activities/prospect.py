@@ -22,7 +22,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import seen
+from sweep import org_state, seen
 from sweep.types import Message
 
 
@@ -162,6 +162,12 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
                 return False
         except (ValueError, AttributeError):
             pass
+    # Org-state gate: don't surface issues for orgs that already have
+    # one of our PRs open. Reviews are org-gated; adding more work to a
+    # blocked org wastes tokens and risks the maintainer-spam tax.
+    org = org_state.org_of(repo.name_with_owner)
+    if org_state.is_org_blocked(org):
+        return False
     return True
 
 

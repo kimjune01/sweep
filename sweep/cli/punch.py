@@ -7,7 +7,7 @@ import time
 
 import typer
 
-from sweep import glyphs
+from sweep import glyphs, org_state
 from sweep.inbox_state import inbox_states
 from sweep.outcomes import outcomes as fetch_outcomes
 from sweep.system import system_status
@@ -161,6 +161,16 @@ def _render_markdown(rows, sections, in_flight_ids, actionable, include_wait,
             age = _age(wf.get("started"))
             print(f"- `{wf.get('type', '?')}` `{wf.get('id', '?')}` _running {age}_")
     print()
+    blocked = org_state.blocked_orgs()
+    if blocked:
+        # Show the heaviest 5 (most open PRs) + total count. JIT principle:
+        # if many orgs are blocked, prospect has correctly stopped surfacing
+        # work — the constraint is review throughput, not upstream supply.
+        heavy = sorted(blocked.items(), key=lambda kv: -len(kv[1]))[:5]
+        total_prs = sum(len(prs) for prs in blocked.values())
+        head = ", ".join(f"{o}({len(prs)})" for o, prs in heavy)
+        print(f"`org gate`  {len(blocked)} orgs blocked ({total_prs} PRs in review)  ·  heaviest: {head}")
+        print()
     print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
     print()
     print(f"| station | queued | in-flight | rate | var | trend ({spark_minutes}m × {spark_buckets}, % of cap) | oldest | status |")
