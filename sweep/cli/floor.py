@@ -234,11 +234,12 @@ def _render_inbox(s: dict[str, list[dict]] | None) -> None:
     hidden entirely when both are empty."""
     lines: list[str] = []
 
-    # Actionable retros first.
+    # Actionable retros first — file:// link so the operator opens the
+    # SOAP one-pager in one click rather than running a separate command.
     for r in retro_state.list_retros():
         if not retro_state.has_prescription(r):
             continue
-        lines.append(f"- 🌱 retro {r.name} — `sweep retro show {r.name}`")
+        lines.append(f"- 🌱 [retro {r.name}]({r.path.as_uri()})")
 
     # Respondable PRs.
     if s:

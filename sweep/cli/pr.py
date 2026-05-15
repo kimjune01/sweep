@@ -98,7 +98,7 @@ def _render(repo: str, pr: int, data: dict) -> None:
 
     print(f"# {repo}#{pr} — {title}")
     print()
-    print(f"<{url}>  _| `gh pr view {repo} {pr}`_")
+    print(f"<{url}>")
     print()
 
     _render_hypothesis(repo)
@@ -119,7 +119,12 @@ def _hypothesis_path(repo: str) -> Path:
 
 def _render_hypothesis(repo: str) -> None:
     """Terse bullets pulled from the maintainer-preferences section of the
-    repo's hypothesis file. Hidden when the file doesn't exist."""
+    repo's hypothesis file. Hidden when the file doesn't exist.
+
+    The full file is reachable via the file:// link below the bullets;
+    a markdown viewer that handles file:// (Claude Code, glow with a
+    file handler, the system browser) opens it on click. Plain
+    terminals show the URL — still copy-pasteable."""
     path = _hypothesis_path(repo)
     if not path.exists():
         return
@@ -133,7 +138,8 @@ def _render_hypothesis(repo: str) -> None:
     extra = len(bullets) - HYPOTHESIS_BULLETS
     if extra > 0:
         print(f"- _… +{extra} more_")
-    print(f"_| `cat {path}`_")
+    print()
+    print(f"[Hypothesis Graph]({path.as_uri()})")
     print()
     print("---")
     print()
@@ -253,23 +259,19 @@ def _stale(updated: str) -> str:
 
 
 def _render_origin(repo: str, data: dict) -> None:
-    """Origin pointers — issue references in PR body + hypothesis file path.
+    """Origin — issue references in the PR body, linked to GitHub.
+
+    Hypothesis is already linked at the top so it doesn't repeat here.
     No header — these are pointer-shaped lines, distinct from the stats
     line above and the bullet lists below."""
     body = data.get("body") or ""
     refs = sorted(set(int(n) for n in REF_RE.findall(body)))
-    hypo = _hypothesis_path(repo)
-
-    if not refs and not hypo.exists():
+    if not refs:
         return
-
-    if refs:
-        first = refs[0]
-        url = f"https://github.com/{repo}/issues/{first}"
-        more = f" (+{len(refs)-1} more)" if len(refs) > 1 else ""
-        print(f"issue #{first}{more} — `gh issue view {repo} {first}` · <{url}>")
-    if hypo.exists():
-        print(f"hypothesis — `cat {hypo}`")
+    first = refs[0]
+    url = f"https://github.com/{repo}/issues/{first}"
+    more = f" (+{len(refs)-1} more)" if len(refs) > 1 else ""
+    print(f"[issue #{first}]({url}){more}")
     print()
 
 
@@ -314,12 +316,13 @@ def _render_receipts(msg_ids: list[str], artifacts: list[tuple[str, Path]]) -> N
     total = len(artifacts)
     shown = artifacts[:RECEIPTS_LIMIT]
     # No header — locality names these: after origin pointers, before
-    # events. The `filename` + msg_id shape distinguishes from the
-    # timestamp-leading event lines below.
+    # events. Filenames are file:// links so the operator opens the
+    # raw artifact in one click instead of switching to a terminal.
     for msg_id, p in shown:
-        print(f"`{p.name}` _msg_id `{msg_id}`_")
+        print(f"[{p.name}]({p.as_uri()}) _msg_id `{msg_id}`_")
     if total > RECEIPTS_LIMIT:
-        print(f"_… +{total - RECEIPTS_LIMIT} more · `sweep attest for-msg {msg_ids[0]}`_")
+        dir_link = (ATTESTATIONS_DIR / msg_ids[0]).as_uri()
+        print(f"_… +{total - RECEIPTS_LIMIT} more — [more receipts]({dir_link})_")
     print()
 
 

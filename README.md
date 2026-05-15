@@ -32,7 +32,7 @@ One screen: status line, compressed pipeline flow, per-station table, human inbo
 > | → drip        |      1 |         0 | 0.0/h |  ·  |                            |  10h   | queued                |
 > | → respondable |      1 |         0 | 0.5/h |  ●  |  ▁                         |   0s   | queued                |
 >
-> - 🌱 retro 2026-05-15-1319 — `sweep retro show 2026-05-15-1319`
+> - 🌱 [retro 2026-05-15-1319](file:///Users/you/.sweep/retros/2026-05-15-1319.md)
 > - 💬 [mgree/ffs#146](https://github.com/mgree/ffs/pull/146) — maintainer asked: opt-in?
 > - ⬆️ [sharkdp/bat#3741](https://github.com/sharkdp/bat/pull/3741) — rebase onto main
 
