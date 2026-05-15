@@ -39,7 +39,12 @@ Verdict = Literal["pass", "fail", "revise", "stubbed"]
 @dataclass
 class GateAttestation:
     """A single reviewer's attestation. The `artifact_path` and `sha256` are
-    the receipts — the gate verifier re-hashes the artifact to detect forgery."""
+    the receipts — the gate verifier re-hashes the artifact to detect forgery.
+
+    Event-pinned fuses (populated per attestation kind, None when irrelevant):
+    each gate pins itself to a specific value of the world. The fuse blows
+    when that value changes — wall-clock time has nothing to do with it.
+    """
 
     verdict: Verdict
     artifact_path: str  # where the raw response was captured
@@ -47,6 +52,10 @@ class GateAttestation:
     rounds: int = 1
     verbatim_excerpt: str = ""  # must substring-match contents of artifact_path
     provenance: str = ""  # e.g. "codex" or "opus-fallback"
+    # Fuse pins — set the ones relevant to this attestation kind.
+    pinned_head_sha: str | None = None         # qa gates: invalid if PR head moves
+    pinned_base_sha: str | None = None         # rebase status: invalid if base advances
+    pinned_latest_review_id: str | None = None  # review classification: invalid if newer review arrives
 
 
 @dataclass

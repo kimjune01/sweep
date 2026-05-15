@@ -28,13 +28,27 @@ CODE_MODEL  = models.default_for("code")          # opus, for impl/fix tasks
 ATTESTATIONS = Path.home() / ".sweep" / "attestations"
 
 
-def _capture(msg_id: str, name: str, content: str) -> GateAttestation:
+def _head_sha(worktree: str) -> str:
+    """Capture the current HEAD SHA of the worktree. Pins fuses to this code."""
+    out = subprocess.run(
+        ["git", "-C", worktree, "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=False,
+    )
+    return out.stdout.strip()
+
+
+def _capture(msg_id: str, name: str, content: str, *,
+             worktree: str | None = None) -> GateAttestation:
     """Write the reviewer response to a deterministic path, return its receipt.
 
     The activity that did the call is the only thing that ever writes here.
     A downstream consumer cannot fabricate this — it can only point at the
     bytes that already exist on disk. Atomic write closes the partial-write
     crash window.
+
+    If `worktree` is provided, pin the attestation to its current HEAD SHA.
+    This is the event-driven fuse: the attestation is valid as long as the
+    PR head matches; the moment a new commit lands the fuse blows.
     """
     p = ATTESTATIONS / msg_id / f"{name}.txt"
     sha = atomic_write_text(p, content)
@@ -43,6 +57,7 @@ def _capture(msg_id: str, name: str, content: str) -> GateAttestation:
         artifact_path=str(p),
         sha256=sha,
         verbatim_excerpt=content[:200],
+        pinned_head_sha=_head_sha(worktree) if worktree else None,
     )
 
 
@@ -89,7 +104,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
         )
 
     body = "\n".join(log) + "\n\n--- master stderr ---\n" + master_run.stderr + "\n--- fix stdout ---\n" + fix_run.stdout
-    att = _capture(req.msg_id, "test", body)
+    att = _capture(req.msg_id, "test", body, worktree=req.worktree)
     att.verdict = "pass"
     return att
 
@@ -105,7 +120,7 @@ async def codex_review(req: QaOneEntryRequest, diff: str) -> GateAttestation:
     # value to history so future replays see the same result.
     response = f"<codex stub for {req.repo}#{req.branch}>\nverdict: pass"
     await asyncio.sleep(0)
-    att = _capture(req.msg_id, "codex", response)
+    att = _capture(req.msg_id, "codex", response, worktree=req.worktree)
     att.verdict = "pass"
     att.provenance = "codex"
     return att
@@ -119,7 +134,7 @@ async def gemini_review(req: QaOneEntryRequest, diff: str, round_num: int) -> Ga
 
     response = f"<gemini stub round {round_num} for {req.repo}#{req.branch}>\nverdict: pass"
     await asyncio.sleep(0)
-    att = _capture(req.msg_id, f"gemini_r{round_num}", response)
+    att = _capture(req.msg_id, f"gemini_r{round_num}", response, worktree=req.worktree)
     att.verdict = "pass"
     return att
 
