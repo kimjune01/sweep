@@ -28,6 +28,20 @@ CODE_MODEL  = models.default_for("code")          # opus, for impl/fix tasks
 ATTESTATIONS = Path.home() / ".sweep" / "attestations"
 
 
+def _heartbeat(details: dict) -> None:
+    """Heartbeat from inside an activity context, no-op outside.
+
+    qa_one_entry is callable as a plain coroutine (terminal-mode + e2e
+    scripts) where there is no activity context — but the sub-activities
+    it composes still call activity.heartbeat. Swallow the runtime error
+    so the convenience composer keeps working from scripts.
+    """
+    try:
+        activity.heartbeat(details)
+    except RuntimeError:
+        pass
+
+
 def _head_sha(worktree: str) -> str:
     """Capture the current HEAD SHA of the worktree. Pins fuses to this code."""
     out = subprocess.run(
@@ -81,9 +95,9 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     default = _run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).stdout.strip()
     default = default.split("/", 1)[1] if "/" in default else "main"
 
-    activity.heartbeat({"stage": "checkout_master"})
+    _heartbeat({"stage": "checkout_master"})
     _run(["git", "checkout", "--quiet", default])
-    activity.heartbeat({"stage": "test_on_master"})
+    _heartbeat({"stage": "test_on_master"})
     master_run = _run(req.test_cmd.split())
     log.append(f"master ({default}) exit={master_run.returncode}")
     if master_run.returncode == 0:
@@ -92,9 +106,9 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
             non_retryable=True,
         )
 
-    activity.heartbeat({"stage": "checkout_fix"})
+    _heartbeat({"stage": "checkout_fix"})
     _run(["git", "checkout", "--quiet", req.branch])
-    activity.heartbeat({"stage": "test_on_fix"})
+    _heartbeat({"stage": "test_on_fix"})
     fix_run = _run(req.test_cmd.split())
     log.append(f"fix ({req.branch}) exit={fix_run.returncode}")
     if fix_run.returncode != 0:
