@@ -626,13 +626,36 @@ def punch(
     outcome_days: int = typer.Option(7, help="Outcomes window in days"),
     rich_mode: bool = typer.Option(False, "--rich", help="Render Rich panels instead of markdown"),
     no_outcomes: bool = typer.Option(False, "--no-outcomes", help="Skip the gh-backed outcomes fetch"),
+    watch: bool = typer.Option(False, "--watch", "-w", help="Refresh continuously as a live dashboard"),
+    interval: int = typer.Option(30, "--interval", "-i", help="Refresh interval (seconds) when --watch"),
 ) -> None:
     """Factory-floor kanban view + per-station punch list.
 
     Default output is GitHub-flavored markdown — renders in Claude Code, looks
     fine in a plain terminal, and pipes cleanly to files / clipboard. Use
-    --rich for Rich panels in a live terminal.
+    --rich for Rich panels in a live terminal. --watch refreshes in place
+    every --interval seconds.
     """
+    if watch:
+        import time as _time
+        try:
+            while True:
+                # Clear screen + cursor home (ANSI). Works in most terminals.
+                print("\x1b[2J\x1b[H", end="")
+                _punch_once(include_wait, spark_minutes, spark_buckets, outcome_days,
+                            rich_mode, no_outcomes)
+                print()
+                print(f"_refreshes every {interval}s — Ctrl-C to exit_")
+                _time.sleep(interval)
+        except KeyboardInterrupt:
+            return
+        return
+    _punch_once(include_wait, spark_minutes, spark_buckets, outcome_days,
+                rich_mode, no_outcomes)
+
+
+def _punch_once(include_wait, spark_minutes, spark_buckets, outcome_days,
+                rich_mode, no_outcomes) -> None:
     ACTIONABLE = ["drip", "investigate", "qa"]
     if include_wait:
         ACTIONABLE = ACTIONABLE + ["retro"]
