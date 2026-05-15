@@ -16,7 +16,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import gh_io, models, observe, retro_state
+from sweep import control_state, gh_io, models, observe, retro_state
 from sweep.io_safe import atomic_write_text
 from sweep.types import (
     BUCKET_ROUTING,
@@ -227,6 +227,10 @@ async def route_classified() -> dict:
         # while the human owes Attend on pending SOAP one-pagers.
         observe.incr("halted_skip:route")
         return {"read": 0, "routed": {}, "skipped_acked": 0, "halted": True}
+    if control_state.is_paused():
+        observe.incr("paused_skip:route")
+        return {"read": 0, "routed": {}, "skipped_acked": 0,
+                "halted": False, "paused": True}
     if not CLASSIFIED_INBOX.exists():
         return {"read": 0, "routed": {}, "skipped_acked": 0}
 
@@ -267,7 +271,13 @@ async def route_classified() -> dict:
             },
             ts=now_iso,
         )
-        inbox = INBOX_DIR / f"{actor}.jsonl"
+        if control_state.is_dry():
+            inbox = INBOX_DIR / f"{actor}.dry.jsonl"
+            observe.event("dry_skip", site="route_classified",
+                          actor=actor, msg_id=msg.msg_id,
+                          repo=repo, pr=pr)
+        else:
+            inbox = INBOX_DIR / f"{actor}.jsonl"
         with open(inbox, "a") as f:
             f.write(json.dumps(asdict(msg)) + "\n")
         routed[actor] = routed.get(actor, 0) + 1
@@ -302,8 +312,19 @@ async def deliver_to_inbox(result: PrStateResult) -> str:
     )
 
     INBOX_DIR.mkdir(parents=True, exist_ok=True)
-    inbox = INBOX_DIR / f"{actor}.jsonl"
     line = json.dumps(asdict(msg)) + "\n"
+    if control_state.is_dry():
+        # Rehearsal trace — write the message to a sibling .dry.jsonl
+        # instead of the live inbox. Downstream actors don't see it; the
+        # operator can `cat` the file later to see what would have shipped.
+        dry_inbox = INBOX_DIR / f"{actor}.dry.jsonl"
+        with open(dry_inbox, "a") as f:
+            f.write(line)
+        observe.event("dry_skip", site="deliver_to_inbox",
+                      actor=actor, msg_id=msg.msg_id,
+                      repo=result.repo, pr=result.pr)
+        return str(dry_inbox)
+    inbox = INBOX_DIR / f"{actor}.jsonl"
     # Append-only — read all lines later, dedupe by msg_id.
     with open(inbox, "a") as f:
         f.write(line)

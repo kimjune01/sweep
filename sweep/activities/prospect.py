@@ -23,7 +23,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import gh_io, observe, org_state, retro_state, seen
+from sweep import control_state, gh_io, observe, org_state, retro_state, seen
 from sweep.io_safe import atomic_write_text
 from sweep.types import Message
 
@@ -278,6 +278,16 @@ async def deposit_issue_to_triaged(issue: IssueCandidate) -> str:
         ts=ts.isoformat(),
     )
     TRIAGED_INBOX.parent.mkdir(parents=True, exist_ok=True)
+    if control_state.is_dry():
+        dry_path = TRIAGED_INBOX.parent / "triaged.dry.jsonl"
+        with open(dry_path, "a") as f:
+            f.write(json.dumps(asdict(msg)) + "\n")
+        observe.event("dry_skip", site="prospect_deliver",
+                      actor="triaged", msg_id=msg.msg_id,
+                      repo=issue.repo, pr=issue.number)
+        # Don't mark_seen under dry — the operator should be able to clear
+        # the flag and have the same issues re-deliver to the live inbox.
+        return msg.msg_id
     with open(TRIAGED_INBOX, "a") as f:
         f.write(json.dumps(asdict(msg)) + "\n")
     seen.mark_seen(key)
@@ -292,6 +302,16 @@ async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
         # Backpressure from the retro pager. Forward pass stops until the
         # human Attends to at least one of the pending SOAP one-pagers.
         observe.incr("halted_skip:prospect")
+        return ProspectPassResult(
+            repos_visited=0, repos_processed=0, issues_found=0,
+            delivered_msg_ids=[],
+            cursor_before=_load_cursor(), cursor_after=_load_cursor(),
+            lap_reset=False,
+        )
+    if control_state.is_paused():
+        # Operator-initiated soft-pause. Same no-op shape as the retro
+        # halt — in-flight work elsewhere keeps running.
+        observe.incr("paused_skip:prospect")
         return ProspectPassResult(
             repos_visited=0, repos_processed=0, issues_found=0,
             delivered_msg_ids=[],

@@ -15,7 +15,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import llm_io, models, observe, retro_state
+from sweep import control_state, llm_io, models, observe, retro_state
 from sweep.io_safe import atomic_write_text
 from sweep.types import GateAttestation, QaOneEntryRequest, QaOneEntryResult
 
@@ -252,6 +252,14 @@ async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
         raise ApplicationError(
             "pipeline halted — clear a retro pager before running qa",
             non_retryable=False,  # retryable: clearing a pager resumes work
+        )
+    if control_state.is_paused():
+        # Operator-initiated soft-pause. Retryable: clearing the flag
+        # flips the gate and the next attempt walks through.
+        observe.incr("paused_skip:qa")
+        raise ApplicationError(
+            "pipeline paused — clear `sweep pause off` before running qa",
+            non_retryable=False,
         )
 
     start = time.time()
