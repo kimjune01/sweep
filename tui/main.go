@@ -190,7 +190,18 @@ func flagBadge(name, glyph string) string {
 	return fmt.Sprintf("%s OFF", glyph)
 }
 
+// renderOnce prints View() once and exits. Used by the test harness to
+// exercise lipgloss styling under varying TERM / NO_COLOR without
+// needing a PTY for the Bubble Tea event loop.
+func renderOnce() {
+	fmt.Print(model{}.View())
+}
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "render" {
+		renderOnce()
+		return
+	}
 	// tea.NewProgram options, mapped to Chewy TUI heuristics:
 	//
 	//   • NO tea.WithAltScreen() — "alt screen vs inline": this is a
