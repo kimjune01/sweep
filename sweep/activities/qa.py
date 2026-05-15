@@ -6,7 +6,7 @@ with multiple repos or branches.
 
 from __future__ import annotations
 
-import asyncio
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -14,7 +14,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import models
+from sweep import llm_io, models
 from sweep.io_safe import atomic_write_text
 from sweep.types import GateAttestation, QaOneEntryRequest, QaOneEntryResult
 
@@ -109,33 +109,79 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     return att
 
 
+_REVIEW_SYSTEM = (
+    "You are a structural code reviewer. Read the diff and decide whether "
+    "the change is sound. Reply with a single verdict line of the form "
+    "`verdict: pass`, `verdict: fail`, or `verdict: revise`, followed by a "
+    "one-paragraph reason. Keep the reason under 120 words."
+)
+
+
+def _user_prompt(req: QaOneEntryRequest, diff: str) -> str:
+    head = f"Repo: {req.repo}\nBranch: {req.branch}"
+    if req.issue is not None:
+        head += f"\nIssue: #{req.issue}"
+    return f"{head}\n\nDiff to review:\n\n{diff}"
+
+
+def _parse_verdict(response: str) -> str:
+    """Pull `verdict: X` (case-insensitive). Default to 'stubbed' for non-Anthropic
+    providers whose wrapper is still a stub; treat anything else unparsed as 'revise'
+    so the cascade keeps moving rather than auto-passing on garbled output."""
+    if response.startswith("<stub:"):
+        return "stubbed"
+    m = re.search(r"verdict\s*:\s*(pass|fail|revise)", response, re.IGNORECASE)
+    if not m:
+        return "revise"
+    return m.group(1).lower()
+
+
 @activity.defn
 async def codex_review(req: QaOneEntryRequest, diff: str) -> GateAttestation:
-    """Send diff to codex (or opus fallback). Captures the raw response as receipt."""
+    """Send diff to adversary_1 (codex by default; haiku under test). Captures
+    the raw response as the gate receipt."""
     if not req.msg_id:
         raise ApplicationError("msg_id required", non_retryable=True)
 
-    # Placeholder — real implementation calls anthropic / openai SDK directly.
-    # The activity body is non-deterministic; Temporal records its return
-    # value to history so future replays see the same result.
-    response = f"<codex stub for {req.repo}#{req.branch}>\nverdict: pass"
-    await asyncio.sleep(0)
-    att = _capture(req.msg_id, "codex", response, worktree=req.worktree)
-    att.verdict = "pass"
-    att.provenance = "codex"
+    model = models.default_for("adversary_1")
+    result = await llm_io.call(
+        model,
+        system=_REVIEW_SYSTEM,
+        user=_user_prompt(req, diff),
+        msg_id=req.msg_id,
+        repo=req.repo,
+        pr=req.issue,
+        max_tokens=400,
+        temperature=0.0,
+    )
+    att = _capture(req.msg_id, "codex", result.response, worktree=req.worktree)
+    att.verdict = _parse_verdict(result.response)
+    att.provenance = f"{model.nick}{'-cached' if result.cached else ''}"
     return att
 
 
 @activity.defn
 async def gemini_review(req: QaOneEntryRequest, diff: str, round_num: int) -> GateAttestation:
-    """Send diff to gemini. Captures the raw response as receipt."""
+    """Send diff to adversary_2 (gemini by default; haiku under test). Captures
+    the raw response as the gate receipt."""
     if not req.msg_id:
         raise ApplicationError("msg_id required", non_retryable=True)
 
-    response = f"<gemini stub round {round_num} for {req.repo}#{req.branch}>\nverdict: pass"
-    await asyncio.sleep(0)
-    att = _capture(req.msg_id, f"gemini_r{round_num}", response, worktree=req.worktree)
-    att.verdict = "pass"
+    model = models.default_for("adversary_2")
+    result = await llm_io.call(
+        model,
+        system=_REVIEW_SYSTEM,
+        user=_user_prompt(req, diff),
+        msg_id=req.msg_id,
+        repo=req.repo,
+        pr=req.issue,
+        max_tokens=400,
+        temperature=0.0,
+    )
+    att = _capture(req.msg_id, f"gemini_r{round_num}", result.response,
+                   worktree=req.worktree)
+    att.verdict = _parse_verdict(result.response)
+    att.provenance = f"{model.nick}-r{round_num}{'-cached' if result.cached else ''}"
     return att
 
 
@@ -169,9 +215,17 @@ async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
     gemini_first = await gemini_review(req, diff, 1)
     gemini_last = gemini_first
 
+    sub_verdicts = {codex_att.verdict, gemini_last.verdict}
+    if "fail" in sub_verdicts:
+        verdict = "fail"
+    elif sub_verdicts <= {"pass", "stubbed"}:
+        verdict = "pass"
+    else:  # "revise" present without "fail"
+        verdict = "partial"
+
     result = QaOneEntryResult(
         msg_id=req.msg_id,
-        verdict="pass",
+        verdict=verdict,
         bugs_found=0,
         test_attestation=test_att,
         codex=codex_att,
