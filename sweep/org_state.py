@@ -19,6 +19,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from sweep import gh_io
+
 
 CACHE = Path.home() / ".sweep" / "cache" / "org_state.json"
 CACHE_TTL = 300.0  # 5 min
@@ -33,22 +35,16 @@ def _refresh() -> dict:
     if not user:
         return {"orgs": {}, "fetched_at": time.time(), "user": ""}
 
-    out = subprocess.run(
-        [
-            "gh", "search", "prs",
-            "--author", user,
-            "--state", "open",
-            "--limit", "200",
-            "--json", "repository,number,title,updatedAt",
-        ],
-        capture_output=True, text=True, check=False,
-    )
-    if out.returncode != 0:
-        return {"orgs": {}, "fetched_at": time.time(), "user": user}
     try:
-        prs = json.loads(out.stdout or "[]")
-    except json.JSONDecodeError:
-        prs = []
+        prs = gh_io.search_prs(
+            f"author:{user}",
+            state="open",
+            limit=200,
+            fields="repository,number,title,updatedAt",
+            ttl=300,
+        )
+    except subprocess.CalledProcessError:
+        return {"orgs": {}, "fetched_at": time.time(), "user": user}
 
     orgs: dict[str, list[dict]] = {}
     for pr in prs:
