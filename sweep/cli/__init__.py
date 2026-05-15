@@ -21,6 +21,7 @@ import typer
 from sweep import models as _models
 from sweep.cli import floor as _floor
 from sweep.cli import kanban as _kanban
+from sweep.cli import pr as _pr
 from sweep.cli.attest import attest_app
 from sweep.cli.inbox import inbox_app
 from sweep.cli.observe import observe_app
@@ -44,6 +45,7 @@ app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
 _floor.register(app)
 _kanban.register(app)
+_pr.register(app)
 
 
 @app.command("models")
