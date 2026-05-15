@@ -22,7 +22,9 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import org_state, seen
+import asyncio
+
+from sweep import gh_io, org_state, seen
 from sweep.types import Message
 
 
@@ -173,7 +175,15 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
 
 @activity.defn
 async def gh_search_actionable_issues(repo: str, limit: int) -> list[IssueCandidate]:
-    """Open issues with maintainer-intent labels, no assignee."""
+    """Open issues with maintainer-intent labels, no assignee, with no
+    PR (any state) referencing them.
+
+    Dedup is a feature of prospecting: never surface an issue that has any
+    related PR alive or dead. A live PR means someone's working on it; a
+    dead PR (closed/merged) means it's already been addressed or was
+    explicitly rejected. Either way, prospect's job is to find work nobody
+    has touched.
+    """
     if "/" not in repo:
         raise ApplicationError("repo must be owner/repo", non_retryable=True)
     # Single query with OR-d labels — gh's --label flag is AND, so do via search.
@@ -196,7 +206,8 @@ async def gh_search_actionable_issues(repo: str, limit: int) -> list[IssueCandid
         raw = json.loads(out.stdout or "[]")
     except json.JSONDecodeError:
         return []
-    return [
+
+    candidates = [
         IssueCandidate(
             repo=repo,
             number=int(i["number"]),
@@ -207,6 +218,27 @@ async def gh_search_actionable_issues(repo: str, limit: int) -> list[IssueCandid
         )
         for i in raw
     ]
+    # Dedup against any PR referencing the issue, alive or dead.
+    return [c for c in candidates if not _has_related_pr(repo, c.number)]
+
+
+def _has_related_pr(repo: str, issue_number: int) -> bool:
+    """True if any PR in `repo` (any state) references issue #N.
+
+    Uses gh_io.issue_events — cross-reference events from PRs show up
+    regardless of PR state. Cached with 5-min TTL so repeated sweeps in
+    the same session don't re-fetch.
+    """
+    try:
+        events = asyncio.run(gh_io.issue_events(repo, issue_number))
+    except Exception:
+        return False  # don't block on transient gh failures
+    for ev in events:
+        if ev.get("event") == "cross-referenced":
+            src = (ev.get("source") or {}).get("issue") or {}
+            if src.get("pull_request") is not None:
+                return True
+    return False
 
 
 @activity.defn

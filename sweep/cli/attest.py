@@ -64,3 +64,22 @@ def attest_tokens() -> None:
         print("# no calls recorded")
         return
     print(json.dumps(summary, indent=2))
+
+
+@attest_app.command("gh-cache")
+def attest_gh_cache() -> None:
+    """Cache stats for gh_io (rows per endpoint, live vs expired)."""
+    from sweep import gh_io
+    stats = gh_io.cache_stats()
+    if not stats:
+        print("# gh cache empty")
+        return
+    print(json.dumps(stats, indent=2))
+
+
+@attest_app.command("gh-purge")
+def attest_gh_purge() -> None:
+    """Delete expired gh cache rows."""
+    from sweep import gh_io
+    n = gh_io.purge_expired()
+    print(f"purged {n} expired rows")
