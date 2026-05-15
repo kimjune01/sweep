@@ -173,6 +173,19 @@ async def issue_events(repo: str, issue: int, *, ttl: int = 300) -> list[dict]:
     return _cached_json("issue_events", args, ttl)
 
 
+async def pr_inline_comments(repo: str, pr: int, *, ttl: int = 120) -> list[dict]:
+    """Inline (code-line) review comments on a PR.
+
+    Distinct from issue-conversation comments. These are the threaded
+    comments anchored to specific diff lines — load-bearing for the Sonnet
+    'is this respondable' classifier since they're often the substantive
+    review surface (maintainers leave 'consider X' on a specific line
+    rather than a top-level review).
+    """
+    args = ["api", f"repos/{repo}/pulls/{pr}/comments", "--paginate"]
+    return _cached_json("pr_inline_comments", args, ttl)
+
+
 async def api(path: str, *, paginate: bool = False, ttl: int = 300) -> list | dict:
     """Raw REST API call. For endpoints not covered by typed methods above."""
     args = ["api", path]
