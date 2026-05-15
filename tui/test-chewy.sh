@@ -101,6 +101,29 @@ esac
 assert "stoplight glyph present" yes "$v"
 
 echo
+echo "== Data integrity: snapshot reflects filesystem =="
+# The TUI must agree with the CLI about where flags live and what the
+# current state is. The `render` subcommand snapshots at call time, so
+# create/remove a flag file and verify the output flips.
+CONTROL="$HOME/.sweep/control"
+mkdir -p "$CONTROL"
+# Save and restore any pre-existing flag so the harness is non-destructive.
+dry_was=no; [ -e "$CONTROL/dry" ] && dry_was=yes
+rm -f "$CONTROL/dry"
+
+out=$(run_pty "$BIN render")
+case "$out" in *"🌵 OFF"*) v=yes ;; *) v=no ;; esac
+assert "no dry file → 🌵 OFF" yes "$v"
+
+: > "$CONTROL/dry"
+out=$(run_pty "$BIN render")
+case "$out" in *"🌵  ON"*) v=yes ;; *) v=no ;; esac
+assert "dry file present → 🌵  ON" yes "$v"
+
+rm -f "$CONTROL/dry"
+[ "$dry_was" = yes ] && : > "$CONTROL/dry"
+
+echo
 echo "----"
 printf "PASS=%d FAIL=%d\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
