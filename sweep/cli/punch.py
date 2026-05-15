@@ -6,7 +6,7 @@ import time
 
 import typer
 
-from sweep import glyphs
+from sweep import glyphs, retro_state
 from sweep.inbox_state import inbox_states
 from sweep.system import system_status
 
@@ -172,7 +172,18 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     print()
 
     runline = f"{len(running)} agents" if running else "0 agents"
-    print(f"`cpu {cpu:.0f}% · mem {mem:.0f}% · {runline}`")
+    parts = [f"cpu {cpu:.0f}%", f"mem {mem:.0f}%", runline]
+    # Retro state appended only when there's something to flag — halt is
+    # the strongest signal, actionable is softer. Quiet retros (empty-P
+    # accumulating chains) don't earn cockpit space.
+    if retro_state.is_halted():
+        parts.append("📋 HALTED")
+    else:
+        retros = retro_state.list_retros()
+        actionable = sum(1 for r in retros if retro_state.has_prescription(r))
+        if actionable:
+            parts.append(f"🌱 {actionable} actionable")
+    print(f"`{' · '.join(parts)}`")
     print()
 
     print(f"`{_render_flow(flow_states)}`")
