@@ -233,11 +233,10 @@ def _render_respondable(s: dict[str, list[dict]] | None) -> None:
         intent = m.get("intent", "")
         payload = m.get("payload") or {}
         reason = payload.get("reason", "")
-        ts = (m.get("ts") or "")[:10]
         url = f"https://github.com/{repo}/pull/{pr}"
         glyph = RESPONDABLE_GLYPHS.get(intent, "·")
         suffix = f" — {reason}" if reason else ""
-        print(f"- {glyph} [{repo}#{pr}]({url}){suffix}  _({ts})_")
+        print(f"- {glyph} [{repo}#{pr}]({url}){suffix}")
 
 
 # ---------------------------------------------------------- rich render
