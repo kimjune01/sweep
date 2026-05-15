@@ -568,6 +568,72 @@ def _outcomes(days: int = 7) -> dict:
     return result
 
 
+def _system_status() -> dict:
+    """Cheap system-health snapshot. CPU + memory always; Temporal-in-flight
+    workflows when the server is reachable, otherwise skipped silently.
+
+    Cached at ~/.sweep/cache/system.json with a 4s TTL so repeat refreshes
+    inside one cockpit tick reuse the result.
+    """
+    import time as _time
+    cache = Path.home() / ".sweep" / "cache" / "system.json"
+    if cache.exists():
+        try:
+            data = json.loads(cache.read_text())
+            if _time.time() - data.get("fetched_at", 0) < 4:
+                return data
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=None)
+        mem = psutil.virtual_memory().percent
+    except Exception:
+        cpu = 0.0
+        mem = 0.0
+
+    running = []
+    try:
+        # Local Temporal query — short timeout so a missing server doesn't
+        # stall the cockpit.
+        import asyncio
+        from temporalio.client import Client
+
+        async def _q():
+            client = await asyncio.wait_for(
+                Client.connect(TEMPORAL_ADDR), timeout=0.5
+            )
+            iterator = client.list_workflows("ExecutionStatus='Running'")
+            out = []
+            async for wf in iterator:
+                out.append({
+                    "id": wf.id,
+                    "type": wf.workflow_type,
+                    "started": wf.start_time.isoformat() if wf.start_time else None,
+                })
+                if len(out) >= 10:
+                    break
+            return out
+
+        running = asyncio.run(asyncio.wait_for(_q(), timeout=1.0))
+    except Exception:
+        running = []
+
+    result = {
+        "cpu": cpu,
+        "mem": mem,
+        "running": running,
+        "fetched_at": _time.time(),
+    }
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        cache.write_text(json.dumps(result))
+    except OSError:
+        pass
+    return result
+
+
 def _stddev(counts: list[int]) -> float:
     """Sample stddev of bucket counts. Variance gauge — steady=low, spiky=high."""
     if len(counts) < 2:
@@ -734,7 +800,28 @@ def _punch_once(include_wait, spark_minutes, spark_buckets, outcome_days,
         return
 
     # --- markdown output ----------------------------------------------------
+    sys_status = _system_status()
+    cpu = sys_status.get("cpu", 0.0)
+    mem = sys_status.get("mem", 0.0)
+    running = sys_status.get("running", [])
+
     print("# coding factory — kanban")
+    print()
+    runline = f"**{len(running)} agents running**" if running else "_no agents running_"
+    print(f"`system`  cpu {cpu:.0f}%  ·  mem {mem:.0f}%  ·  {runline}")
+    if running:
+        for wf in running[:5]:
+            started = wf.get("started") or ""
+            age = ""
+            if started:
+                try:
+                    t = dt.datetime.fromisoformat(started.replace("Z", "+00:00"))
+                    delta = dt.datetime.now(dt.timezone.utc) - t
+                    secs = int(delta.total_seconds())
+                    age = f"{secs}s" if secs < 60 else f"{secs//60}m"
+                except (ValueError, AttributeError):
+                    age = ""
+            print(f"- `{wf.get('type', '?')}` `{wf.get('id', '?')}` _running {age}_")
     print()
     print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
     print()
