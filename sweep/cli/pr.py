@@ -88,15 +88,21 @@ def _render(repo: str, pr: int, data: dict) -> None:
     title = data.get("title") or "(no title)"
     url = data.get("url") or f"https://github.com/{repo}/pull/{pr}"
 
+    # Compute attestation status once — it's the pivot point of a PR and
+    # gets a state cell in the stats line plus the receipts list below.
+    msg_ids = _msg_ids_for(repo, pr)
+    artifacts = _artifacts_for(msg_ids)
+    attested = bool(artifacts)
+
     print(f"# {repo}#{pr} — {title}")
     print()
     print(f"<{url}>  _| `gh pr view {repo} {pr}`_")
     print()
 
     _render_hypothesis(repo)
-    _render_state(data)
+    _render_state(data, attested=attested)
     _render_origin(repo, data)
-    _render_receipts(repo, pr)
+    _render_receipts(msg_ids, artifacts)
     _render_events(repo, pr)
 
 
@@ -173,15 +179,24 @@ MERGE_GLYPHS = {
 }
 
 
-def _render_state(data: dict) -> None:
+def _render_state(data: dict, *, attested: bool) -> None:
     """Stats line — emoji-leading state cells, dot-separated. No header
     needed: the shape (single line of short cells) names it, same as the
-    cpu/mem/agents line on floor."""
+    cpu/mem/agents line on floor.
+
+    Attestation leads — it's the pivot point of a PR. Pre-attestation
+    is just code; post-attestation has cascade receipts and a verdict
+    chain. 🔏 (lock-with-ink-pen) renders the "signed and sealed"
+    semantic; absence of the cell means the PR hasn't been through qa
+    yet, by locality."""
     ci_key = _ci_status(data.get("statusCheckRollup") or [])
     review = data.get("reviewDecision") or ""
     merge = data.get("mergeable") or ""
 
-    cells = [f"{CI_GLYPHS.get(ci_key, '·')} {ci_key}"]
+    cells: list[str] = []
+    if attested:
+        cells.append("🔏 attested")
+    cells.append(f"{CI_GLYPHS.get(ci_key, '·')} {ci_key}")
     if review:
         cells.append(REVIEW_GLYPHS.get(review, f"· {review}"))
     if merge:
@@ -243,11 +258,9 @@ def _render_origin(repo: str, data: dict) -> None:
     print()
 
 
-def _render_receipts(repo: str, pr: int) -> None:
-    msg_ids = _msg_ids_for(repo, pr)
-    if not msg_ids:
-        return
-    # Collect artifacts across msg_ids, newest first.
+def _artifacts_for(msg_ids: list[str]) -> list[tuple[str, Path]]:
+    """Collect attestation artifact files across the given msg_ids,
+    sorted newest-first per directory. Returns (msg_id, path) tuples."""
     artifacts: list[tuple[str, Path]] = []
     for msg_id in msg_ids:
         d = ATTESTATIONS_DIR / msg_id
@@ -255,6 +268,10 @@ def _render_receipts(repo: str, pr: int) -> None:
             continue
         for p in sorted(d.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
             artifacts.append((msg_id, p))
+    return artifacts
+
+
+def _render_receipts(msg_ids: list[str], artifacts: list[tuple[str, Path]]) -> None:
     if not artifacts:
         return
     total = len(artifacts)
