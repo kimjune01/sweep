@@ -213,30 +213,47 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
             f"| `{spark}` | {oldest} | {status} |"
         )
 
-    _render_respondable(flow_states.get("respondable"))
+    _render_inbox(flow_states.get("respondable"))
 
 
-def _render_respondable(s: dict[str, list[dict]] | None) -> None:
-    """List respondable PRs under the table. This is the human's actionable
-    inbox — every other station belongs to an LLM actor. When the inbox is
-    empty the section is hidden entirely so the cockpit stays terse."""
-    if not s:
-        return
-    msgs = sorted(s.get("queued", []) + s.get("in_flight", []),
-                  key=lambda m: m.get("ts", ""))
-    if not msgs:
+def _render_inbox(s: dict[str, list[dict]] | None) -> None:
+    """The human inbox under the table. Two sources, one list:
+
+      🌱 actionable retro pagers — read, fold into commits, discard
+      💬/⬆️/🤝/🖋 respondable PRs — maintainer needs a human response
+
+    Retros come first because they're the rarer, stronger signal: an
+    actionable retro is a prescription that closes the pipeline's
+    backward pass. Respondable PRs are the routine work. Section is
+    hidden entirely when both are empty."""
+    lines: list[str] = []
+
+    # Actionable retros first.
+    for r in retro_state.list_retros():
+        if not retro_state.has_prescription(r):
+            continue
+        lines.append(f"- 🌱 retro {r.name} — `sweep retro show {r.name}`")
+
+    # Respondable PRs.
+    if s:
+        msgs = sorted(s.get("queued", []) + s.get("in_flight", []),
+                      key=lambda m: m.get("ts", ""))
+        for m in msgs:
+            repo = m.get("repo", "?")
+            pr = m.get("pr") or "-"
+            intent = m.get("intent", "")
+            payload = m.get("payload") or {}
+            reason = payload.get("reason", "")
+            url = f"https://github.com/{repo}/pull/{pr}"
+            glyph = RESPONDABLE_GLYPHS.get(intent, "·")
+            suffix = f" — {reason}" if reason else ""
+            lines.append(f"- {glyph} [{repo}#{pr}]({url}){suffix}")
+
+    if not lines:
         return
     print()
-    for m in msgs:
-        repo = m.get("repo", "?")
-        pr = m.get("pr") or "-"
-        intent = m.get("intent", "")
-        payload = m.get("payload") or {}
-        reason = payload.get("reason", "")
-        url = f"https://github.com/{repo}/pull/{pr}"
-        glyph = RESPONDABLE_GLYPHS.get(intent, "·")
-        suffix = f" — {reason}" if reason else ""
-        print(f"- {glyph} [{repo}#{pr}]({url}){suffix}")
+    for line in lines:
+        print(line)
 
 
 # ---------------------------------------------------------- rich render
