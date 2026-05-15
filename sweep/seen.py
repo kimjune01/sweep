@@ -64,6 +64,10 @@ def mark_seen(key: str) -> None:
     # Keep cache mtime in sync with the file we just wrote.
     global _cache_mtime
     _cache_mtime = ISSUES_FILE.stat().st_mtime
+    # Counter — retro reads this to estimate prospect's surface-area growth.
+    # Local import: seen is a leaf module and observe must not pull it in.
+    from sweep import observe
+    observe.incr("seen_add")
 
 
 def filter_unseen(keys: list[str]) -> list[str]:

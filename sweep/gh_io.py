@@ -112,13 +112,18 @@ def _gh(args: list[str]) -> str:
 
 
 def _cached_json(endpoint: str, args: list[str], ttl: int) -> list | dict:
+    from sweep import observe  # local import — observe imports nothing from gh_io
+
     key = _key(endpoint, args)
     hit = _cache_get(key)
     if hit is not None:
         try:
-            return json.loads(hit)
+            parsed = json.loads(hit)
+            observe.incr(f"gh_hit:{endpoint}")
+            return parsed
         except json.JSONDecodeError:
             pass  # corrupt cache row — refetch
+    observe.incr(f"gh_miss:{endpoint}")
     raw = _gh(args)
     try:
         parsed = json.loads(raw) if raw.strip() else []

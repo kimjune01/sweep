@@ -16,7 +16,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import gh_io, models
+from sweep import gh_io, models, observe
 from sweep.io_safe import atomic_write_text
 from sweep.types import (
     BUCKET_ROUTING,
@@ -167,6 +167,7 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
         bucket = "wait"
         reasons.append("no action signal")
 
+    observe.incr(f"pr_state_bucket:{bucket}")
     return PrStateResult(
         repo=state.repo,
         pr=state.pr,

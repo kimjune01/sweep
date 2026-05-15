@@ -22,7 +22,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import gh_io, org_state, seen
+from sweep import gh_io, observe, org_state, seen
 from sweep.types import Message
 
 
@@ -303,6 +303,21 @@ async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
 
     cursor_after = lowest_stars if repos else cursor_before
     _save_cursor(cursor_after, lap_reset=lap_reset)
+
+    observe.incr("prospect_repos_visited", len(repos))
+    observe.incr("prospect_repos_processed", processed)
+    observe.incr("prospect_issues_found", issues_found)
+    if lap_reset:
+        observe.incr("prospect_lap_reset")
+    observe.event(
+        "prospect_pass",
+        cursor_before=cursor_before,
+        cursor_after=cursor_after,
+        repos_visited=len(repos),
+        repos_processed=processed,
+        issues_found=issues_found,
+        lap_reset=lap_reset,
+    )
 
     return ProspectPassResult(
         repos_visited=len(repos),

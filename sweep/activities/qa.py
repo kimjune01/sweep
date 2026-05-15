@@ -14,7 +14,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import llm_io, models
+from sweep import llm_io, models, observe
 from sweep.io_safe import atomic_write_text
 from sweep.types import GateAttestation, QaOneEntryRequest, QaOneEntryResult
 
@@ -251,4 +251,23 @@ async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
     assert isinstance(result.bugs_found, int)
     assert Path(result.codex.artifact_path).exists()
     assert Path(result.gemini_last.artifact_path).exists()
+
+    # Counter: one volley per qa_one_entry (codex + last gemini round).
+    # Once cascade/loop is wired, the round count is gemini_last.rounds.
+    rounds = max(getattr(result.gemini_last, "rounds", 1), 1)
+    observe.incr("qa_volley", rounds)
+    observe.incr(f"qa_volley_hist:{rounds}")
+    observe.incr(f"qa_verdict:{verdict}")
+    observe.incr(f"qa_volley:{req.repo}", rounds)
+    observe.event(
+        "qa_converged",
+        msg_id=req.msg_id,
+        repo=req.repo,
+        pr=req.issue,
+        branch=req.branch,
+        verdict=verdict,
+        rounds=rounds,
+        sub_verdicts={"codex": codex_att.verdict, "gemini": gemini_last.verdict},
+        elapsed_seconds=round(result.elapsed_seconds, 3),
+    )
     return result
