@@ -59,12 +59,18 @@ class QaOneEntryRequest:
     issue: int | None = None
 
 
-Bucket = Literal["close", "investigate", "rebase", "qa", "ship", "wait"]
+Bucket = Literal["close", "respondable", "rebase", "qa", "ship", "wait"]
 
 # Each bucket has a destination inbox + intent verb the receiver consumes.
+#
+# Note: pr-state classifies *existing* open PRs. When a reviewer engages
+# (comment, changes_requested), the ball comes back to the human — that's
+# "respondable," not "investigate." The investigate.jsonl inbox is reserved
+# for /triage and /actionable to populate with new-issue work for the LLM
+# investigator actor.
 BUCKET_ROUTING: dict[str, tuple[str, str]] = {
     "close":       ("drip",        "close"),
-    "investigate": ("investigate", "respond"),
+    "respondable": ("respondable", "respond"),
     "rebase":      ("drip",        "rebase"),
     "qa":          ("qa",          "reattest"),
     "ship":        ("drip",        "ship"),

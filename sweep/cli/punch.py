@@ -14,17 +14,20 @@ from sweep.system import system_status
 
 
 # Two caps per station — queue (backpressure) vs in-flight (concurrency).
+# Humans have deeper queues; LLM actors stay shallow.
 CAPS: dict[str, dict[str, int | None]] = {
-    "qa":          {"queued": 3, "in_flight": 2},
-    "drip":        {"queued": 5, "in_flight": 1},  # one push at a time
-    "investigate": {"queued": 5, "in_flight": 3},
-    "retro":       {"queued": None, "in_flight": None},  # unbounded batch
+    "investigate": {"queued": 5, "in_flight": 3},   # LLM, root-causing
+    "qa":          {"queued": 3, "in_flight": 2},   # LLM, gates
+    "drip":        {"queued": 5, "in_flight": 1},   # LLM, one push at a time
+    "respondable": {"queued": 8, "in_flight": 2},   # you — real backlog signal
+    "retro":       {"queued": None, "in_flight": None},  # in-review — geometry, not backlog
 }
 ACTION_HINT = {
+    "investigate": "root-cause new issues (LLM)",
     "qa":          "re-attest (CI failed / gates stale)",
     "drip":        "advance status (close / rebase / ship)",
-    "investigate": "respond to maintainer",
-    "retro":       "audit only (wait bucket)",
+    "respondable": "respond to reviewer",
+    "retro":       "audit only (in-review bucket)",
 }
 
 
@@ -68,7 +71,7 @@ def punch(
 
 
 def _once(include_wait, spark_minutes, spark_buckets, outcome_days, rich_mode, no_outcomes) -> None:
-    actionable = ["investigate", "qa", "drip"]
+    actionable = ["investigate", "qa", "drip", "respondable"]
     if include_wait:
         actionable = actionable + ["retro"]
 

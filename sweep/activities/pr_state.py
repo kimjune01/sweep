@@ -144,9 +144,9 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     #    So close is rarely chosen — that's per the user's "never recommend
     #    closing a stale PR" rule.
 
-    # 2. investigate
+    # 2. respondable — reviewer engaged, ball back in human's court
     if rd == "CHANGES_REQUESTED" or state.maintainer_question:
-        bucket = "investigate"
+        bucket = "respondable"
         reasons.append(
             "changes_requested" if rd == "CHANGES_REQUESTED" else "maintainer asked"
         )

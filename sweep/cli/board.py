@@ -7,13 +7,18 @@ import typer
 from sweep.inbox_state import inbox_states
 
 
-# station → display label. retro is "in review" — PRs awaiting maintainer
-# attention with no action signal from us.
+# Pipeline order, left → right:
+#   investigate — LLM, root-causes new issues (from /triage, /actionable)
+#   qa          — LLM, runs gates
+#   drip        — LLM, paces pushes
+#   in review   — reviewer holds the ball (retro/wait inbox)
+#   respondable — ball back to you (human) after reviewer engages
 STATIONS = [
     ("investigate", "investigate"),
     ("qa",          "qa"),
     ("drip",        "drip"),
     ("retro",       "in review"),
+    ("respondable", "respondable"),
 ]
 
 
