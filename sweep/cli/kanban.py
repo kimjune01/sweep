@@ -1,4 +1,4 @@
-"""`sweep board` — kanban swim lanes, no metrics. Just PRs by station."""
+"""`sweep kanban` — kanban swim lanes, no metrics. Just PRs by station."""
 
 from __future__ import annotations
 
@@ -25,13 +25,13 @@ STATIONS = [
 
 
 def register(app: typer.Typer) -> None:
-    app.command("board")(board)
+    app.command("kanban")(kanban)
 
 
-def board(
-    height: int = typer.Option(7, "--height", help="Max rows per column before truncating"),
-) -> None:
-    """Column view: which PR is in which station. No numerics, truncates tall columns."""
+def render_kanban_lines(height: int = 7) -> list[str]:
+    """Build the kanban swim-lane lines without printing — shared with
+    `sweep floor` so the conveyor section uses the same rendering as the
+    standalone `sweep kanban` command. Returns the full markdown block."""
     cols = STATIONS
 
     items: dict[str, list[str]] = {}
@@ -66,16 +66,26 @@ def board(
     max_rows = max((len(display[a]) for a, _ in cols), default=0)
     headers = [f"{label} ({counts[a]})" for a, label in cols]
 
-    print("# sweep board — PRs by station")
-    print()
-    print("| " + " | ".join(headers) + " |")
-    print("|" + "|".join("---" for _ in cols) + "|")
+    lines: list[str] = []
+    lines.append("| " + " | ".join(headers) + " |")
+    lines.append("|" + "|".join("---" for _ in cols) + "|")
     if max_rows == 0:
-        print("| " + " | ".join("_empty_" for _ in cols) + " |")
-        return
+        lines.append("| " + " | ".join("_empty_" for _ in cols) + " |")
+        return lines
     for row in range(max_rows):
         cells = []
         for actor, _label in cols:
             col = display[actor]
             cells.append(col[row] if row < len(col) else " ")
-        print("| " + " | ".join(cells) + " |")
+        lines.append("| " + " | ".join(cells) + " |")
+    return lines
+
+
+def kanban(
+    height: int = typer.Option(7, "--height", help="Max rows per column before truncating"),
+) -> None:
+    """Column view: which PR is in which station. No numerics, truncates tall columns."""
+    print("# sweep kanban — PRs by station")
+    print()
+    for line in render_kanban_lines(height):
+        print(line)

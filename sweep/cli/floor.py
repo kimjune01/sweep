@@ -1,20 +1,21 @@
-"""`sweep floor` — the factory floor view, rendered with ascii indicators.
+"""`sweep floor` — the factory floor view. Andon + kanban + tools + output.
 
-Four sections in pipeline-flow order:
+One screen, four sections in pipeline-flow order:
 
   andon     retro pager state + halt flag — is the line stopped?
-  conveyor  queue-depth bars per station, with cap comparison
-  tools     token usage + gh cache hit rate as horizontal bars
-  output    merge ratio + daily rate as horizontal bars
+  kanban    PRs by station — swim lanes from sweep.cli.kanban
+  tools     LLM token usage + gh cache hit rate as horizontal bars
+  output    merged / closed counts + daily rate as horizontal bars
 
-Bars use sweep.glyphs block characters. Each section reuses the same
-helpers the dedicated commands (punch, board, attest, retro) consume,
-so the floor stays in sync without duplicating state. Read-only —
-actions still go through the actor-specific commands.
+The kanban section reuses sweep.cli.kanban.render_kanban_lines so the
+factory floor's conveyor view is the same swim-lane rendering as the
+standalone `sweep kanban` command — one source of truth for "what
+PR is in which station," composed under the andon banner that names
+the line's stop state.
 
-The factory metaphor: the operator sees the line at a glance. Bars
-filling = stations loading; bars overflowing = stations over cap;
-🌱 = a fold-back is waiting; 📋 = the line is stopped.
+Read-only by design. Actions go through actor-specific commands
+(sweep retro discard, sweep qa clear) after the operator decides what
+the floor is telling them.
 """
 
 from __future__ import annotations
@@ -24,13 +25,9 @@ import datetime as dt
 import typer
 
 from sweep import attestations, gh_io, retro_state
-from sweep.cli.punch import CAPS
-from sweep.inbox_state import inbox_states
+from sweep.cli.kanban import render_kanban_lines
 from sweep.outcomes import outcomes as fetch_outcomes
 
-
-# Actor stations on the conveyor, in pipeline flow order.
-STATIONS = ("triaged", "investigate", "qa", "drip", "respondable", "retro")
 
 BAR_WIDTH = 14
 BAR_FULL = "█"
@@ -43,14 +40,17 @@ def register(app: typer.Typer) -> None:
 
 
 def floor(
+    height: int = typer.Option(7, help="Max rows per kanban column before truncating"),
     outcome_days: int = typer.Option(7, help="Outcomes window in days"),
     no_outcomes: bool = typer.Option(False, "--no-outcomes",
                                       help="Skip the gh-backed outcomes fetch"),
 ) -> None:
-    """One-screen factory floor with ascii indicators."""
+    """One-screen factory floor: andon + kanban + tools + output."""
     _render_header()
     print()
-    _render_conveyor()
+    print("## kanban")
+    for line in render_kanban_lines(height):
+        print(line)
     print()
     _render_tools()
     if not no_outcomes:
@@ -81,7 +81,7 @@ def _pct_bar(pct: float, width: int = BAR_WIDTH) -> str:
     return _bar(pct, 100.0, width)
 
 
-# ---------------------------------------------------------------- header
+# ---------------------------------------------------------------- andon
 
 
 def _render_header() -> None:
@@ -100,52 +100,21 @@ def _render_header() -> None:
         badge = " "  # keep column width stable
         pipeline = "running"
 
-    line = f"sweep floor {'─' * 12} {now} {badge}  pipeline {pipeline}  retros {len(retros)}/{retro_state.RETRO_CAP}"
-    print(line)
-    if retros:
-        for r in retros:
-            mark = "🌱" if retro_state.has_prescription(r) else "·"
-            print(f"           {mark} {r.name}  ({r.written_at.isoformat(timespec='minutes')})")
-
-
-# ---------------------------------------------------------------- conveyor
-
-
-def _render_conveyor() -> None:
-    print("conveyor")
-    name_w = max(len(s) for s in STATIONS)
-    for actor in STATIONS:
-        states = inbox_states(actor)
-        q = len(states.get("queued", []))
-        f = len(states.get("in_flight", []))
-        d = len(states.get("done", []))
-        caps = CAPS.get(actor, {})
-        q_cap = caps.get("queued")
-        f_cap = caps.get("in_flight")
-
-        if q_cap:
-            q_str = f"{q:>2}/{q_cap}"
-            q_bar = _bar(q, q_cap)
-        else:
-            # No cap (retro is geometry, not backlog). Peak-relative against 20.
-            q_str = f"{q:>2}"
-            q_bar = _bar(q, max(q, 20))
-
-        f_mark = ("●" * f) if f else "·"
-        d_mark = f"{d}" if d else "·"
-
-        print(f"  {actor:<{name_w}}  {q_bar}  q {q_str:<5}  "
-              f"f {f_mark:<3}  d {d_mark}")
+    print(f"sweep floor {'─' * 12} {now} {badge}  "
+          f"pipeline {pipeline}  retros {len(retros)}/{retro_state.RETRO_CAP}")
+    for r in retros:
+        mark = "🌱" if retro_state.has_prescription(r) else "·"
+        print(f"           {mark} {r.name}  "
+              f"({r.written_at.isoformat(timespec='minutes')})")
 
 
 # ---------------------------------------------------------------- tools
 
 
 def _render_tools() -> None:
-    print("tools")
+    print("## tools")
     tokens = attestations.token_summary()
     if tokens:
-        # Peak across all models so bars are comparable.
         peak_in = max((t.get("input_tokens", 0) for t in tokens.values()), default=1) or 1
         peak_out = max((t.get("output_tokens", 0) for t in tokens.values()), default=1) or 1
         for nick, t in sorted(tokens.items()):
@@ -171,7 +140,7 @@ def _render_tools() -> None:
 
 
 def _render_output(days: int) -> None:
-    print(f"output  (last {days}d)")
+    print(f"## output  (last {days}d)")
     try:
         o = fetch_outcomes(days)
     except Exception as e:
@@ -182,7 +151,6 @@ def _render_output(days: int) -> None:
     total = merged + closed
     ratio = (100.0 * merged / total) if total else 0.0
     rate = (merged / days) if days > 0 else 0.0
-    # Rate bar caps at a 10/day default — past that, bar overflows.
     print(f"  merge ratio  {_pct_bar(ratio)} {ratio:>4.0f}%   "
           f"({merged} merged / {closed} closed)")
     print(f"  daily rate   {_bar(rate, 10.0)} {rate:>4.1f}/day")

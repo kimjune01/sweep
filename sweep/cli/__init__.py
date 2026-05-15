@@ -8,7 +8,7 @@ Each subgroup lives in its own module:
   cli/attest.py    — attestation log + gh-cache stats
   cli/observe.py   — counters, events, cursor for retro
   cli/punch.py     — punch (cockpit + outcomes)
-  cli/board.py     — kanban swim lanes
+  cli/kanban.py    — kanban swim lanes
 
 The console-script entry point is `sweep.cli:app` (also re-exported as
 `sweep.client:app` for backward compatibility).
@@ -19,8 +19,8 @@ from __future__ import annotations
 import typer
 
 from sweep import models as _models
-from sweep.cli import board as _board
 from sweep.cli import floor as _floor
+from sweep.cli import kanban as _kanban
 from sweep.cli import punch as _punch
 from sweep.cli.attest import attest_app
 from sweep.cli.inbox import inbox_app
@@ -44,7 +44,7 @@ app.add_typer(attest_app, name="attest")
 app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
 _punch.register(app)
-_board.register(app)
+_kanban.register(app)
 _floor.register(app)
 
 
