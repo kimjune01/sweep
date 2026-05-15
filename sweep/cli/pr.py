@@ -98,10 +98,12 @@ def _render(repo: str, pr: int, data: dict) -> None:
 
     # Each row is a user-intent label on the left and the resolution on
     # the right. Skip rows whose data side is empty so quiet PRs read
-    # tight. "Do now" leads — it answers the question the operator
-    # actually has when they ran `sweep pr`: what's my next move.
+    # tight. "Do now" leads when there's an action; hidden when sweep
+    # is mid-cycle and the human's role is just to wait.
     rows: list[tuple[str, str]] = []
-    rows.append(("Do now", _do_now(repo, pr, url, data, artifacts, attested)))
+    do_now = _do_now(url, artifacts, attested, verdict)
+    if do_now:
+        rows.append(("Do now", do_now))
     rows.append(("GitHub", _github_cell(url, data)))
 
     hypothesis = _hypothesis_cell(repo)
@@ -205,17 +207,22 @@ MERGE_GLYPHS = {
 }
 
 
-def _do_now(repo: str, pr: int, url: str, data: dict,
-             artifacts: list[tuple[str, Path]], attested: bool) -> str:
-    """The next move given the current state. Attested → review.
-    Unattested with artifacts → inspect the latest receipt.
-    Unattested without artifacts → awaiting cascade."""
+def _do_now(url: str, artifacts: list[tuple[str, Path]], attested: bool,
+             verdict: str | None) -> str:
+    """The next move given the current state. Returns "" when there's
+    nothing for the human to do (cascade mid-flight or hasn't started):
+    the row hides and the operator stays out of the way. ⛩️ and 🚧
+    are reserved for the attestation state cell; Do now is action verbs
+    only."""
     if attested:
-        return f"⛩️ [Review on GitHub]({url})"
-    if artifacts:
+        return f"[Review on GitHub]({url})"
+    # Receipts exist with an actionable verdict — cascade returned a
+    # non-pass result the human can inspect and fix.
+    if artifacts and verdict in {"fail", "partial", "revise"}:
         latest = artifacts[0][1]
-        return f"🚧 [Inspect cascade]({latest.as_uri()})"
-    return "🚧 Awaiting cascade"
+        return f"[Inspect cascade]({latest.as_uri()})"
+    # Mid-cycle (no verdict yet) or pre-cycle (no artifacts): no action.
+    return ""
 
 
 def _github_cell(url: str, data: dict) -> str:
