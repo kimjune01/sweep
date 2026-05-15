@@ -97,14 +97,16 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     def _run(args: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(args, cwd=worktree, capture_output=True, text=True)
 
-    # Reset the worktree to a known clean state before swapping branches.
-    # A dirty worktree would cause the subsequent `git checkout default`
-    # to fail silently (under check=False) and the master/fix invariant
-    # to be tested against the wrong tree.
-    head_co = _run(["git", "checkout", "--quiet", "HEAD"])
+    # Restore tracked files to their indexed state before swapping branches.
+    # A dirty worktree (modified tracked files from an aborted prior run)
+    # would otherwise make the next `git checkout default` fail with a
+    # conflict — caught by master_co below, but the blame would be wrong.
+    # `git checkout HEAD -- .` is the in-place restore; bare `git checkout
+    # HEAD` only confirms the current commit and leaves modifications.
+    head_co = _run(["git", "checkout", "--quiet", "HEAD", "--", "."])
     if head_co.returncode != 0:
         raise ApplicationError(
-            f"git checkout HEAD failed (rc={head_co.returncode}): "
+            f"git checkout HEAD -- . failed (rc={head_co.returncode}): "
             f"{(head_co.stderr or '')[:300]}",
             non_retryable=True,
         )

@@ -127,12 +127,12 @@ class QaActor:
                 workflow.upsert_search_attributes({"bucket": ["qa_passed"]})
             except ApplicationError as e:
                 # Contract violation — pull the andon cord, halt this actor.
+                # Do NOT re-raise: propagating out of the while-True loop
+                # would terminate this persistent actor. halted=True is
+                # the signal; the next iteration's wait_condition blocks
+                # until clear_andon flips it back.
                 self.halted = True
                 workflow.upsert_search_attributes({"bucket": ["qa_failed"]})
-                # Re-raise to mark the workflow attempt as failed in history.
-                # Temporal still keeps the workflow execution running because
-                # this is inside a loop — the next iteration only proceeds
-                # after clear_andon.
                 workflow.logger.error(
                     "andon: msg_id=%s reason=%s", msg.msg_id, e.message
                 )
