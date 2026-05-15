@@ -577,19 +577,19 @@ def _stddev(counts: list[int]) -> float:
 
 
 def _variance_glyph(counts: list[int]) -> str:
-    """Three-position dash for variance: _ low, — mid, ‾ high (spiky)."""
+    """Centered dot whose size grows with variance: ' ' · • ●."""
     if not counts or sum(counts) == 0:
         return " "
     mean = sum(counts) / len(counts)
     if mean == 0:
-        return "_"
+        return "·"
     sigma = _stddev(counts)
     cv = sigma / mean  # coefficient of variation — scale-free
     if cv < 0.5:
-        return "_"
+        return "·"   # small  — steady
     if cv < 1.5:
-        return "—"
-    return "‾"
+        return "•"   # medium — some variance
+    return "●"        # big    — spiky / burst-driven
 
 
 def _oldest_age_str(msgs: list[dict]) -> str:
