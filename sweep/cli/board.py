@@ -7,7 +7,14 @@ import typer
 from sweep.inbox_state import inbox_states
 
 
-STATIONS = ["investigate", "qa", "drip", "retro"]
+# station → display label. retro is "in review" — PRs awaiting maintainer
+# attention with no action signal from us.
+STATIONS = [
+    ("investigate", "investigate"),
+    ("qa",          "qa"),
+    ("drip",        "drip"),
+    ("retro",       "in review"),
+]
 
 
 def register(app: typer.Typer) -> None:
@@ -15,36 +22,51 @@ def register(app: typer.Typer) -> None:
 
 
 def board(
-    include_retro: bool = typer.Option(False, "--retro", help="Include the retro/wait column"),
+    height: int = typer.Option(7, "--height", help="Max rows per column before truncating"),
 ) -> None:
-    """Column view: which PR is in which station. No numerics."""
-    cols = [s for s in STATIONS if include_retro or s != "retro"]
+    """Column view: which PR is in which station. No numerics, truncates tall columns."""
+    cols = STATIONS
 
     items: dict[str, list[str]] = {}
-    for actor in cols:
+    counts: dict[str, int] = {}
+    for actor, _label in cols:
         s = inbox_states(actor)
         in_flight_ids = {m.get("msg_id") for m in s["in_flight"]}
         msgs = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
-        items[actor] = []
+        counts[actor] = len(msgs)
+        rendered: list[str] = []
         for m in msgs:
             link = (
                 f"[{m.get('repo', '?')}#{m.get('pr', '-')}]"
                 f"(https://github.com/{m.get('repo', '')}/pull/{m.get('pr', '')})"
             )
             prefix = "✈️ " if m.get("msg_id") in in_flight_ids else ""
-            items[actor].append(f"{prefix}{link}")
+            rendered.append(f"{prefix}{link}")
+        items[actor] = rendered
 
-    height = max((len(items[a]) for a in cols), default=0)
-    headers = [f"{a} ({len(items[a])})" for a in cols]
+    # Truncate each column to `height` rows. Reserve the last row for the
+    # truncation indicator when a column has more.
+    display: dict[str, list[str]] = {}
+    for actor, _label in cols:
+        col = items[actor]
+        if len(col) <= height:
+            display[actor] = col
+        else:
+            shown = col[: max(0, height - 1)]
+            shown.append(f"_… +{len(col) - len(shown)} more_")
+            display[actor] = shown
+
+    max_rows = max((len(display[a]) for a, _ in cols), default=0)
+    headers = [f"{label} ({counts[a]})" for a, label in cols]
 
     print("| " + " | ".join(headers) + " |")
     print("|" + "|".join("---" for _ in cols) + "|")
-    if height == 0:
+    if max_rows == 0:
         print("| " + " | ".join("_empty_" for _ in cols) + " |")
         return
-    for row in range(height):
+    for row in range(max_rows):
         cells = []
-        for actor in cols:
-            col = items[actor]
+        for actor, _label in cols:
+            col = display[actor]
             cells.append(col[row] if row < len(col) else " ")
         print("| " + " | ".join(cells) + " |")
