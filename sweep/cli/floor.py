@@ -62,9 +62,16 @@ def _render_andon() -> None:
     # at least one pending retro has a non-empty P. Per-retro lines below
     # carry the same emoji so the operator can see which one to read.
     actionable = [r for r in retros if retro_state.has_prescription(r)]
-    # Emoji only when something demands action — the default state is
-    # quiet. 🌱 is the call to attend; accumulating chains stay text-only.
-    badge = " 🌱" if actionable else ""
+    # Emoji only when something demands action. Two attention states:
+    #   📋  halted — line is stopped, attend now (strongest signal)
+    #   🌱  actionable — fold a prescription back at your pace
+    # Otherwise quiet — operator can walk past.
+    if halted:
+        badge = " 📋"
+    elif actionable:
+        badge = " 🌱"
+    else:
+        badge = ""
     print(f"retros: {len(retros)}/{retro_state.RETRO_CAP}{badge}  "
           f"pipeline: {state}")
     if not retros:
