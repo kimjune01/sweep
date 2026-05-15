@@ -7,6 +7,7 @@ with multiple repos or branches.
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -33,8 +34,13 @@ def _heartbeat(details: dict) -> None:
 
     qa_one_entry is callable as a plain coroutine (terminal-mode + e2e
     scripts) where there is no activity context — but the sub-activities
-    it composes still call activity.heartbeat. Swallow the runtime error
-    so the convenience composer keeps working from scripts.
+    it composes still call activity.heartbeat. Swallow the resulting
+    RuntimeError so the convenience composer keeps working from scripts.
+
+    Scope is deliberately narrow: only RuntimeError is caught. Temporal's
+    cancellation signal is CancelledError (subclass of FailureError, not
+    RuntimeError), so a cancelled activity still aborts cleanly — the
+    runtime must see the cancel.
     """
     try:
         activity.heartbeat(details)
@@ -98,7 +104,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     _heartbeat({"stage": "checkout_master"})
     _run(["git", "checkout", "--quiet", default])
     _heartbeat({"stage": "test_on_master"})
-    master_run = _run(req.test_cmd.split())
+    master_run = _run(shlex.split(req.test_cmd))
     log.append(f"master ({default}) exit={master_run.returncode}")
     if master_run.returncode == 0:
         raise ApplicationError(
@@ -109,7 +115,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     _heartbeat({"stage": "checkout_fix"})
     _run(["git", "checkout", "--quiet", req.branch])
     _heartbeat({"stage": "test_on_fix"})
-    fix_run = _run(req.test_cmd.split())
+    fix_run = _run(shlex.split(req.test_cmd))
     log.append(f"fix ({req.branch}) exit={fix_run.returncode}")
     if fix_run.returncode != 0:
         raise ApplicationError(
