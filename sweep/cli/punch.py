@@ -1,15 +1,13 @@
-"""`sweep punch` — coding factory cockpit. Cross-inbox kanban + outcomes."""
+"""`sweep punch` — coding factory cockpit. Single-line status + kanban table."""
 
 from __future__ import annotations
 
-import datetime as dt
 import time
 
 import typer
 
 from sweep import glyphs, org_state, retro_state
 from sweep.inbox_state import inbox_states
-from sweep.outcomes import outcomes as fetch_outcomes
 from sweep.system import system_status
 
 
@@ -23,14 +21,6 @@ CAPS: dict[str, dict[str, int | None]] = {
     "respondable": {"queued": 8, "in_flight": 2},   # you — real backlog signal
     "retro":       {"queued": None, "in_flight": None},  # in-review — geometry, not backlog
 }
-ACTION_HINT = {
-    "triaged":     "issues scored, awaiting investigation (LLM)",
-    "investigate": "root-cause new issues (LLM)",
-    "qa":          "re-attest (CI failed / gates stale)",
-    "drip":        "advance status (close / rebase / ship)",
-    "respondable": "respond to reviewer",
-    "retro":       "audit only (in-review bucket)",
-}
 
 
 def register(app: typer.Typer) -> None:
@@ -39,16 +29,14 @@ def register(app: typer.Typer) -> None:
 
 
 def punch(
-    include_wait: bool = typer.Option(False, "--include-wait", help="Also show retro/wait audits"),
+    include_wait: bool = typer.Option(False, "--include-wait", help="Also show retro/wait stations"),
     spark_minutes: int = typer.Option(10, help="Sparkline bucket size in minutes"),
     spark_buckets: int = typer.Option(12, help="Number of sparkline buckets (default 12 × 10min = 2h)"),
-    outcome_days: int = typer.Option(7, help="Outcomes window in days"),
     rich_mode: bool = typer.Option(False, "--rich", help="Render Rich panels instead of markdown"),
-    no_outcomes: bool = typer.Option(False, "--no-outcomes", help="Skip the gh-backed outcomes fetch"),
     watch: bool = typer.Option(False, "--watch", "-w", help="Refresh continuously as a live dashboard"),
     interval: int = typer.Option(5, "--interval", "-i", help="Refresh interval (seconds) when --watch"),
 ) -> None:
-    """Factory-floor kanban view + per-station punch list.
+    """Coding-factory cockpit — single status line + per-station kanban table.
 
     Default output is GitHub-flavored markdown — renders in Claude Code, looks
     fine in a plain terminal, and pipes cleanly to files / clipboard. Use
@@ -59,41 +47,35 @@ def punch(
         try:
             while True:
                 print("\x1b[2J\x1b[H", end="")
-                _once(include_wait, spark_minutes, spark_buckets, outcome_days, rich_mode, no_outcomes)
+                _once(include_wait, spark_minutes, spark_buckets, rich_mode)
                 print()
                 print(f"_refreshes every {interval}s — Ctrl-C to exit_")
                 time.sleep(interval)
         except KeyboardInterrupt:
             return
         return
-    _once(include_wait, spark_minutes, spark_buckets, outcome_days, rich_mode, no_outcomes)
+    _once(include_wait, spark_minutes, spark_buckets, rich_mode)
 
 
 # ---------------------------------------------------------- one tick
 
 
-def _once(include_wait, spark_minutes, spark_buckets, outcome_days, rich_mode, no_outcomes) -> None:
+def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
     actionable = ["triaged", "investigate", "qa", "drip", "respondable"]
     if include_wait:
         actionable = actionable + ["retro"]
 
     states: dict[str, dict[str, list[dict]]] = {}
-    sections: dict[str, list[dict]] = {}
-    in_flight_ids: dict[str, set[str]] = {}
     for actor in actionable:
-        s = inbox_states(actor)
-        states[actor] = s
-        sections[actor] = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
-        in_flight_ids[actor] = {m.get("msg_id") for m in s["in_flight"]}
+        states[actor] = inbox_states(actor)
 
     rows = _build_rows(states, actionable, spark_minutes, spark_buckets)
 
     if rich_mode:
-        _render_rich(rows, sections, actionable, include_wait)
+        _render_rich(rows)
         return
 
-    _render_markdown(rows, sections, in_flight_ids, actionable, include_wait,
-                     spark_minutes, spark_buckets, outcome_days, no_outcomes)
+    _render_markdown(rows, spark_minutes, spark_buckets)
 
 
 def _build_rows(states, actionable, spark_minutes, spark_buckets):
@@ -145,8 +127,7 @@ def _status_for(actor, queued, in_flight, q_cap, f_cap) -> str:
 # ---------------------------------------------------------- markdown render
 
 
-def _render_markdown(rows, sections, in_flight_ids, actionable, include_wait,
-                     spark_minutes, spark_buckets, outcome_days, no_outcomes) -> None:
+def _render_markdown(rows, spark_minutes, spark_buckets) -> None:
     sys = system_status()
     cpu = sys.get("cpu", 0.0)
     mem = sys.get("mem", 0.0)
@@ -154,8 +135,11 @@ def _render_markdown(rows, sections, in_flight_ids, actionable, include_wait,
 
     print("# coding factory — kanban")
     print()
-    # Andon: retro pager state + halt flag. 📋 takes precedence over 🌱
-    # when both apply; quiet floors render plain "running" with no emoji.
+
+    # One-line status banner. Three facts collapsed into pipe-separated
+    # chunks: andon (retro state), system (cpu/mem/agents), org gate
+    # (review backpressure). Each chunk reads independently; the operator
+    # sees the whole picture without scrolling.
     retros = retro_state.list_retros()
     halted = retro_state.is_halted()
     actionable_count = sum(1 for r in retros if retro_state.has_prescription(r))
@@ -165,27 +149,21 @@ def _render_markdown(rows, sections, in_flight_ids, actionable, include_wait,
         andon_state = f"🌱 {actionable_count} actionable"
     else:
         andon_state = "running"
-    print(f"`andon`  retros {len(retros)}/{retro_state.RETRO_CAP}  ·  pipeline {andon_state}")
-    print()
-    runline = f"**{len(running)} agents running**" if running else "_no agents running_"
-    print(f"`system`  cpu {cpu:.0f}%  ·  mem {mem:.0f}%  ·  {runline}")
-    if running:
-        for wf in running[:5]:
-            age = _age(wf.get("started"))
-            print(f"- `{wf.get('type', '?')}` `{wf.get('id', '?')}` _running {age}_")
-    print()
+    andon_chunk = f"andon {len(retros)}/{retro_state.RETRO_CAP} {andon_state}"
+
+    runline = f"{len(running)} agents" if running else "0 agents"
+    system_chunk = f"system cpu {cpu:.0f}% · mem {mem:.0f}% · {runline}"
+
     blocked = org_state.blocked_orgs()
     if blocked:
-        # Show the heaviest 5 (most open PRs) + total count. JIT principle:
-        # if many orgs are blocked, prospect has correctly stopped surfacing
-        # work — the constraint is review throughput, not upstream supply.
-        heavy = sorted(blocked.items(), key=lambda kv: -len(kv[1]))[:5]
         total_prs = sum(len(prs) for prs in blocked.values())
-        head = ", ".join(f"{o}({len(prs)})" for o, prs in heavy)
-        print(f"`org gate`  {len(blocked)} orgs blocked ({total_prs} PRs in review)  ·  heaviest: {head}")
-        print()
-    print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
+        org_chunk = f"org gate {len(blocked)} blocked / {total_prs} in review"
+    else:
+        org_chunk = "org gate clear"
+
+    print(f"`{andon_chunk}  ·  {system_chunk}  ·  {org_chunk}`")
     print()
+
     print(f"| station | queued | in-flight | rate | var | trend ({spark_minutes}m × {spark_buckets}, % of cap) | oldest | status |")
     print( "|---|---:|---:|---:|:-:|---|---|---|")
     for actor, queued, in_flight, rate_str, var_glyph, spark, oldest, status in rows:
@@ -193,78 +171,12 @@ def _render_markdown(rows, sections, in_flight_ids, actionable, include_wait,
             f"| → {actor} | {queued} | {in_flight} | {rate_str} | `{var_glyph}` "
             f"| `{spark}` | {oldest} | {status} |"
         )
-    print()
-
-    total = sum(len(sections[a]) for a in actionable if a != "retro")
-    if total == 0 and not include_wait:
-        print("_nothing actionable — pipeline idle_")
-    else:
-        for actor in actionable:
-            msgs = sections[actor]
-            if not msgs:
-                continue
-            if actor == "retro" and not include_wait:
-                continue
-            print(f"## {actor} ({len(msgs)}) — {ACTION_HINT[actor]}")
-            print()
-            for m in msgs:
-                repo = m.get("repo", "?")
-                pr = m.get("pr") or "-"
-                payload = m.get("payload") or {}
-                reason = payload.get("reason", "")
-                ts = m.get("ts", "")[:19]
-                url = f"https://github.com/{repo}/pull/{pr}"
-                prefix = "✈️ " if m.get("msg_id") in in_flight_ids.get(actor, set()) else ""
-                print(f"- {prefix}**[{repo}#{pr}]({url})** — {reason}  _({ts})_")
-            print()
-
-    if no_outcomes:
-        return
-    _render_outcomes(outcome_days)
-
-
-def _render_outcomes(days: int) -> None:
-    o = fetch_outcomes(days)
-    merged = o["merged"]
-    closed = o["closed"]
-    total = merged + closed
-    ratio = (merged / total * 100) if total else None
-    days = o["days"]
-    merge_dither = glyphs.dither(o["merged_per_day"])
-    close_dither = glyphs.dither(o["closed_per_day"])
-    end_date = dt.date.fromisoformat(o["end"])
-    day_labels = "".join(
-        (end_date - dt.timedelta(days=days - 1 - i)).strftime("%a")[0]
-        for i in range(days)
-    )
-
-    print(f"## outcomes (last {days}d — what actually merged)")
-    print()
-    print("| metric | value |")
-    print("|---|---:|")
-    print(f"| merged | {merged} |")
-    print(f"| closed (not merged) | {closed} |")
-    if ratio is not None:
-        print(f"| merge ratio | {ratio:.0f}% |")
-    else:
-        print("| merge ratio | — _(no outcomes)_ |")
-    if days > 0:
-        print(f"| daily merge rate | {merged / days:.1f} |")
-    else:
-        print("| daily merge rate | — |")
-    print()
-    print("```")
-    print(f"day   {day_labels}    ← oldest → today")
-    print(f"merge {merge_dither}    {merged} total")
-    print(f"close {close_dither}    {closed} total")
-    print("```")
-    print()
 
 
 # ---------------------------------------------------------- rich render
 
 
-def _render_rich(rows, sections, actionable, include_wait) -> None:
+def _render_rich(rows) -> None:
     from rich.columns import Columns
     from rich.console import Console
     from rich.panel import Panel
@@ -308,29 +220,4 @@ def _render_rich(rows, sections, actionable, include_wait) -> None:
     console.print(Columns([source] + panels, equal=False, padding=(0, 1)))
     console.print()
 
-    for actor in actionable:
-        msgs = sections[actor]
-        if not msgs:
-            continue
-        if actor == "retro" and not include_wait:
-            continue
-        console.print(f"[bold]{actor}[/] ({len(msgs)}) — [dim]{ACTION_HINT[actor]}[/]")
-        for m in msgs:
-            intent = m.get("intent", "?")
-            repo = m.get("repo", "?")
-            pr = m.get("pr") or "-"
-            payload = m.get("payload") or {}
-            reason = payload.get("reason", "")
-            console.print(f"  [bold cyan]{repo}#{pr}[/]  [{intent}]  {reason}")
-        console.print()
 
-
-def _age(started: str | None) -> str:
-    if not started:
-        return ""
-    try:
-        t = dt.datetime.fromisoformat(started.replace("Z", "+00:00"))
-        secs = int((dt.datetime.now(dt.timezone.utc) - t).total_seconds())
-        return f"{secs}s" if secs < 60 else f"{secs//60}m"
-    except (ValueError, AttributeError):
-        return ""
