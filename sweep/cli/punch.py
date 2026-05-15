@@ -68,7 +68,7 @@ def punch(
 
 
 def _once(include_wait, spark_minutes, spark_buckets, outcome_days, rich_mode, no_outcomes) -> None:
-    actionable = ["drip", "investigate", "qa"]
+    actionable = ["investigate", "qa", "drip"]
     if include_wait:
         actionable = actionable + ["retro"]
 

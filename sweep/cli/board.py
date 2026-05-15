@@ -7,7 +7,7 @@ import typer
 from sweep.inbox_state import inbox_states
 
 
-STATIONS = ["drip", "investigate", "qa", "retro"]
+STATIONS = ["investigate", "qa", "drip", "retro"]
 
 
 def register(app: typer.Typer) -> None:
