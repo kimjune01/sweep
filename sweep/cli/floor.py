@@ -3,6 +3,11 @@ flow + per-station table. Pairs with `sweep kanban` (swim-lane detail)."""
 
 from __future__ import annotations
 
+import contextlib
+import io
+import shutil
+import subprocess
+import sys
 import time
 
 import typer
@@ -57,8 +62,9 @@ def floor(
     spark_minutes: int = typer.Option(10, help="Sparkline bucket size in minutes"),
     spark_buckets: int = typer.Option(12, help="Number of sparkline buckets (default 12 × 10min = 2h)"),
     rich_mode: bool = typer.Option(False, "--rich", help="Render Rich panels instead of markdown"),
+    plain: bool = typer.Option(False, "--plain", help="Force plain markdown (default: styled via glow when stdout is a TTY)"),
     watch: bool = typer.Option(False, "--watch", "-w", help="Refresh continuously as a live dashboard"),
-    interval: int = typer.Option(5, "--interval", "-i", help="Refresh interval (seconds) when --watch"),
+    interval: int = typer.Option(5, "--interval", help="Refresh interval (seconds) when --watch"),
 ) -> None:
     """Factory-floor cockpit — single status line, compressed pipeline flow,
     per-station table. The operator's "what's the line doing right now" view.
@@ -66,10 +72,9 @@ def floor(
     Pairs with `sweep kanban` (per-station swim lanes with PR detail). Floor
     is the gemba view; kanban is the work-in-progress board.
 
-    Default output is GitHub-flavored markdown — renders in Claude Code, looks
-    fine in a plain terminal, and pipes cleanly to files / clipboard. Use
-    --rich for Rich panels in a live terminal. --watch refreshes in place
-    every --interval seconds.
+    Defaults to styled output via glow when stdout is a TTY (you ran the
+    command yourself). Pipes / redirects get raw markdown so scripts can
+    parse it. Pass --plain to force raw even in a TTY.
     """
     if watch:
         try:
@@ -82,7 +87,34 @@ def floor(
         except KeyboardInterrupt:
             return
         return
+    # Styled-by-default in a TTY when glow is available. Pipes / redirects /
+    # --plain all fall through to raw markdown so scripts can parse the
+    # output and so the command always produces something usable.
+    if not plain and sys.stdout.isatty() and shutil.which("glow"):
+        _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode)
+        return
     _once(include_wait, spark_minutes, spark_buckets, rich_mode)
+
+
+def _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
+    """Capture the markdown output and pipe it through glow's pager so the
+    operator gets styled rendering with q-to-quit. Falls back to plain
+    print + an inline hint when glow isn't on PATH so the command always
+    produces something usable."""
+    if not shutil.which("glow"):
+        _once(include_wait, spark_minutes, spark_buckets, rich_mode)
+        print()
+        print("_glow not installed — `brew install charmbracelet/tap/glow` for styled rendering_",
+              file=sys.stderr)
+        return
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _once(include_wait, spark_minutes, spark_buckets, rich_mode)
+    try:
+        proc = subprocess.Popen(["glow", "-p", "-"], stdin=subprocess.PIPE)
+        proc.communicate(input=buf.getvalue().encode())
+    except KeyboardInterrupt:
+        pass
 
 
 # ---------------------------------------------------------- one tick
