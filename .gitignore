@@ -6,3 +6,4 @@ __pycache__/
 
 # TUI build output
 /bin/sweep-tui
+/bin/sweep-tui-linux
