@@ -154,14 +154,42 @@ def _extract_bullets(path: Path) -> list[str]:
     return bullets
 
 
+CI_GLYPHS = {
+    "green":   "✅",
+    "failing": "❌",
+    "pending": "⏳",
+    "mixed":   "🟡",
+    "unknown": "❓",
+}
+REVIEW_GLYPHS = {
+    "APPROVED":          "👍 approved",
+    "CHANGES_REQUESTED": "🛑 changes",
+    "REVIEW_REQUIRED":   "👀 review",
+}
+MERGE_GLYPHS = {
+    "MERGEABLE":   "🟢 mergeable",
+    "CONFLICTING": "🔀 conflict",
+    "UNKNOWN":     "❓ unknown",
+}
+
+
 def _render_state(data: dict) -> None:
-    ci = _ci_status(data.get("statusCheckRollup") or [])
-    review = data.get("reviewDecision") or "—"
-    merge = data.get("mergeable") or "—"
-    draft = "draft" if data.get("isDraft") else "ready"
-    age = _stale(data.get("updatedAt", ""))
-    print("## state")
-    print(f"ci `{ci}` · review `{review}` · mergeable `{merge}` · `{draft}` · {age}")
+    """Stats line — emoji-leading state cells, dot-separated. No header
+    needed: the shape (single line of short cells) names it, same as the
+    cpu/mem/agents line on floor."""
+    ci_key = _ci_status(data.get("statusCheckRollup") or [])
+    review = data.get("reviewDecision") or ""
+    merge = data.get("mergeable") or ""
+
+    cells = [f"{CI_GLYPHS.get(ci_key, '·')} {ci_key}"]
+    if review:
+        cells.append(REVIEW_GLYPHS.get(review, f"· {review}"))
+    if merge:
+        cells.append(MERGE_GLYPHS.get(merge, f"· {merge}"))
+    if data.get("isDraft"):
+        cells.append("📝 draft")
+    cells.append(_stale(data.get("updatedAt", "")))
+    print(f"`{' · '.join(cells)}`")
     print()
 
 
@@ -195,6 +223,9 @@ def _stale(updated: str) -> str:
 
 
 def _render_origin(repo: str, data: dict) -> None:
+    """Origin pointers — issue references in PR body + hypothesis file path.
+    No header — these are pointer-shaped lines, distinct from the stats
+    line above and the bullet lists below."""
     body = data.get("body") or ""
     refs = sorted(set(int(n) for n in REF_RE.findall(body)))
     hypo = _hypothesis_path(repo)
@@ -202,7 +233,6 @@ def _render_origin(repo: str, data: dict) -> None:
     if not refs and not hypo.exists():
         return
 
-    print("## origin")
     if refs:
         first = refs[0]
         url = f"https://github.com/{repo}/issues/{first}"
@@ -229,11 +259,13 @@ def _render_receipts(repo: str, pr: int) -> None:
         return
     total = len(artifacts)
     shown = artifacts[:RECEIPTS_LIMIT]
-    print(f"## receipts ({len(shown)} of {total})")
+    # No header — locality names these: after origin pointers, before
+    # events. The `filename` + msg_id shape distinguishes from the
+    # timestamp-leading event lines below.
     for msg_id, p in shown:
-        print(f"- `{p.name}` _msg_id `{msg_id}`_")
+        print(f"`{p.name}` _msg_id `{msg_id}`_")
     if total > RECEIPTS_LIMIT:
-        print(f"_| `sweep attest for-msg {msg_ids[0]}`_")
+        print(f"_… +{total - RECEIPTS_LIMIT} more · `sweep attest for-msg {msg_ids[0]}`_")
     print()
 
 
@@ -286,7 +318,8 @@ def _render_events(repo: str, pr: int) -> None:
     if not rows:
         return
     shown = rows[:EVENTS_LIMIT]
-    print(f"## events ({len(shown)} of {len(rows)})")
+    # No header — the timestamp-leading shape names these as events;
+    # locality (last section, after receipts) reinforces.
     for ev in shown:
         ts = (ev.get("ts") or "")[:16]
         kind = ev.get("kind", "?")
@@ -298,7 +331,7 @@ def _render_events(repo: str, pr: int) -> None:
         if "error_type" in ev:
             extras.append(f"error={ev['error_type']}")
         tail = " · ".join(extras)
-        print(f"- `{ts}` `{kind}`{(' · ' + tail) if tail else ''}")
+        print(f"`{ts}` `{kind}`{(' · ' + tail) if tail else ''}")
     if len(rows) > EVENTS_LIMIT:
-        print(f"_| `sweep observe events --limit 50`_")
+        print(f"_… +{len(rows) - EVENTS_LIMIT} more · `sweep observe events --limit 50`_")
     print()
