@@ -22,8 +22,6 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-import asyncio
-
 from sweep import gh_io, org_state, seen
 from sweep.types import Message
 
@@ -120,23 +118,20 @@ async def gh_search_repos_below_stars(stars_ceiling: int, limit: int,
     for lang in languages:
         q_parts.append(f"language:{lang}")
     query = " ".join(q_parts)
-    out = subprocess.run(
-        [
-            "gh", "search", "repos",
+    try:
+        raw = gh_io.search_repos(
             query,
-            "--sort", "stars",
-            "--order", "desc",
-            "--limit", str(limit),
-            "--json", "fullName,stargazersCount,openIssuesCount,pushedAt,isArchived,description",
-        ],
-        capture_output=True, text=True, check=False,
-    )
-    if out.returncode != 0:
+            sort="stars",
+            order="desc",
+            limit=limit,
+            fields="fullName,stargazersCount,openIssuesCount,pushedAt,isArchived,description",
+            ttl=600,
+        )
+    except subprocess.CalledProcessError as e:
         raise ApplicationError(
-            f"gh search repos failed: {out.stderr[:300]}",
+            f"gh search repos failed: {(e.stderr or '')[:300]}",
             non_retryable=False,
         )
-    raw = json.loads(out.stdout or "[]")
     return [
         RepoCandidate(
             name_with_owner=r["fullName"],
@@ -191,20 +186,14 @@ async def gh_search_actionable_issues(repo: str, limit: int) -> list[IssueCandid
         f'repo:{repo} is:issue is:open no:assignee '
         f'label:"good first issue","help wanted","bug","enhancement"'
     )
-    out = subprocess.run(
-        [
-            "gh", "search", "issues",
-            q,
-            "--limit", str(limit),
-            "--json", "number,title,url,labels,updatedAt",
-        ],
-        capture_output=True, text=True, check=False,
-    )
-    if out.returncode != 0:
-        return []
     try:
-        raw = json.loads(out.stdout or "[]")
-    except json.JSONDecodeError:
+        raw = gh_io.search_issues(
+            q,
+            limit=limit,
+            fields="number,title,url,labels,updatedAt",
+            ttl=120,
+        )
+    except subprocess.CalledProcessError:
         return []
 
     candidates = [
