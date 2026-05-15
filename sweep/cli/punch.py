@@ -22,6 +22,18 @@ CAPS: dict[str, dict[str, int | None]] = {
     "retro":       {"queued": None, "in_flight": None},  # in-review — geometry, not backlog
 }
 
+# Display names for the compressed flow line above the table. Differs from
+# the table's actor-key column to read closer to the natural pipeline names.
+FLOW_NAMES: dict[str, str] = {
+    "triaged":     "Triage",
+    "investigate": "Investigate",
+    "qa":          "QA",
+    "drip":        "Drip",
+    "retro":       "In Review",
+    "respondable": "Respondable",
+}
+FLOW_ORDER = ("triaged", "investigate", "qa", "drip", "retro", "respondable")
+
 
 def register(app: typer.Typer) -> None:
     """Attach the punch command to a top-level Typer app."""
@@ -65,9 +77,12 @@ def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
     if include_wait:
         actionable = actionable + ["retro"]
 
-    states: dict[str, dict[str, list[dict]]] = {}
-    for actor in actionable:
-        states[actor] = inbox_states(actor)
+    # Flow line always reads every station regardless of --include-wait —
+    # geometry is the pipeline shape, not the action filter.
+    flow_states: dict[str, dict[str, list[dict]]] = {
+        actor: inbox_states(actor) for actor in FLOW_ORDER
+    }
+    states = {actor: flow_states[actor] for actor in actionable}
 
     rows = _build_rows(states, actionable, spark_minutes, spark_buckets)
 
@@ -75,7 +90,7 @@ def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
         _render_rich(rows)
         return
 
-    _render_markdown(rows, spark_minutes, spark_buckets)
+    _render_markdown(rows, flow_states, spark_minutes, spark_buckets)
 
 
 def _build_rows(states, actionable, spark_minutes, spark_buckets):
@@ -127,7 +142,23 @@ def _status_for(actor, queued, in_flight, q_cap, f_cap) -> str:
 # ---------------------------------------------------------- markdown render
 
 
-def _render_markdown(rows, spark_minutes, spark_buckets) -> None:
+def _render_flow(flow_states: dict[str, dict[str, list[dict]]]) -> str:
+    """Compressed pipeline view: `[queued] Name(in_flight)` per station,
+    `~` separated. Counts are elided when zero so the line stays scannable
+    — only present pressure draws the eye."""
+    parts: list[str] = []
+    for actor in FLOW_ORDER:
+        s = flow_states.get(actor) or {}
+        queued = len(s.get("queued", []))
+        in_flight = len(s.get("in_flight", []))
+        name = FLOW_NAMES[actor]
+        prefix = f"[{queued}] " if queued > 0 else ""
+        suffix = f"({in_flight})" if in_flight > 0 else ""
+        parts.append(f"{prefix}{name}{suffix}")
+    return " ~ ".join(parts)
+
+
+def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     sys = system_status()
     cpu = sys.get("cpu", 0.0)
     mem = sys.get("mem", 0.0)
@@ -162,6 +193,9 @@ def _render_markdown(rows, spark_minutes, spark_buckets) -> None:
         org_chunk = "org gate clear"
 
     print(f"`{andon_chunk}  ·  {system_chunk}  ·  {org_chunk}`")
+    print()
+
+    print(f"`{_render_flow(flow_states)}`")
     print()
 
     print(f"| station | queued | in-flight | rate | var | trend ({spark_minutes}m × {spark_buckets}, % of cap) | oldest | status |")
