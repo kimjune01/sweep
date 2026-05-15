@@ -119,10 +119,11 @@ def _cached_json(endpoint: str, args: list[str], ttl: int) -> list | dict:
     if hit is not None:
         try:
             parsed = json.loads(hit)
+        except json.JSONDecodeError:
+            parsed = None  # corrupt cache row — fall through to refetch
+        if parsed is not None:
             observe.incr(f"gh_hit:{endpoint}")
             return parsed
-        except json.JSONDecodeError:
-            pass  # corrupt cache row — refetch
     observe.incr(f"gh_miss:{endpoint}")
     raw = _gh(args)
     try:
