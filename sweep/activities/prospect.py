@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import subprocess
+import urllib.parse
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -168,6 +169,9 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
     return True
 
 
+ACTIONABLE_LABELS = ("good first issue", "help wanted", "bug", "enhancement")
+
+
 @activity.defn
 async def gh_search_actionable_issues(repo: str, limit: int) -> list[IssueCandidate]:
     """Open issues with maintainer-intent labels, no assignee, with no
@@ -178,34 +182,47 @@ async def gh_search_actionable_issues(repo: str, limit: int) -> list[IssueCandid
     dead PR (closed/merged) means it's already been addressed or was
     explicitly rejected. Either way, prospect's job is to find work nobody
     has touched.
+
+    Why we hit /search/issues directly instead of `gh search issues`:
+    the multi-word OR'd labels qualifier — label:"good first issue",
+    "help wanted" — does not survive the gh CLI's argv handling. shlex
+    strips the inner quotes and a single-arg passthrough makes gh wrap
+    the whole thing in extra quotes. Either way, the GitHub API receives
+    a malformed qualifier and matches zero issues. Posting through
+    `gh api /search/issues?q=...` with a URL-encoded query gives us
+    direct control over the quoting that reaches the search backend.
     """
     if "/" not in repo:
         raise ApplicationError("repo must be owner/repo", non_retryable=True)
-    # Single query with OR-d labels — gh's --label flag is AND, so do via search.
-    q = (
-        f'repo:{repo} is:issue is:open no:assignee '
-        f'label:"good first issue","help wanted","bug","enhancement"'
+
+    label_clause = ",".join(f'"{l}"' for l in ACTIONABLE_LABELS)
+    qual = (
+        f"repo:{repo} is:issue is:open no:assignee "
+        f"label:{label_clause}"
+    )
+    path = (
+        f"/search/issues?q={urllib.parse.quote(qual)}"
+        f"&per_page={limit}"
     )
     try:
-        raw = gh_io.search_issues(
-            q,
-            limit=limit,
-            fields="number,title,url,labels,updatedAt",
-            ttl=120,
-        )
+        resp = gh_io.api(path, ttl=120)
     except subprocess.CalledProcessError:
         return []
+    items = resp.get("items", []) if isinstance(resp, dict) else []
 
+    # /search/issues uses snake_case (html_url, updated_at) where the gh
+    # CLI projects camelCase. Map both to our internal shape.
     candidates = [
         IssueCandidate(
             repo=repo,
             number=int(i["number"]),
             title=i.get("title", ""),
-            url=i.get("url", ""),
+            url=i.get("html_url") or i.get("url", ""),
             labels=[l.get("name", "") for l in (i.get("labels") or [])],
-            updated_at=i.get("updatedAt", ""),
+            updated_at=i.get("updated_at") or i.get("updatedAt", ""),
         )
-        for i in raw
+        for i in items
+        if "number" in i
     ]
     # Dedup against any PR referencing the issue, alive or dead.
     return [c for c in candidates if not _has_related_pr(repo, c.number)]
