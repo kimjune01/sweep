@@ -98,10 +98,11 @@ def _render(repo: str, pr: int, data: dict) -> None:
 
     # Each row is a user-intent label on the left and the resolution on
     # the right. Skip rows whose data side is empty so quiet PRs read
-    # tight. "Do now" leads when there's an action; hidden when sweep
-    # is mid-cycle and the human's role is just to wait.
+    # tight. "Do now" appears ONLY when something blocks the machine's
+    # automatic flow — attested→drip→ship is routine and silent; humans
+    # handle the exceptions.
     rows: list[tuple[str, str]] = []
-    do_now = _do_now(url, artifacts, attested, verdict)
+    do_now = _do_now(url, artifacts, verdict, data)
     if do_now:
         rows.append(("Do now", do_now))
     rows.append(("GitHub", _github_cell(url, data)))
@@ -114,9 +115,7 @@ def _render(repo: str, pr: int, data: dict) -> None:
     if origin:
         rows.append(("Origin", origin))
 
-    receipts = _receipts_cell(msg_ids, artifacts)
-    if receipts:
-        rows.append(("Artifacts", receipts))
+    rows.append(("Artifacts", _receipts_cell(msg_ids, artifacts, attested)))
 
     timeline = _timeline_cell(repo, pr)
     if timeline:
@@ -207,21 +206,28 @@ MERGE_GLYPHS = {
 }
 
 
-def _do_now(url: str, artifacts: list[tuple[str, Path]], attested: bool,
-             verdict: str | None) -> str:
-    """The next move given the current state. Returns "" when there's
-    nothing for the human to do (cascade mid-flight or hasn't started):
-    the row hides and the operator stays out of the way. ⛩️ and 🚧
-    are reserved for the attestation state cell; Do now is action verbs
-    only."""
-    if attested:
-        return f"[Review on GitHub]({url})"
-    # Receipts exist with an actionable verdict — cascade returned a
-    # non-pass result the human can inspect and fix.
+def _do_now(url: str, artifacts: list[tuple[str, Path]],
+             verdict: str | None, data: dict) -> str:
+    """The next move ONLY when something blocks the machine's automatic
+    flow. Attested PRs automatically go attested → drip → ship; nothing
+    for the human to do. Human attention is reserved for exceptions:
+    cascade failures, conflicts, maintainer engagement, force-push
+    requirements.
+
+    Priority order (first match wins):
+      conflict        rebase needed (force-push)
+      review changes  maintainer pushed back, needs a response
+      cascade failed  receipts exist but verdict isn't pass — inspect
+
+    Returns "" when nothing is blocked. ⛩️ and 🚧 are reserved for the
+    attestation state, never used here; Do now is action verbs only."""
+    if data.get("mergeable") == "CONFLICTING":
+        return f"[Rebase]({url})"
+    if data.get("reviewDecision") == "CHANGES_REQUESTED":
+        return f"[Respond]({url})"
     if artifacts and verdict in {"fail", "partial", "revise"}:
         latest = artifacts[0][1]
         return f"[Inspect cascade]({latest.as_uri()})"
-    # Mid-cycle (no verdict yet) or pre-cycle (no artifacts): no action.
     return ""
 
 
@@ -320,18 +326,34 @@ def _artifacts_for(msg_ids: list[str]) -> list[tuple[str, Path]]:
     return artifacts
 
 
-def _receipts_cell(msg_ids: list[str], artifacts: list[tuple[str, Path]]) -> str:
-    """File:// linked artifact filenames joined with ` · `. Trailing
-    overflow link points at the msg_id's directory for the rest."""
+def _receipts_cell(msg_ids: list[str], artifacts: list[tuple[str, Path]],
+                    attested: bool) -> str:
+    """⛩️/🚧 badge + linked artifact filenames. Attestation status IS an
+    artifact — the badge text links to the attestation directory when
+    evidence exists, so a single click takes the operator from "is it
+    attested?" to "show me the proof."
+
+    Two delimiters in the cell, by role:
+      ` ┊ `  major break, status → evidence
+      ` · `  minor, between files
+
+    Empty artifact set → just the 🚧 Unattested badge, no link (no
+    evidence to point at yet)."""
+    icon = "⛩️" if attested else "🚧"
+    label = "Attested" if attested else "Unattested"
     if not artifacts:
-        return ""
+        return f"{icon} {label}"
+    # Evidence dir link doubles as the badge href — clicking the badge
+    # opens the folder of receipts that establish (or fail to establish)
+    # the attestation claim. Same link used by [+N more] overflow tail.
+    dir_link = (ATTESTATIONS_DIR / msg_ids[0]).as_uri()
+    badge = f"{icon} [{label}]({dir_link})"
     shown = artifacts[:RECEIPTS_LIMIT]
-    parts = [f"[{p.name}]({p.as_uri()})" for _msg_id, p in shown]
+    files = [f"[{p.name}]({p.as_uri()})" for _msg_id, p in shown]
     extra = len(artifacts) - RECEIPTS_LIMIT
     if extra > 0:
-        dir_link = (ATTESTATIONS_DIR / msg_ids[0]).as_uri()
-        parts.append(f"[+{extra} more]({dir_link})")
-    return " · ".join(parts)
+        files.append(f"[+{extra} more]({dir_link})")
+    return f"{badge} ┊ {' · '.join(files)}"
 
 
 def _msg_ids_for(repo: str, pr: int) -> list[str]:
