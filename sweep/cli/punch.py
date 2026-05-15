@@ -6,7 +6,7 @@ import time
 
 import typer
 
-from sweep import glyphs, org_state, retro_state
+from sweep import glyphs
 from sweep.inbox_state import inbox_states
 from sweep.system import system_status
 
@@ -171,32 +171,8 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     print("# coding factory — kanban")
     print()
 
-    # One-line status banner. Three facts collapsed into pipe-separated
-    # chunks: andon (retro state), system (cpu/mem/agents), org gate
-    # (review backpressure). Each chunk reads independently; the operator
-    # sees the whole picture without scrolling.
-    retros = retro_state.list_retros()
-    halted = retro_state.is_halted()
-    actionable_count = sum(1 for r in retros if retro_state.has_prescription(r))
-    if halted:
-        andon_state = "📋 HALTED"
-    elif actionable_count > 0:
-        andon_state = f"🌱 {actionable_count} actionable"
-    else:
-        andon_state = "running"
-    andon_chunk = f"andon {len(retros)}/{retro_state.RETRO_CAP} {andon_state}"
-
     runline = f"{len(running)} agents" if running else "0 agents"
-    system_chunk = f"system cpu {cpu:.0f}% · mem {mem:.0f}% · {runline}"
-
-    blocked = org_state.blocked_orgs()
-    if blocked:
-        total_prs = sum(len(prs) for prs in blocked.values())
-        org_chunk = f"org gate {len(blocked)} blocked / {total_prs} in review"
-    else:
-        org_chunk = "org gate clear"
-
-    print(f"`{andon_chunk}  ·  {system_chunk}  ·  {org_chunk}`")
+    print(f"`cpu {cpu:.0f}% · mem {mem:.0f}% · {runline}`")
     print()
 
     print(f"`{_render_flow(flow_states)}`")
