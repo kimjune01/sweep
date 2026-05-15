@@ -202,7 +202,7 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     print(f"`{' · '.join(parts)}`")
     print()
 
-    print(f"`{_render_flow(flow_states)}`")
+    print(f"`{_render_flow(flow_states)}`  _→ `sweep kanban`_")
     print()
 
     print(f"| station | queued | in-flight | rate | var | trend ({spark_minutes}m × {spark_buckets}, % of cap) | oldest | status |")
