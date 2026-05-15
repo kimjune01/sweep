@@ -147,7 +147,10 @@ Sweep keeps its state at `~/.sweep/`. The git repo at `~/Documents/sweep/` holds
 git clone https://github.com/kimjune01/sweep ~/Documents/sweep
 cd ~/Documents/sweep
 uv sync
+uv tool install --editable .
 ```
+
+`uv tool install --editable .` puts `sweep` and `sweep-worker` on user PATH (`~/.local/bin/`), linked to the repo so source edits show up live. Required because the TUI shells out to bare `sweep`.
 
 ### 2. Create state directory
 

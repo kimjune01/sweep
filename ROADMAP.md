@@ -87,9 +87,17 @@ Renderer is ready (⬆️ in the inbox); no producer yet. Candidates:
 
 Pick one, prototype, see if it earns its keep.
 
+### 7. Onboarding
+
+Friction we keep hitting and a newcomer would hit harder. README's quick-start covers commands; this covers the gap between "ran the commands" and "knows what's happening."
+
+- **Hardlink-vs-symlink convention.** Quick-start mixes both: state-dir uses `ln -s`, skill files and HYPOTHESIS_GRAPH use `ln` (hard). Hardlinks silently detach on `git checkout` of a different version (working tree gets a new inode; the `~/.sweep` side keeps pointing at the old). Pick a rule per file class and document the failure mode. Likely: symlinks for skill files (point at versioned source), hardlinks only for files actively edited on both sides.
+- **`~/.sweep/` directory map.** What lives where, what's ephemeral cache (`cache/`), what's append-only log (`events.jsonl`), what's pager state (`retros/`), what's tamper-evident (`attestations/`). One section in README or a `STATE.md` next to it. Currently a newcomer has to grep.
+- **TUI ↔ CLI relationship.** `sweep-tui` shells out to `sweep` for every action; if `sweep` isn't on PATH the TUI dies with an opaque "executable file not found." Make this explicit in README's TUI section (the install step now fixes the symptom but not the explanation).
+- **First-cycle walkthrough.** README §5 is a command catalog. Newcomer wants narrative: clone → install → `prospect` produces what → triage filters how → drip queues → push → retro folds → repeat. One annotated example PR through the whole loop, with a screenshot of `sweep floor` at each stage.
+
 ## Later
 
-- **Cold storage for events.** The cursor was built for this — once retro proves it captures everything it needs across a few cycles, the lines before the cursor become safe to archive (gzip + S3 / wherever). Until then, events.jsonl grows append-only and that's fine.
 - **Cold storage for events.** The cursor was built for this — once retro proves it captures everything it needs across a few cycles, the lines before the cursor become safe to archive (gzip + S3 / wherever). Until then, events.jsonl grows append-only and that's fine.
 - **Counter histograms for retro.** `qa_volley_hist:1`, `qa_volley_hist:2`, … etc. already work; need a CLI/skill that reads them and surfaces distribution shape (`sweep observe hist qa_volley`).
 - **TUI kanban item selection.** `sweep-tui` currently exposes the two pipeline-wide flags as a horizontal action bar. Per-item actions (select a PR row in the kanban, ack / open in browser / clear from inbox) would let the TUI cover the swim-lane operator surface too. Out of scope until the bar version earns its keep.
