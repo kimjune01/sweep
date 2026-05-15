@@ -67,6 +67,20 @@ Columns truncate at `--height` rows with a `_… +N more_` indicator. Useful whe
 
 Both views are read-only. Actions go through actor-specific commands (`sweep retro discard`, `sweep qa clear`, etc.) once the view tells you what to do.
 
+### `sweep-tui` — operator action bar
+
+A thin horizontal bar with two toggles and a link, for flipping pipeline-wide flags without leaving the cockpit. File-backed at `~/.sweep/control/`, so the CLI (`sweep dry on`, `sweep pause on`) and the TUI write the same state.
+
+> `[ d  dry 🌵 OFF ]   [ p  pause 🚦 OFF ]   [ f  floor ↗ ]`
+>
+> `q quit   flags live at ~/.sweep/control/`
+
+- **Dry** — actors run the full forward pass, tests + attestations + observability still fire, but external mutations (inbox writes, `gh pr create`, `git push`) are skipped. Rehearsal mode. `🌵 DRY` shows up in the `sweep floor` status line.
+- **Pause** — forward-pass actors no-op at takt entry; in-flight work completes. Distinct from the retro-cap halt (`📋 RETRO`, automatic backpressure) — pause is operator-initiated. `🚦 PAUSED` shows in `sweep floor`.
+- **Floor** — shells out to `sweep floor` so you can drop into the cockpit without quitting the bar.
+
+Build: `cd tui && go build -o ../bin/sweep-tui .`
+
 ## Architecture
 
 ```
@@ -185,6 +199,8 @@ The worker registers `QaActor`, `PrStateWorkflow`, and all activities against ta
 | `sweep attest` | Attestation log + gh-cache stats |
 | `sweep observe` | Counters + events + cursor for retro |
 | `sweep retro` | SOAP one-pager pager — list / status / show / discard / record |
+| `sweep dry` | Toggle dry mode (rehearse without external mutations) — on / off / status |
+| `sweep pause` | Toggle soft-pause (no new dequeues; in-flight completes) — on / off / status |
 | `sweep models` | Model registry, role defaults, adversary cascade |
 
 ```bash

@@ -38,6 +38,15 @@ The branch `temporal-pipeline` is 87 commits ahead of `master`. Below is what's 
 - `scripts/e2e-fixture.py` — full qa pipeline against live GitHub + Haiku.
 - Both green.
 
+### Operator controls + TUI
+
+- `sweep/control_state.py` — flag primitives at `~/.sweep/control/{dry,paused}`. Presence-only, atomic writes.
+- `sweep dry on/off/status` and `sweep pause on/off/status` — CLI toggles. Same files the TUI writes.
+- Dry mode skips external mutations at three sites: `deliver_to_inbox`, `route_classified`, and `prospect_one_pass`'s deposit step — each writes to a `.dry.jsonl` sibling and emits a `dry_skip` event. The drip skill's `gh pr create` honors the same flag.
+- Soft-pause: `prospect_one_pass`, `qa_one_entry`, and `route_classified` no-op at takt entry (counters `paused_skip:*`). In-flight work completes; clears manually.
+- `sweep floor` status line surfaces 🚦 PAUSED and 🌵 DRY when active.
+- `tui/` — Bubble Tea + Glamour TUI built to `bin/sweep-tui`. Wraps `sweep floor --plain`, refreshes every 5s, `d`/`p`/`r`/`q` keybinds. File-backed so flags persist across launches.
+
 ### Hardening
 
 Seven rounds of adversarial bug hunt (`bug-hunt.md` is the current report). 30 bugs fixed across rounds 1–7: shlex label quoting, cursor atomicity, SQLite timeouts, chain race serialization, llm error cache poisoning, ack inbox writer gap, route_classified msg_id stability, and the long tail of cousin bugs each fix surfaces.
@@ -77,17 +86,13 @@ Renderer is ready (⬆️ in the inbox); no producer yet. Candidates:
 
 Pick one, prototype, see if it earns its keep.
 
-### 7. Operator controls + TUI — `BOOTSTRAP-TUI.md`
-
-Two pipeline-wide controls + the Bubble Tea TUI that surfaces them. Dry mode lets actors rehearse without external mutations (no `gh pr create`, no `git push`); soft-pause stops dequeue while in-flight work completes. Toggled from the CLI (`sweep dry`, `sweep pause`) or live from the TUI (`sweep-tui`, with `d` and `p` keybindings).
-
-Substrate and TUI ship together — substrate without the storefront is a personal tool nobody discovers; storefront without the factory is a demo. One product across two languages, bridged by flag files at `~/.sweep/control/`.
-
 ## Later
 
 - **Cold storage for events.** The cursor was built for this — once retro proves it captures everything it needs across a few cycles, the lines before the cursor become safe to archive (gzip + S3 / wherever). Until then, events.jsonl grows append-only and that's fine.
 - **Cold storage for events.** The cursor was built for this — once retro proves it captures everything it needs across a few cycles, the lines before the cursor become safe to archive (gzip + S3 / wherever). Until then, events.jsonl grows append-only and that's fine.
 - **Counter histograms for retro.** `qa_volley_hist:1`, `qa_volley_hist:2`, … etc. already work; need a CLI/skill that reads them and surfaces distribution shape (`sweep observe hist qa_volley`).
+- **TUI kanban item selection.** `sweep-tui` currently exposes the two pipeline-wide flags as a horizontal action bar. Per-item actions (select a PR row in the kanban, ack / open in browser / clear from inbox) would let the TUI cover the swim-lane operator surface too. Out of scope until the bar version earns its keep.
+- **Wish front door for remote control.** Wrap `sweep-tui` in [Charm Wish](https://github.com/charmbracelet/wish) so `ssh sweep@factory` lands directly in the TUI with no shell in between, no local binary install, no login session. Today's path (`ssh factory; sweep-tui`) already works; Wish collapses it into one hop. Make sense when sweep runs unattended on a remote box and the operator wants a single-command control plane. ~50 lines of Go, one `sweep-tui --serve :2222` flag. Defer until there's a real remote deployment that wants it.
 
 ## Flagged, not doing (yet)
 
