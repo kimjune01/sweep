@@ -1,37 +1,32 @@
-"""Sweep client. Drives Temporal workflows, runs activities in isolation,
-inspects per-actor inboxes.
+"""Sweep client. Subcommand-structured by actor, Typer-driven.
 
-Temporal-mode (worker must be up + temporal server at :7233):
-  uv run python -m sweep.client --synthetic            # signal QaActor
-  uv run python -m sweep.client --state                # query QaActor
-  uv run python -m sweep.client --clear-andon          # reset halted
-  uv run python -m sweep.client --pr-state-workflow    # run PrStateWorkflow once
+  sweep qa test    --repo R --branch B --worktree W --test-cmd 'pytest'
+  sweep qa codex   --repo R --branch B --worktree W
+  sweep qa gemini  --repo R --branch B --worktree W --round 1
+  sweep qa full    --repo R --branch B --worktree W --test-cmd 'pytest'
+  sweep qa actor signal | status | clear      # Temporal QaActor controls
 
-Standalone-activity (no worker, no server):
-  uv run python -m sweep.client --test    --repo ... --branch ... --worktree . --test-cmd '…'
-  uv run python -m sweep.client --codex   --repo ... --branch ... --worktree .
-  uv run python -m sweep.client --gemini  --repo ... --branch ... --worktree . --round 1
-  uv run python -m sweep.client --full    --repo ... --branch ... --worktree . --test-cmd '…'
-  uv run python -m sweep.client --pr-state-classify --repo owner/repo --pr 123
-  uv run python -m sweep.client --pr-state-run --limit 30
+  sweep pr-state classify --repo R --pr N
+  sweep pr-state run      --limit 30
+  sweep pr-state workflow --limit 30          # Temporal one-shot
 
-Inbox inspection (read-only, per-actor):
-  uv run python -m sweep.client --inbox qa
-  uv run python -m sweep.client --inbox drip
-  uv run python -m sweep.client --inbox investigate
-  uv run python -m sweep.client --inbox retro
+  sweep inbox qa | drip | investigate | retro
+
+Activities are directly importable for in-process use; this CLI is the
+shell entry. Temporal commands need the worker + dev server up.
 """
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import datetime as dt
 import json
 import subprocess
 import uuid
 from dataclasses import asdict
+from pathlib import Path
 
+import typer
 from temporalio.client import Client
 
 from sweep.activities.pr_state import (
@@ -52,117 +47,22 @@ from sweep.workflows.qa_actor import QaActor
 
 SWEEP_TASK_QUEUE = "sweep-tq"
 QA_ACTOR_ID = "qa-actor"
+TEMPORAL_ADDR = "localhost:7233"
 
 
-async def ensure_actor(client: Client) -> None:
-    """Start QaActor if not already running. Idempotent on workflow_id."""
-    try:
-        await client.start_workflow(
-            QaActor.run,
-            id=QA_ACTOR_ID,
-            task_queue=SWEEP_TASK_QUEUE,
-        )
-        print(f"started workflow {QA_ACTOR_ID}")
-    except Exception as e:
-        if "already started" in str(e).lower() or "WorkflowExecutionAlreadyStartedError" in type(e).__name__:
-            print(f"workflow {QA_ACTOR_ID} already running")
-        else:
-            raise
+def _new_msg_id() -> str:
+    return f"dev-{uuid.uuid4().hex[:8]}"
 
 
-async def synthetic(client: Client) -> None:
-    await ensure_actor(client)
-    handle = client.get_workflow_handle(QA_ACTOR_ID)
-    msg = Message(
-        msg_id=f"synthetic-{uuid.uuid4().hex[:8]}",
-        sender="client",
-        intent="reattest",
-        repo="kimjune01/sweep",
-        branch="temporal-pipeline",
-        payload={
-            "worktree": "/Users/junekim/Documents/sweep",
-            "test_cmd": "echo synthetic",
-        },
-        ts=dt.datetime.now(dt.timezone.utc).isoformat(),
-    )
-    await handle.signal(QaActor.deliver, msg)
-    print(f"signaled msg_id={msg.msg_id}")
-
-
-async def state(client: Client) -> None:
-    handle = client.get_workflow_handle(QA_ACTOR_ID)
-    s = await handle.query(QaActor.state)
-    print(s)
-
-
-async def clear_andon(client: Client) -> None:
-    handle = client.get_workflow_handle(QA_ACTOR_ID)
-    await handle.signal(QaActor.clear_andon)
-    print("clear_andon sent")
-
-
-def _build_req(args: argparse.Namespace) -> QaOneEntryRequest:
+def _build_req(repo: str, branch: str, worktree: str, test_cmd: str, msg_id: str | None) -> QaOneEntryRequest:
     return QaOneEntryRequest(
-        msg_id=args.msg_id or f"dev-{uuid.uuid4().hex[:8]}",
-        repo=args.repo,
-        branch=args.branch,
-        worktree=args.worktree,
-        test_cmd=args.test_cmd or "",
-        issue=args.issue,
+        msg_id=msg_id or _new_msg_id(),
+        repo=repo,
+        branch=branch,
+        worktree=worktree,
+        test_cmd=test_cmd,
+        issue=None,
     )
-
-
-def _inspect_inbox(actor: str) -> None:
-    """Read ~/.sweep/inbox/<actor>.jsonl, dedupe by msg_id, print per-message
-    summary. Each queue is independently inspectable — no need to grep across
-    a shared log."""
-    from pathlib import Path
-    inbox = Path.home() / ".sweep" / "inbox" / f"{actor}.jsonl"
-    if not inbox.exists():
-        print(f"# {inbox} — no messages")
-        return
-    seen: dict[str, dict] = {}
-    raw = 0
-    for line in inbox.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        raw += 1
-        try:
-            m = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        mid = m.get("msg_id")
-        if mid:
-            seen[mid] = m  # latest wins (file is append-only)
-
-    acks = Path.home() / ".sweep" / "inbox" / "_acks.jsonl"
-    acked: set[str] = set()
-    if acks.exists():
-        for line in acks.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                a = json.loads(line)
-                if a.get("msg_id"):
-                    acked.add(a["msg_id"])
-            except json.JSONDecodeError:
-                pass
-
-    unacked = [m for mid, m in seen.items() if mid not in acked]
-    acked_msgs = [m for mid, m in seen.items() if mid in acked]
-    print(f"# {inbox}")
-    print(f"# raw_lines={raw}  unique_msgs={len(seen)}  unacked={len(unacked)}  acked={len(acked_msgs)}")
-    print()
-    for m in sorted(unacked, key=lambda x: x.get("ts", "")):
-        intent = m.get("intent", "?")
-        repo = m.get("repo", "?")
-        pr = m.get("pr") or "-"
-        ts = m.get("ts", "")[:19]
-        payload = m.get("payload") or {}
-        reason = payload.get("reason", "")
-        print(f"  [{ts}] {intent:9s} {repo}#{pr}  {reason}")
 
 
 def _diff(worktree: str) -> str:
@@ -172,104 +72,266 @@ def _diff(worktree: str) -> str:
     ).stdout
 
 
-async def main() -> None:
-    ap = argparse.ArgumentParser()
-    g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--synthetic", action="store_true",
-                   help="Temporal: signal QaActor with a fake message")
-    g.add_argument("--state", action="store_true",
-                   help="Temporal: query QaActor depth + halted")
-    g.add_argument("--clear-andon", action="store_true",
-                   help="Temporal: reset halted flag")
-    g.add_argument("--test", action="store_true",
-                   help="Standalone: run test_attestation only")
-    g.add_argument("--codex", action="store_true",
-                   help="Standalone: run codex_review only")
-    g.add_argument("--gemini", action="store_true",
-                   help="Standalone: run one gemini_review round")
-    g.add_argument("--full", action="store_true",
-                   help="Standalone: run qa_one_entry end-to-end")
-    g.add_argument("--pr-state-classify", action="store_true",
-                   help="Standalone: classify ONE PR (needs --repo + --pr)")
-    g.add_argument("--pr-state-run", action="store_true",
-                   help="Standalone: classify ALL open PRs + deliver to inboxes")
-    g.add_argument("--pr-state-workflow", action="store_true",
-                   help="Temporal: run PrStateWorkflow once")
-    g.add_argument("--inbox", metavar="ACTOR",
-                   help="Inspect one inbox (qa | drip | investigate | retro). "
-                        "Reads ~/.sweep/inbox/<ACTOR>.jsonl, dedupes by msg_id.")
+def _print_json(obj) -> None:
+    print(json.dumps(obj, indent=2, default=str))
 
-    ap.add_argument("--repo", default="owner/repo")
-    ap.add_argument("--branch", default="branch")
-    ap.add_argument("--worktree", default=".")
-    ap.add_argument("--test-cmd", default="")
-    ap.add_argument("--msg-id", default=None)
-    ap.add_argument("--issue", type=int, default=None)
-    ap.add_argument("--round", type=int, default=1)
-    ap.add_argument("--pr", type=int, default=None, help="PR number for --pr-state-classify")
-    ap.add_argument("--limit", type=int, default=50, help="Max PRs for --pr-state-run")
 
-    args = ap.parse_args()
+# ============================================================ qa
 
-    # Standalone activity invocations — no Temporal needed.
-    if args.test:
-        out = await test_attestation(_build_req(args))
-        print(json.dumps(asdict(out), indent=2))
-        return
-    if args.codex:
-        out = await codex_review(_build_req(args), _diff(args.worktree))
-        print(json.dumps(asdict(out), indent=2))
-        return
-    if args.gemini:
-        out = await gemini_review(_build_req(args), _diff(args.worktree), args.round)
-        print(json.dumps(asdict(out), indent=2))
-        return
-    if args.full:
-        out = await qa_one_entry(_build_req(args))
-        print(json.dumps(asdict(out), indent=2, default=str))
-        return
-    if args.pr_state_classify:
-        if not args.pr:
-            ap.error("--pr-state-classify requires --pr N --repo owner/repo")
-        state = await gh_pr_view(args.repo, args.pr)
+
+qa_app = typer.Typer(help="QA pipeline activities", no_args_is_help=True)
+
+
+@qa_app.command("test")
+def qa_test(
+    repo: str = typer.Option(..., help="owner/repo"),
+    branch: str = typer.Option("", help="fix branch"),
+    worktree: str = typer.Option(".", help="local clone path"),
+    test_cmd: str = typer.Option("", help="test command, e.g. 'pytest -x'"),
+    msg_id: str | None = typer.Option(None),
+) -> None:
+    """Run test_attestation only."""
+    req = _build_req(repo, branch, worktree, test_cmd, msg_id)
+    _print_json(asdict(asyncio.run(test_attestation(req))))
+
+
+@qa_app.command("codex")
+def qa_codex(
+    repo: str = typer.Option(..., help="owner/repo"),
+    branch: str = typer.Option("", help="fix branch"),
+    worktree: str = typer.Option(".", help="local clone path"),
+    msg_id: str | None = typer.Option(None),
+) -> None:
+    """Run codex_review only."""
+    req = _build_req(repo, branch, worktree, "", msg_id)
+    _print_json(asdict(asyncio.run(codex_review(req, _diff(worktree)))))
+
+
+@qa_app.command("gemini")
+def qa_gemini(
+    repo: str = typer.Option(..., help="owner/repo"),
+    branch: str = typer.Option("", help="fix branch"),
+    worktree: str = typer.Option(".", help="local clone path"),
+    round: int = typer.Option(1, "--round", "-r"),
+    msg_id: str | None = typer.Option(None),
+) -> None:
+    """Run gemini_review one round."""
+    req = _build_req(repo, branch, worktree, "", msg_id)
+    _print_json(asdict(asyncio.run(gemini_review(req, _diff(worktree), round))))
+
+
+@qa_app.command("full")
+def qa_full(
+    repo: str = typer.Option(..., help="owner/repo"),
+    branch: str = typer.Option("", help="fix branch"),
+    worktree: str = typer.Option(".", help="local clone path"),
+    test_cmd: str = typer.Option("", help="test command"),
+    msg_id: str | None = typer.Option(None),
+) -> None:
+    """Run qa_one_entry end-to-end (composer, no Temporal)."""
+    req = _build_req(repo, branch, worktree, test_cmd, msg_id)
+    _print_json(asdict(asyncio.run(qa_one_entry(req))))
+
+
+# ----- qa actor (Temporal)
+
+qa_actor_app = typer.Typer(help="Temporal QaActor controls", no_args_is_help=True)
+qa_app.add_typer(qa_actor_app, name="actor")
+
+
+async def _ensure_actor(client: Client) -> None:
+    try:
+        await client.start_workflow(
+            QaActor.run, id=QA_ACTOR_ID, task_queue=SWEEP_TASK_QUEUE
+        )
+        print(f"started workflow {QA_ACTOR_ID}")
+    except Exception as e:
+        if "already started" in str(e).lower() or "AlreadyStartedError" in type(e).__name__:
+            print(f"workflow {QA_ACTOR_ID} already running")
+        else:
+            raise
+
+
+@qa_actor_app.command("signal")
+def qa_actor_signal() -> None:
+    """Signal QaActor with a synthetic message."""
+    async def run() -> None:
+        client = await Client.connect(TEMPORAL_ADDR)
+        await _ensure_actor(client)
+        handle = client.get_workflow_handle(QA_ACTOR_ID)
+        msg = Message(
+            msg_id=f"synthetic-{uuid.uuid4().hex[:8]}",
+            sender="client",
+            intent="reattest",
+            repo="kimjune01/sweep",
+            branch="temporal-pipeline",
+            payload={"worktree": "/Users/junekim/Documents/sweep", "test_cmd": "echo synthetic"},
+            ts=dt.datetime.now(dt.timezone.utc).isoformat(),
+        )
+        await handle.signal(QaActor.deliver, msg)
+        print(f"signaled msg_id={msg.msg_id}")
+    asyncio.run(run())
+
+
+@qa_actor_app.command("status")
+def qa_actor_status() -> None:
+    """Query QaActor depth + halted."""
+    async def run() -> None:
+        client = await Client.connect(TEMPORAL_ADDR)
+        handle = client.get_workflow_handle(QA_ACTOR_ID)
+        print(await handle.query(QaActor.state))
+    asyncio.run(run())
+
+
+@qa_actor_app.command("clear")
+def qa_actor_clear() -> None:
+    """Clear andon halt."""
+    async def run() -> None:
+        client = await Client.connect(TEMPORAL_ADDR)
+        handle = client.get_workflow_handle(QA_ACTOR_ID)
+        await handle.signal(QaActor.clear_andon)
+        print("clear_andon sent")
+    asyncio.run(run())
+
+
+# ============================================================ pr-state
+
+
+pr_state_app = typer.Typer(help="PR-state classifier + dispatcher", no_args_is_help=True)
+
+
+@pr_state_app.command("classify")
+def pr_state_classify(
+    repo: str = typer.Option(..., help="owner/repo"),
+    pr: int = typer.Option(..., help="PR number"),
+) -> None:
+    """Classify ONE PR (read-only)."""
+    async def run() -> None:
+        state = await gh_pr_view(repo, pr)
         result = await classify_one_pr(state)
-        print(json.dumps(asdict(result), indent=2))
-        return
-    if args.inbox:
-        _inspect_inbox(args.inbox)
-        return
-    if args.pr_state_run:
-        prs = await gh_search_open_authored(args.limit)
+        _print_json(asdict(result))
+    asyncio.run(run())
+
+
+@pr_state_app.command("run")
+def pr_state_run(
+    limit: int = typer.Option(50, help="max PRs to classify"),
+) -> None:
+    """Classify all open PRs and deliver one message per PR to its inbox."""
+    async def run() -> None:
+        prs = await gh_search_open_authored(limit)
         print(f"# {len(prs)} open PRs")
         for raw in prs:
-            repo = raw["repository"]["nameWithOwner"]
-            pr = raw["number"]
+            r = raw["repository"]["nameWithOwner"]
+            n = raw["number"]
             try:
-                state = await gh_pr_view(repo, pr)
+                state = await gh_pr_view(r, n)
                 result = await classify_one_pr(state)
                 path = await deliver_to_inbox(result)
-                print(f"  {repo}#{pr} → {result.bucket} ({result.reason}) → {path}")
+                print(f"  {r}#{n} → {result.bucket} ({result.reason}) → {path}")
             except Exception as e:
-                print(f"  {repo}#{pr} → ERROR: {e}")
-        return
+                print(f"  {r}#{n} → ERROR: {e}")
+    asyncio.run(run())
 
-    client = await Client.connect("localhost:7233")
-    if args.synthetic:
-        await synthetic(client)
-    elif args.state:
-        await state(client)
-    elif args.clear_andon:
-        await clear_andon(client)
-    elif args.pr_state_workflow:
-        import uuid as _uuid
+
+@pr_state_app.command("workflow")
+def pr_state_workflow(
+    limit: int = typer.Option(50),
+) -> None:
+    """Temporal: run PrStateWorkflow once."""
+    async def run() -> None:
+        client = await Client.connect(TEMPORAL_ADDR)
         result = await client.execute_workflow(
             PrStateWorkflow.run,
-            args.limit,
-            id=f"pr-state-{_uuid.uuid4().hex[:8]}",
+            limit,
+            id=f"pr-state-{uuid.uuid4().hex[:8]}",
             task_queue=SWEEP_TASK_QUEUE,
         )
-        print(json.dumps(result, indent=2))
+        _print_json(result)
+    asyncio.run(run())
+
+
+# ============================================================ inbox
+
+
+def _inspect_inbox(actor: str) -> None:
+    inbox = Path.home() / ".sweep" / "inbox" / f"{actor}.jsonl"
+    if not inbox.exists():
+        print(f"# {inbox} — no messages")
+        return
+    seen: dict[str, dict] = {}
+    raw = 0
+    for line in inbox.read_text().splitlines():
+        if not line.strip():
+            continue
+        raw += 1
+        try:
+            m = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if m.get("msg_id"):
+            seen[m["msg_id"]] = m
+
+    acks_path = Path.home() / ".sweep" / "inbox" / "_acks.jsonl"
+    acked: set[str] = set()
+    if acks_path.exists():
+        for line in acks_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                a = json.loads(line)
+                if a.get("msg_id"):
+                    acked.add(a["msg_id"])
+            except json.JSONDecodeError:
+                pass
+
+    unacked = [m for mid, m in seen.items() if mid not in acked]
+    print(f"# {inbox}")
+    print(
+        f"# raw_lines={raw}  unique_msgs={len(seen)}  "
+        f"unacked={len(unacked)}  acked={len(acked)}"
+    )
+    print()
+    for m in sorted(unacked, key=lambda x: x.get("ts", "")):
+        intent = m.get("intent", "?")
+        repo = m.get("repo", "?")
+        pr = m.get("pr") or "-"
+        ts = m.get("ts", "")[:19]
+        reason = (m.get("payload") or {}).get("reason", "")
+        print(f"  [{ts}] {intent:9s} {repo}#{pr}  {reason}")
+
+
+inbox_app = typer.Typer(help="Inspect one actor inbox", no_args_is_help=True, invoke_without_command=True)
+
+
+@inbox_app.callback(invoke_without_command=True)
+def inbox_default(
+    ctx: typer.Context,
+    actor: str = typer.Argument(None, help="qa | drip | investigate | retro"),
+) -> None:
+    """Read ~/.sweep/inbox/<actor>.jsonl, dedupe by msg_id."""
+    if actor is None:
+        print(ctx.get_help())
+        raise typer.Exit(0)
+    if actor not in {"qa", "drip", "investigate", "retro"}:
+        raise typer.BadParameter(
+            f"unknown actor {actor!r}; pick qa|drip|investigate|retro"
+        )
+    _inspect_inbox(actor)
+
+
+# ============================================================ root
+
+
+app = typer.Typer(
+    help="Sweep — Temporal-supervised PR pipeline",
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+)
+app.add_typer(qa_app, name="qa")
+app.add_typer(pr_state_app, name="pr-state")
+app.add_typer(inbox_app, name="inbox")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    app()
