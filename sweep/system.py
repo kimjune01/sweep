@@ -11,6 +11,8 @@ import json
 import time
 from pathlib import Path
 
+from sweep.io_safe import atomic_write_text
+
 
 CACHE = Path.home() / ".sweep" / "cache" / "system.json"
 CACHE_TTL = 4.0
@@ -51,9 +53,8 @@ def system_status() -> dict:
         "running": running,
         "fetched_at": time.time(),
     }
-    CACHE.parent.mkdir(parents=True, exist_ok=True)
     try:
-        CACHE.write_text(json.dumps(result))
+        atomic_write_text(CACHE, json.dumps(result))
     except OSError:
         pass
     return result
