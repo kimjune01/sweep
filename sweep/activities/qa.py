@@ -14,8 +14,16 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
+from sweep import models
 from sweep.io_safe import atomic_write_text
 from sweep.types import GateAttestation, QaOneEntryRequest, QaOneEntryResult
+
+# adversary_1 / _2 / _3 cascade (defaults: codex → gemini → opus).
+# Each reviewer activity reads its slot from models.default_for.
+ADVERSARY_1 = models.default_for("adversary_1")  # codex
+ADVERSARY_2 = models.default_for("adversary_2")  # gemini
+ADVERSARY_3 = models.default_for("adversary_3")  # opus subagent fallback
+CODE_MODEL  = models.default_for("code")          # opus, for impl/fix tasks
 
 ATTESTATIONS = Path.home() / ".sweep" / "attestations"
 

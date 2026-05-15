@@ -29,6 +29,7 @@ from pathlib import Path
 import typer
 from temporalio.client import Client
 
+from sweep import models
 from sweep.activities.pr_state import (
     classify_one_pr,
     deliver_to_inbox,
@@ -331,6 +332,12 @@ app = typer.Typer(
 app.add_typer(qa_app, name="qa")
 app.add_typer(pr_state_app, name="pr-state")
 app.add_typer(inbox_app, name="inbox")
+
+
+@app.command("models")
+def models_cmd() -> None:
+    """Show model registry, role defaults, adversary cascade."""
+    print(models.describe())
 
 
 if __name__ == "__main__":

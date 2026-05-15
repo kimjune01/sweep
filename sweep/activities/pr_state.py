@@ -16,6 +16,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
+from sweep import models
 from sweep.io_safe import atomic_write_text
 from sweep.types import (
     BUCKET_ROUTING,
@@ -23,6 +24,9 @@ from sweep.types import (
     PrLiveState,
     PrStateResult,
 )
+
+# pr-state shuffles work — picks bucket, routes intent. Sonnet by default.
+PR_STATE_MODEL = models.default_for("orchestrate")
 
 INBOX_DIR = Path.home() / ".sweep" / "inbox"
 
