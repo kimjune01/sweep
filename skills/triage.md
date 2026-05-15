@@ -1,250 +1,109 @@
 ---
 name: triage
-description: Scan a repo's open PRs/issues, score by actionability, spawn parallel /investigate agents per item in worktrees. Shared hypothesis graph for dedup. Output is human-gated PRs.
-argument-hint: <repo> [--limit N] [--label LABEL] [--dry-run]
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Agent
+description: Scan a repo's open issues/PRs, score and kill, spawn one investigation per surviving item, hand the resulting branches to /drip. Judgment lives here; queue state, gh fetches, resume, and idempotency live in `sweep` CLI.
+argument-hint: <repo> [--limit N] [--concurrency N] [--label LABEL] [--dry-run]
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 
-# Triage: Repo to Human-Gated PRs
+# Triage: Repo to Drip Queue
 
-Scan a repo's open items, score them, spawn parallel investigations, produce PRs that wait for human approval. The dispatcher understands the investigations — it reads the shared hypothesis graph to cross-pollinate findings and dedup perturbations.
+You were invoked by the harness on one repo. Score the open items, kill the unactionable ones, spawn `/investigate` on the survivors, and hand the resulting branches to `/drip`. The judgment about *what's worth investigating* and *how to spawn an investigation* is the LLM-shaped part — that's this skill. Everything else (queue state, gh fetches with the right `--search`, retro params, resume, idempotency) belongs in `sweep` CLI; call it.
 
-Run `/review-schema` before first use on a new repo. Triage assumes the review culture — gates, signals, tiebreaker — has been profiled. Without the review schema, agents produce PRs that don't match the maintainer's perceive loop.
+Run `/review-schema` once per repo before first triage. Without the schema, agents produce PRs that don't match the maintainer's perceive loop.
 
-Run autonomously from scan to punch list. The only human gate is Phase 4 (ship). Everything before it is local and reversible. Don't stop to ask between phases — write state to `TRIAGE_GRAPH.md` and keep going.
+## The CLI is the harness
 
-## Input
+| What you need | How to get it |
+|---|---|
+| Fetch open issues/PRs (incremental since last scan) | `sweep triage scan --repo …` *(returns JSON list; harness handles `repos.jsonl` cursors)* |
+| Competing-PR / body-count check on one issue | `sweep triage compete --repo … --issue N` |
+| Retro params for the repo | `sweep retro params --repo …` |
+| Enqueue a branch pointer for drip | `sweep drip enqueue --repo … --branch … --issue N --test-cmd "…" --base <sha>` |
+| Check current state of an item (resume) | `sweep triage status --repo … --issue N` |
+| Spawn an investigation agent | `Agent(subagent_type: "general-purpose", prompt: "Run /investigate on …", ...)` |
 
-A GitHub repo (owner/name or local path). Optional filters:
-- `--limit N` — max items to investigate total (default 20)
-- `--concurrency N` — max parallel agents (default 5)
-- `--label LABEL` — only items with this label
-- `--dry-run` — run the full pipeline (scan, investigate, collect, present) but don't affect any remote. No PRs created, no issues opened, no comments posted, no pushes. Agents still spawn and investigate locally. The output is `TRIAGE_GRAPH.md` with findings, failing tests, and candidate fixes — all local. Remove the flag to ship.
+If a `sweep` subcommand isn't there yet, that's a CLI gap to add — don't hand-roll the gh+jsonl logic in this skill. The deterministic harness rejects malformed inputs with errors you can [close the loop](https://june.kim/skills-lack-determinism) on.
 
-If no repo is given, use the current directory's `origin` remote.
+> The judgment on *what command to call* is yours. The queue arithmetic is not. [Don't LLM what you can code.](https://june.kim/dont-lang-what-you-can-math)
 
-## Output
+## The judgment part
 
-- **Dry run:** Full pipeline runs locally — scan, investigate, bug-hunt, collect. `TRIAGE_GRAPH.md` with findings, failing tests, candidate fixes. Branches created locally, branch pointers written to drip queue. No remote side effects.
-- **Full run:** Same as dry run, plus: candidates added to `/drip` queue. Triage never touches remotes directly — `/drip` handles all PR creation and pacing.
-
-Shared artifact: `TRIAGE_GRAPH.md` in the working directory — the unified hypothesis graph across all investigated items. This is the coordination file and the checkpoint for resume.
-
-## Process
-
-### Phase 0: Resume
-
-Before doing anything, check for existing state:
-
-1. Read `TRIAGE_GRAPH.md` if it exists. Parse the scan table and any investigation nodes.
-2. Determine which phase to resume from:
-   - No file → start at Phase 1
-   - Scan table exists but no Status column → Phase 1 complete, resume at Phase 2
-   - Items with Status=IN_PROGRESS → agents were interrupted, resume Phase 2 for those items only
-   - Items with investigation nodes but no Outcome → resume Phase 3
-   - All items have outcomes → resume Phase 4
-3. Report what was found: "Resuming from Phase N. X items already classified, Y remaining."
-
-### Phase 0.5: Load retro parameters
-
-Before scoring, check for retro-derived parameters that adjust behavior:
-
-1. Read `~/.sweep/retro/<owner>-<repo>.jsonl` if it exists. Parse last-value-wins per key.
-2. Apply overrides to scoring and behavior:
-   - `scoring.maintainer_filed_bonus` → adjusts maintainer-filed issue score
-   - `scoring.skip_categories` → extends the kill list
-   - `cooldown_until` → if today < cooldown date, halt with "Cooldown active until {date}"
-   - `merge_rate` → informs pacing expectations (logged, not enforced)
-3. Log which parameters were loaded. If no retro file exists, proceed with defaults.
-
-### Phase 1: Scan
-
-1. **Competing PR check (step 0).** Before fetching the full issue list, check for existing PRs on every candidate issue:
-   - **Open PRs:** `gh pr list --repo <repo> --search "<issue-number>" --state open`. If a PR exists and was updated in the last 30 days, mark the issue SKIP. Three competing-PR catches on gemini-cli proved this is the biggest waste of agent time.
-   - **Closed-unmerged body count:** `~/.sweep/bin/body-count <repo> <issue-number>`. Returns `verdict: "skip"` at 3+ distinct unmerged authors — the issue is a bot magnet. Mark SKIP without further investigation.
-
-2. Fetch open PRs and issues. Check `repos.jsonl` for `last_fetched` timestamp. On first scan, fetch everything. On re-scan, use `--search "updated:>YYYY-MM-DD"` to pull only items with new activity:
-   - `gh pr list --repo <repo> --state open --search "updated:>YYYY-MM-DD" --json number,title,author,labels,reviewDecision,statusCheckRollup,comments,updatedAt,isDraft`
-   - `gh issue list --repo <repo> --state open --limit 100 --json number,title,author,labels,comments,updatedAt`
-   Append a `{"ts": "...", "action": "fetch", "repo": "...", "last_fetched": "YYYY-MM-DD"}` event to `repos.jsonl` after each scan.
-
-3. Identify the current user: `gh api user --jq .login`
-
-4. Score each item by actionability. An item can match multiple signals — use the highest:
+### Score each item (highest signal wins)
 
 | Signal | Score | Rationale |
 |--------|-------|-----------|
 | CI failing on your PR | 10 | Blocking — fix before review |
-| Reviewer commented with requested changes | 8 | Someone spent time; respond |
-| Maintainer commented on your item | 7 | Engagement from someone with merge power |
-| LGTM but needs rebase/update | 6 | Low effort to unblock |
-| Your PR, no activity > 3 days | 4 | Might need a ping or update |
-| Open issue you filed | 3 | Your problem to solve |
-| Open issue, filed by maintainer | 2+ | Signal: they want this done. **Penalty** if labeled "good first issue": fast claimers race you. Check for competing PRs first. Unlabeled bugs nobody noticed are better targets. |
-| Open issue, unassigned | 2 | Opportunity |
-| Your PR, CI passing, under review | 1 | Nothing to do — wait |
+| Reviewer requested changes | 8 | Someone spent time; respond |
+| Maintainer commented on your item | 7 | Engagement with merge power |
+| LGTM but needs rebase | 6 | Low effort to unblock |
+| Your PR, no activity > 3 days | 4 | Might need a ping |
+| Issue you filed | 3 | Your problem to solve |
+| Maintainer-filed issue | 2+ | They want it. **Penalty if "good first issue"** — fast claimers race you. Unlabeled bugs nobody noticed are better targets. |
+| Unassigned open issue | 2 | Opportunity |
+| Your PR, CI passing, under review | 1 | Wait |
 
-4. **Kill list.** Before scoring, reject items that will never produce a mergeable PR. Don't spend agent time on these:
+### Kill list (don't even score)
 
 | Kill signal | Reason |
-|-------------|--------|
-| Needs hardware you don't own and CI doesn't have | Can't reproduce, can't verify |
-| Feature request with no maintainer endorsement | Inventing problems, not solving them |
-| Design proposal / TIP (unless you're a core contributor) | Architecture decisions belong to maintainers |
-| Vague issue, no repro steps, no error message | Nothing to test against |
-| Already fixed on master | Verify first, close if true |
-| Someone else has an open PR for it | Don't compete, link to theirs |
-| Milestone / tracking issue | Not a bug, not actionable |
-| You got banned or warned on this repo | Cooldown active (check retro parameters) |
-| Heuristic / performance tuning without device-diverse CI | Can't validate across hardware. geohot: "no on all heuristic changes" |
-| Net-addition performance optimization | "We never trade complexity for speed." Only perf work that deletes lines |
-| Requires pre-discussion or design alignment | Politics. If the fix isn't obvious from the issue, skip it |
-| Requires off-platform communication (Discord, mailing list, etc.) | Pipeline only speaks GitHub. If the contribution process routes through another channel, skip the repo |
+|---|---|
+| Needs hardware you don't own and CI doesn't have | Can't reproduce |
+| Feature request with no maintainer endorsement | Inventing problems |
+| Design proposal / TIP (unless you're core) | Architecture is maintainer's call |
+| Vague, no repro, no error | Nothing to test |
+| Already fixed on master | Verify and close |
+| Someone else has an open PR | Don't compete; link to theirs |
+| Tracking / milestone issue | Not actionable |
+| Cooldown active (check retro params) | You were warned or banned |
+| Heuristic / performance tuning without device-diverse CI | Can't validate. geohot: "no on all heuristic changes" |
+| Net-addition perf optimization | "We never trade complexity for speed" |
+| Requires off-platform discussion | Pipeline only speaks GitHub |
 
-Mark killed items as `SKIP` in the scan table with the reason. They don't enter Phase 2.
+### Spawn one agent per survivor
 
-5. Categorize remaining items into groups:
-   - **Your items** — PRs and issues you authored
-   - **Software bugs** — reproducible without specific hardware (testable locally or on NULL device)
-   - **Maintainer-filed** — issues filed by repo owners/maintainers (signal: they want these done)
-   - **Stale/vague** — old but might have a clear repro buried in the comments
-
-5. For software bugs, assess reproducibility:
-   - Read the issue body for repro steps
-   - Note if it needs specific hardware, specific backend, or runs on NULL/CPU
-   - Flag cross-references: issues that share root causes or affect the same code
-
-6. Write `TRIAGE_GRAPH.md` with:
-   - Scored scan table per category
-   - Cross-references between related items
-   - Recommended investigation order (prioritize: reproducible locally > correctness > maintainer filed > stale = forgotten = opportunity)
-
-7. **Gemini volley.** Send the scan table and kill decisions to `/gemini`: "Review these triage decisions. Any items killed that should be investigated? Any items kept that are a waste of time? Any cross-references missed?" Apply feedback, re-send. Five rounds max.
-
-8. **Fix-ready fast-path.** Check `retro/<owner>-<repo>.jsonl` for `fix_ready` entries. If retro already confirmed a fix (issue number, line count, description), skip investigation for that item — mark CONFIRMED and add directly to the drip queue. A 1-line fix with a confirmed reproducer doesn't need a hypothesis graph.
-
-9. Proceed to Phase 2.
-
-### Phase 2: Investigate (parallel)
-
-**Resume check:** Read `TRIAGE_GRAPH.md`. Skip items marked CONFIRMED, KILLED, BLOCKED, or SHIPPED. Only spawn agents for PENDING or IN_PROGRESS items.
-
-Use a worker pool with `--concurrency` slots (default 5). The pool processes items from the ranked list up to `--limit` total.
-
-1. **Launch initial batch.** Spawn up to `--concurrency` agents in parallel from the top of the ranked list. Each agent gets a worktree.
-
-2. **Build context per agent.** For each item, gather:
-   - PR diff or issue body (full text, not summary)
-   - CI failure logs (if applicable)
-   - Review comments
-   - Related nodes in `TRIAGE_GRAPH.md` (dedup check)
-   - Cross-referenced items from Phase 1
-   - **Prior failed PRs.** Search `gh pr list --repo <repo> --search "<issue-number>" --state closed`. For each closed PR that addressed this issue, read the diff and review comments. These are free signal: what approach was tried, what the maintainer rejected, what was too large or wrong-direction. Three failed PRs on the same issue means three mapped failure modes. The fourth attempt should avoid all three.
-
-3. **Spawn agent.**
-
-   ```
-   Agent({
-     subagent_type: "general-purpose",
-     isolation: "worktree",
-     run_in_background: true,
-     prompt: "Run /investigate on [item]. Read TRIAGE_GRAPH.md for context.
-              [context]. After investigation, run /bug-hunt on any candidate fix.
-              Write YOUR results to TRIAGE_RESULT.T<number>.md (not TRIAGE_GRAPH.md).
-              Test before fix: write a failing test first, then the fix."
-   })
-   ```
-
-   Each agent writes to its own result file (`TRIAGE_RESULT.T<number>.md`) — never to the shared `TRIAGE_GRAPH.md`. This prevents parallel write conflicts. Phase 3 merges results into the graph.
-
-   Each agent's prompt includes:
-   - The item's full context (diff, CI logs, comments)
-   - A snapshot of `TRIAGE_GRAPH.md` at spawn time (read-only context, not a write target)
-   - Instructions to run the full pipeline: `/investigate` (produces branch) → `/codex` review → `/bug-hunt` → branch pointer to drip queue
-   - The test-before-fix rule
-
-4. **Refill on completion.** When an agent finishes, merge its `TRIAGE_RESULT.T<number>.md` into `TRIAGE_GRAPH.md`, then immediately launch the next PENDING item from the ranked list into the freed slot. The pool stays at `--concurrency` until `--limit` is reached or the list is exhausted. Each new agent gets the latest merged graph state, including findings from agents that just completed (cross-pollination for free).
-
-5. **Dedup rule.** Before designing a perturbation, the agent reads `TRIAGE_GRAPH.md` and checks: is there a node with the same hypothesis already classified? If yes, cite it and skip. If the node is from a different item, that's cross-pollination.
-
-6. **Update status.** As each agent starts, mark its item IN_PROGRESS. When it finishes, mark CONFIRMED, KILLED, or BLOCKED. Write to `TRIAGE_GRAPH.md` immediately on every transition.
-
-### Phase 3: Collect
-
-**Resume check:** Read `TRIAGE_GRAPH.md`. Items with investigation nodes but no Outcome need collection. Items already collected are skipped.
-
-As agents complete:
-
-1. Read each agent's result file (`TRIAGE_RESULT.T<number>.md`).
-2. Merge into `TRIAGE_GRAPH.md`. Each result file maps to a distinct T<number> section, so merges are conflict-free. Delete result files after merging.
-3. For each item that produced a candidate fix:
-   - Verify the agent ran `/codex` (structural review)
-   - Verify the agent ran `/bug-hunt` (adversarial verification)
-   - If either was skipped, run it now on the candidate fix
-4. Update the scan table with status and outcome:
-
-```markdown
-| # | Score | Title | Signal | Status | Outcome |
-|---|-------|-------|--------|--------|---------|
-| 6909 | 2 | bf16 autocast | Maintainer filed | CONFIRMED | Failing test + fix ready |
-| 12296 | 2 | max backward underflow | Correctness bug | KILLED | Not reproducible on current master |
-| 13409 | 2 | ScatterND infinite loop | Stale bug | IN_PROGRESS | Agent investigating |
+```
+Agent({
+  subagent_type: "general-purpose",
+  run_in_background: true,
+  prompt: "Run /investigate on <repo>#<issue>. Context: <diff/body/comments/prior-failed-PRs>.
+           Read TRIAGE_GRAPH.md. Write your results to TRIAGE_RESULT.T<issue>.md.
+           Test before fix: failing test on master, passing on fix. After investigation,
+           call `sweep drip enqueue` with your branch."
+})
 ```
 
-### Phase 4: Present
+Each agent writes to its own `TRIAGE_RESULT.T<n>.md` (no parallel-write conflict on the shared graph). Merge into `TRIAGE_GRAPH.md` after agents finish.
 
-**Resume check:** If the scan table already has outcomes for all items and a punch list exists at the end of `TRIAGE_GRAPH.md`, present it. Otherwise, generate from current state.
+**Context for the agent must include:** diff/body, CI logs, review comments, related nodes in `TRIAGE_GRAPH.md`, and **prior failed PRs** (`gh pr list --search "<issue>" --state closed` — what was rejected and why). Three failed PRs on the same issue means three mapped failure modes. The next attempt avoids all three.
 
-For each candidate, write a **branch pointer** to the drip queue `~/.sweep/drip-queue/<owner>-<repo>.jsonl`:
+### Gemini volley on the kill decisions
 
-```jsonl
-{"repo": "pallets/click", "branch": "fix-3362-hyphens", "issue": 3362, "test_cmd": "pytest tests/test_formatting.py", "base": "abc123", "status": "queued"}
-```
+After scoring + killing, send the scan table to `/gemini`:
 
-The branch is the artifact. It contains the diff, commits, and test changes. PR descriptions are generated from the diff at push time by `/drip` (tone-matched to the repo's voice). Triage does not write PR descriptions.
+> Review these triage decisions. Any items killed that should be investigated? Any items kept that are a waste of time? Any cross-references missed?
 
-Triage never creates PRs, opens issues, or pushes to remotes. It produces branches and queue entries. `/drip` handles all remote operations and PR prose.
+Apply feedback, re-send. Five rounds max. The volley [won't converge to zero findings](https://june.kim/does-iteration-mitigate-slop-slope) — iterate until structure is sound, then move on.
 
-Surface only what needs human attention:
+### Fast-path for retro-confirmed fixes
 
-1. **Ready to ship** — failing tests + fixes ready, codex clean, bug-hunt converged. Branch pointer added to drip queue.
-2. **Blocked** — items that need human judgment (architectural decision, maintainer relationship, ambiguous requirement).
-3. **No action needed** — items where the investigation found nothing to do (CI passing, no comments, under review).
+If `sweep retro params --repo` returns a `fix_ready` entry for an issue (1-liner with confirmed reproducer), skip investigation: mark CONFIRMED and call `sweep drip enqueue` directly.
 
-Format as a punch list, not a report. One line per item, action verb first.
+## TRIAGE_GRAPH.md
 
-### Phase 5: Drip (full run only)
+The shared coordination file. Per item: hypothesis nodes (T\<issue>.H\<n>), cross-references between items, statuses (PENDING / IN_PROGRESS / CONFIRMED / KILLED / BLOCKED / SHIPPED / SKIP). Agents read it at spawn to dedup against other agents' findings. Phase boundaries merge per-item result files into it sequentially — no concurrent writes.
 
-**Skip if `--dry-run`.**
+## Rules (judgment, not mechanics)
 
-For each "ready to ship" item, add it to the `/drip` queue:
+- **Never merge.** Triage produces branches; the human ships.
+- **Score before investigating.** Don't waste agent time on items that score 1.
+- **Cross-pollinate.** If agent A finds something that affects agent B's item, write it to the graph before agent B's next perturbation.
+- **Full pipeline per item.** Every candidate must pass `/codex` (structural) and `/bug-hunt` (adversarial) before enqueueing. No shortcuts.
+- **Fail fast.** Item at depth 3 with all hypotheses killed and no new edges → BLOCKED. Move on.
+- **Fail on master, pass with fix.** This is the assertion every PR makes. The CLI gate (`sweep qa test`) enforces it; if it rejects you, don't bypass — re-investigate.
 
-1. Branch pointer is already in `~/.sweep/drip-queue/<owner>-<repo>.jsonl` from Phase 4.
-2. Run `/drip --check` to push the first item if no open PRs exist.
-3. `/drip` generates the PR description from the diff at push time.
+## What this skill does not do
 
-The drip queue handles pacing from here. One PR at a time, 15-minute heartbeat, tone-matched to the repo. Triage's job is done when the queue is loaded.
-
-## Coordination via TRIAGE_GRAPH.md
-
-The graph file is the shared state. Convention:
-
-- **Node IDs:** `T<issue_number>.H<hypothesis_number>` (e.g., `T16107.H0.6a`)
-- **Cross-references:** When one investigation's finding affects another, add an edge: `T16109.H0 → T16107.H0.6a (same root cause)`
-- **Statuses:** PENDING, IN_PROGRESS, CONFIRMED, KILLED, BLOCKED, SHIPPED, SKIP. Use these exact strings in the scan table's Status column and section headers — the dashboard parses them. Don't use OPEN/CLOSED/other variants. Items we're not acting on (hardware-only, external PRs, tracking issues, stale) get SKIP, not PENDING.
-- **Concurrency:** Agents write to per-item result files (`TRIAGE_RESULT.T<number>.md`), never to the shared graph. Phase 3 merges results into `TRIAGE_GRAPH.md` sequentially. No concurrent writes.
-
-No database. No service. The file is the data structure.
-
-## Rules
-
-- **Never merge.** Triage produces draft PRs. The human ships.
-- **Run autonomously.** Don't stop between phases to ask. Write state to the graph file and keep going. The human can redirect at any time — the graph is always readable.
-- **Score before investigating.** Don't waste agent time on items that score 1 (nothing to do).
-- **Cross-pollinate.** If agent A discovers something that affects agent B's item, write it to the graph. Agent B reads it before its next perturbation.
-- **Full pipeline per item.** Every candidate fix must pass through `/codex` (structural) and `/bug-hunt` (adversarial) before being presented. No shortcuts.
-- **CI is a perturbation surface.** In full run, agents can push draft PRs to trigger CI on hardware they don't own. In dry run, agents investigate locally only — no pushes, no CI. Test what you can on NULL/CPU/local GPU; note what needs CI validation in the graph.
-- **Graph-first on new evidence.** Write to `TRIAGE_GRAPH.md` before doing anything else when new evidence arrives.
-- **Fail fast.** If an item's investigation hits depth 3 with no progress (all hypotheses killed, no new edges), mark it BLOCKED and move on.
-- **Fail on master, pass with fix.** Every candidate must satisfy: test fails on master, test passes with the fix. Verify both locally before adding to the drip queue. This is the assertion every PR makes. A test that passes on master proves nothing.
-- **Idempotent.** Running triage twice produces the same output. Every phase checks existing state before acting. Completed work is never redone.
+- Read or write `~/.sweep/drip-queue/*.jsonl` directly. (`sweep drip enqueue` does.)
+- Implement resume by re-parsing `TRIAGE_GRAPH.md` state machines. (Agents are idempotent on item id; `sweep triage status` tells you what's already done.)
+- Manage worker-pool concurrency by hand. (Spawn N agents in parallel via the Agent tool; the harness throttles via `sweep control pause` if needed.)
+- Create PRs, push branches, write PR descriptions. (`/drip` does, downstream.)
+- Format scan tables or define status enums. (Harness owns the schema; this skill writes prose findings to `TRIAGE_GRAPH.md`.)
