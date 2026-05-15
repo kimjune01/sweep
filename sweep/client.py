@@ -414,6 +414,7 @@ def _inbox_states(actor: str) -> dict[str, list[dict]]:
 
 
 SPARK_CHARS = " ▁▂▃▄▅▆▇█"  # 9 levels including empty
+DITHER_CHARS = " ░▒▓█"  # 5 shades — used for daily event density
 
 
 def _sparkline(counts: list[int]) -> str:
@@ -464,6 +465,109 @@ def _rate_per_hour(counts: list[int], bucket_minutes: int) -> float:
     return total / hours if hours else 0.0
 
 
+def _dither(counts: list[int]) -> str:
+    """Map counts to a 5-shade dither (' ░▒▓█'). 0→space, 1→░, more → denser."""
+    if not counts:
+        return ""
+    out = []
+    for c in counts:
+        if c <= 0:
+            out.append(DITHER_CHARS[0])
+        elif c <= 2:
+            out.append(DITHER_CHARS[1])
+        elif c <= 4:
+            out.append(DITHER_CHARS[2])
+        elif c <= 7:
+            out.append(DITHER_CHARS[3])
+        else:
+            out.append(DITHER_CHARS[4])
+    return "".join(out)
+
+
+def _outcomes(days: int = 7) -> dict:
+    """Fetch merged + closed-but-not-merged counts per day via gh.
+
+    Lightly cached at ~/.sweep/cache/outcomes.json (1h TTL) so `punch`
+    is fast on repeated runs.
+    """
+    import time as _time
+    cache = Path.home() / ".sweep" / "cache" / "outcomes.json"
+    if cache.exists():
+        try:
+            data = json.loads(cache.read_text())
+            if data.get("days") == days and (_time.time() - data.get("fetched_at", 0)) < 3600:
+                return data
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    end = dt.datetime.now(dt.timezone.utc).date()
+    start = end - dt.timedelta(days=days - 1)
+
+    user = subprocess.run(
+        ["gh", "api", "user", "--jq", ".login"],
+        capture_output=True, text=True, check=False,
+    ).stdout.strip()
+    if not user:
+        return {"days": days, "merged": 0, "closed": 0,
+                "merged_per_day": [0] * days, "closed_per_day": [0] * days,
+                "fetched_at": _time.time(), "user": ""}
+
+    def _query(date_field: str, extra_filters: list[str]) -> list[dict]:
+        out = subprocess.run(
+            [
+                "gh", "search", "prs",
+                "--author", user,
+                f"--{date_field}", f">={start.isoformat()}",
+                *extra_filters,
+                "--limit", "200",
+                "--json", "repository,number,updatedAt,closedAt,state",
+            ],
+            capture_output=True, text=True, check=False,
+        )
+        try:
+            return json.loads(out.stdout or "[]")
+        except json.JSONDecodeError:
+            return []
+
+    merged_prs = _query("merged-at", [])
+    # Closed-but-not-merged: state=closed AND closed-at in range.
+    closed_prs = [
+        pr for pr in _query("closed", ["--state", "closed"])
+        if pr.get("state") != "MERGED"
+    ]
+
+    def _bucket_by_day(prs: list[dict], date_key: str) -> list[int]:
+        counts = [0] * days
+        for pr in prs:
+            ts = pr.get(date_key) or pr.get("updatedAt") or ""
+            try:
+                t = dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).date()
+            except (ValueError, AttributeError):
+                continue
+            idx = (t - start).days
+            if 0 <= idx < days:
+                counts[idx] += 1
+        return counts
+
+    merged_per_day = _bucket_by_day(merged_prs, "updatedAt")
+    closed_per_day = _bucket_by_day(closed_prs, "closedAt")
+
+    result = {
+        "days": days,
+        "user": user,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "merged": sum(merged_per_day),
+        "closed": sum(closed_per_day),
+        "merged_per_day": merged_per_day,
+        "closed_per_day": closed_per_day,
+        "fetched_at": _time.time(),
+    }
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(result))
+    return result
+
+
 def _stddev(counts: list[int]) -> float:
     """Sample stddev of bucket counts. Variance gauge — steady=low, spiky=high."""
     if len(counts) < 2:
@@ -503,7 +607,9 @@ def punch(
     include_wait: bool = typer.Option(False, "--include-wait", help="Also show retro/wait audits"),
     spark_minutes: int = typer.Option(10, help="Sparkline bucket size in minutes"),
     spark_buckets: int = typer.Option(12, help="Number of sparkline buckets (default 12 × 10min = 2h)"),
+    outcome_days: int = typer.Option(7, help="Outcomes window in days"),
     rich_mode: bool = typer.Option(False, "--rich", help="Render Rich panels instead of markdown"),
+    no_outcomes: bool = typer.Option(False, "--no-outcomes", help="Skip the gh-backed outcomes fetch"),
 ) -> None:
     """Factory-floor kanban view + per-station punch list.
 
@@ -623,6 +729,42 @@ def punch(
             reason = payload.get("reason", "")
             ts = m.get("ts", "")[:19]
             print(f"- **{repo}#{pr}** — {reason}  _({ts})_")
+        print()
+
+    if not no_outcomes:
+        o = _outcomes(outcome_days)
+        merged = o["merged"]
+        closed = o["closed"]
+        total = merged + closed
+        ratio = (merged / total * 100) if total else None
+        days = o["days"]
+        merge_dither = _dither(o["merged_per_day"])
+        close_dither = _dither(o["closed_per_day"])
+        # Day labels: oldest → newest, today is rightmost.
+        end_date = dt.date.fromisoformat(o["end"])
+        # Last-letter weekday for compact header (M T W T F S S).
+        day_labels = "".join(
+            (end_date - dt.timedelta(days=days - 1 - i)).strftime("%a")[0]
+            for i in range(days)
+        )
+
+        print(f"## outcomes (last {days}d — what actually merged)")
+        print()
+        print(f"| metric | value |")
+        print(f"|---|---:|")
+        print(f"| merged | {merged} |")
+        print(f"| closed (not merged) | {closed} |")
+        if ratio is not None:
+            print(f"| merge ratio | {ratio:.0f}% |")
+        else:
+            print(f"| merge ratio | — _(no outcomes)_ |")
+        print(f"| daily merge rate | {merged / days:.1f} |")
+        print()
+        print("```")
+        print(f"day   {day_labels}    ← oldest → today")
+        print(f"merge {merge_dither}    {merged} total")
+        print(f"close {close_dither}    {closed} total")
+        print("```")
         print()
 
 
