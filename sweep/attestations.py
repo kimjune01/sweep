@@ -133,22 +133,44 @@ def record_call(*, key: str, model_id: str, model_nick: str, provider: str,
                 duration_ms: int, input_tokens: int, output_tokens: int,
                 msg_id: str | None, repo: str | None, pr: int | None,
                 prompt: str, response: str, response_id: str | None) -> CallRow:
-    """Insert a new call row with chain_hash linked to the previous."""
+    """Insert a new call row with chain_hash linked to the previous.
+
+    Two concurrent record_call invocations (e.g. codex_review and
+    gemini_review finishing simultaneously) under SQLite's DEFERRED
+    isolation would both read the same prev chain_hash via SELECT, compute
+    chain_hashes against the same prev, and the second insert leaves a
+    forked chain that verify_chain reports as tampered.
+
+    The fix: open a dedicated autocommit connection and wrap the read-
+    link-insert in BEGIN IMMEDIATE. The IMMEDIATE write lock blocks any
+    other writer from making it past the SELECT until we commit, so the
+    second writer sees our new chain_hash as their prev.
+    """
     ts = dt.datetime.now(dt.timezone.utc).isoformat()
-    with _conn() as conn:
-        prev = _last_chain_hash(conn)
-        chain_hash = _link(prev, key, response, ts)
-        conn.execute(
-            """INSERT INTO calls (
-                key, model_id, model_nick, provider, ts, duration_ms,
-                input_tokens, output_tokens, msg_id, repo, pr,
-                prompt, response, response_id, chain_hash
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (key, model_id, model_nick, provider, ts, duration_ms,
-             input_tokens, output_tokens, msg_id, repo, pr,
-             prompt, response, response_id, chain_hash),
-        )
-        conn.commit()
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH), isolation_level=None, timeout=10)
+    try:
+        conn.executescript(_SCHEMA)
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            prev = _last_chain_hash(conn)
+            chain_hash = _link(prev, key, response, ts)
+            conn.execute(
+                """INSERT INTO calls (
+                    key, model_id, model_nick, provider, ts, duration_ms,
+                    input_tokens, output_tokens, msg_id, repo, pr,
+                    prompt, response, response_id, chain_hash
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (key, model_id, model_nick, provider, ts, duration_ms,
+                 input_tokens, output_tokens, msg_id, repo, pr,
+                 prompt, response, response_id, chain_hash),
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
     return CallRow(
         key=key, model_id=model_id, model_nick=model_nick, provider=provider,
         ts=ts, duration_ms=duration_ms, input_tokens=input_tokens,
