@@ -576,6 +576,22 @@ def _stddev(counts: list[int]) -> float:
     return (sum((c - mean) ** 2 for c in counts) / (len(counts) - 1)) ** 0.5
 
 
+def _variance_glyph(counts: list[int]) -> str:
+    """Three-position dash for variance: _ low, — mid, ‾ high (spiky)."""
+    if not counts or sum(counts) == 0:
+        return " "
+    mean = sum(counts) / len(counts)
+    if mean == 0:
+        return "_"
+    sigma = _stddev(counts)
+    cv = sigma / mean  # coefficient of variation — scale-free
+    if cv < 0.5:
+        return "_"
+    if cv < 1.5:
+        return "—"
+    return "‾"
+
+
 def _oldest_age_str(msgs: list[dict]) -> str:
     if not msgs:
         return "—"
@@ -677,15 +693,14 @@ def punch(
         )
         spark = _sparkline_pct(sparks, q_cap) or "·" * spark_buckets
         rate_h = _rate_per_hour(sparks, spark_minutes)
-        sigma = _stddev(sparks)
         rate_str = f"{rate_h:.1f}/h"
-        sigma_str = f"{sigma:.1f}"
+        var_glyph = _variance_glyph(sparks)
         rows.append((
             actor,
             queued,
             in_flight,
             rate_str,
-            sigma_str,
+            var_glyph,
             spark,
             _oldest_age_str(s["queued"] + s["in_flight"]),
             _status_for(actor, queued, in_flight, q_cap, f_cap),
@@ -700,11 +715,11 @@ def punch(
     print()
     print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
     print()
-    print(f"| station | queued | in-flight | rate | σ | trend ({spark_minutes}m × {spark_buckets}, % of cap) | oldest | status |")
-    print( "|---|---:|---:|---:|---:|---|---|---|")
-    for actor, queued, in_flight, rate_str, sigma_str, spark, oldest, status in rows:
+    print(f"| station | queued | in-flight | rate | var | trend ({spark_minutes}m × {spark_buckets}, % of cap) | oldest | status |")
+    print( "|---|---:|---:|---:|:-:|---|---|---|")
+    for actor, queued, in_flight, rate_str, var_glyph, spark, oldest, status in rows:
         print(
-            f"| → {actor} | {queued} | {in_flight} | {rate_str} | {sigma_str} "
+            f"| → {actor} | {queued} | {in_flight} | {rate_str} | `{var_glyph}` "
             f"| `{spark}` | {oldest} | {status} |"
         )
     print()
@@ -785,7 +800,7 @@ def _punch_rich(rows, sections, actionable, action_hint, include_wait, spark_buc
         padding=(0, 1),
     )
     panels = []
-    for actor, queued, in_flight, rate_str, sigma_str, spark, oldest, status in rows:
+    for actor, queued, in_flight, rate_str, var_glyph, spark, oldest, status in rows:
         plain_status = status.replace("**", "")
         if "capped" in status:
             border, color = "red", "red bold"
@@ -801,7 +816,7 @@ def _punch_rich(rows, sections, actionable, action_hint, include_wait, spark_buc
         body.append("queued     ", style="dim"); body.append(f"{queued}\n", style="bold")
         body.append("in-flight  ", style="dim"); body.append(f"{in_flight}\n", style="bold")
         body.append("rate       ", style="dim"); body.append(f"{rate_str}\n", style="bold")
-        body.append("σ          ", style="dim"); body.append(f"{sigma_str}\n", style="bold")
+        body.append("var        ", style="dim"); body.append(f"{var_glyph}\n", style="bold")
         body.append(f"oldest     {oldest}\n", style="dim")
         body.append("trend      ", style="dim"); body.append(spark, style="cyan"); body.append("\n")
         body.append(plain_status, style=color)
