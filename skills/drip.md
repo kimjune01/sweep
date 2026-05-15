@@ -105,6 +105,7 @@ Triage writes branch pointers directly to `~/.sweep/drip-queue/<owner>-<repo>.js
      2. Checkout the fix branch. Run the test. It must **pass**. If it fails, mark `status: "test_fails_on_fix"`, skip, report. The fix is broken.
    - **PR description (generated from diff).** Read the diff from the fix branch. Generate title and body tone-matched against 5 recent merged PRs from the repo. The description is a drip artifact — triage doesn't write it.
    - **Gemini volley (final review).** Send diff + generated PR description + issue link to `/gemini`: "You are a maintainer seeing this for the first time. Would you merge it?" Five rounds max. [Won't converge to zero findings](/does-iteration-mitigate-slop-slope) — iterate until the structure is sound.
+   - **Dry-mode check (hard skip).** If `~/.sweep/control/dry` exists, skip the push and PR create. Run `uv run python -c "from sweep import observe; observe.event('dry_skip', site='gh_pr_create', repo='<repo>', branch='<branch>')"` so the rehearsal is visible in the event log. Mark the entry `status: "dry_skipped"` and move on. Everything before this point (tests, gates, volley) still runs — only the external mutation is rehearsed.
    - `git push fork <branch>` (branch must exist locally)
    - `gh pr create --repo <repo> --title <title> --body <body> --head <user>:<branch>`
    - Update entry: status → `open`, pushed_at → now, pr_number → result
