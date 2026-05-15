@@ -8,12 +8,14 @@ from sweep.inbox_state import inbox_states
 
 
 # Pipeline order, left → right:
-#   investigate — LLM, root-causes new issues (from /triage, /actionable)
+#   triaged     — LLM (/triage output): issues scored, awaiting investigation
+#   investigate — LLM (/investigate): root-cause + fix branch
 #   qa          — LLM, runs gates
 #   drip        — LLM, paces pushes
 #   in review   — reviewer holds the ball (retro/wait inbox)
 #   respondable — ball back to you (human) after reviewer engages
 STATIONS = [
+    ("triaged",     "triaged"),
     ("investigate", "investigate"),
     ("qa",          "qa"),
     ("drip",        "drip"),

@@ -246,7 +246,7 @@ Automated gates decouple throughput from one person's attention. The pipeline sh
 - `moderate` — some automated gates, some external merges, some engagement. Pipeline should size down.
 - `shallow` — no automated gates, one person is the gate. Glance-merge/glance-close. Throughput and latency capped at maintainer's attention budget. Only obvious, tiny PRs pass.
 
-Write `process_depth` to the schema with evidence. `/actionable` reads this to filter repos.
+Write `process_depth` to the schema with evidence. `/prospect` reads this to filter repos.
 
 ### 6. Write schema
 

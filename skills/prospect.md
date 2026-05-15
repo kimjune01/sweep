@@ -1,13 +1,13 @@
 ---
-name: actionable
-description: Find work worth doing. Starts from intent, not repos — finds maintainer-acknowledged problems and maintainer-desired improvements where receipts of reasoning are producible (hypothesis graph + test attestation). Reads retro parameters to score active repos and expand from what works.
+name: prospect
+description: Prospect for work worth doing — fetch issues from appropriate places (GitHub search, blog crawls, repo rosters). Surfaces maintainer-acknowledged problems with producible receipts. Output feeds /triage. Dedupes against ~/.sweep/seen/issues.txt to avoid resurfacing. Renamed from /actionable.
 argument-hint: [--dry-run]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
-# Actionable
+# Prospect
 
-Find work worth doing. Start from intent, not repos.
+Prospect for work worth doing. Start from intent, not repos. Renamed from `/actionable` — same shape, name better describes the role (looking for value worth extracting, may or may not find it, hands off to /triage).
 
 Work worth doing is anything the maintainer wants done — bugs are a subset. The full space is **desirable improvements**: bugs, planned features, roadmap items, conformance gaps, performance targets, doc holes. The common thread is maintainer pre-commitment: they signaled they want this, nobody's doing it, and the acceptance criteria are readable.
 

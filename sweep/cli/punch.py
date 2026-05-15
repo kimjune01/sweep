@@ -16,6 +16,7 @@ from sweep.system import system_status
 # Two caps per station — queue (backpressure) vs in-flight (concurrency).
 # Humans have deeper queues; LLM actors stay shallow.
 CAPS: dict[str, dict[str, int | None]] = {
+    "triaged":     {"queued": 10, "in_flight": 3},  # LLM, fan-out friendly
     "investigate": {"queued": 5, "in_flight": 3},   # LLM, root-causing
     "qa":          {"queued": 3, "in_flight": 2},   # LLM, gates
     "drip":        {"queued": 5, "in_flight": 1},   # LLM, one push at a time
@@ -23,6 +24,7 @@ CAPS: dict[str, dict[str, int | None]] = {
     "retro":       {"queued": None, "in_flight": None},  # in-review — geometry, not backlog
 }
 ACTION_HINT = {
+    "triaged":     "issues scored, awaiting investigation (LLM)",
     "investigate": "root-cause new issues (LLM)",
     "qa":          "re-attest (CI failed / gates stale)",
     "drip":        "advance status (close / rebase / ship)",
@@ -71,7 +73,7 @@ def punch(
 
 
 def _once(include_wait, spark_minutes, spark_buckets, outcome_days, rich_mode, no_outcomes) -> None:
-    actionable = ["investigate", "qa", "drip", "respondable"]
+    actionable = ["triaged", "investigate", "qa", "drip", "respondable"]
     if include_wait:
         actionable = actionable + ["retro"]
 

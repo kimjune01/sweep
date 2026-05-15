@@ -77,6 +77,20 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
         )
     data = json.loads(out.stdout)
 
+    # Inline code-review comments live on a separate REST endpoint
+    # (not exposed via `gh pr view --json`). Fetch them so the Sonnet
+    # classifier sees the full conversation surface.
+    owner, name = repo.split("/", 1)
+    inline_out = subprocess.run(
+        ["gh", "api", f"repos/{owner}/{name}/pulls/{pr}/comments", "--paginate"],
+        capture_output=True, text=True, check=False,
+    )
+    try:
+        inline_comments = json.loads(inline_out.stdout or "[]")
+    except json.JSONDecodeError:
+        inline_comments = []
+    data["_inline_comments"] = inline_comments
+
     # CI derivation
     rollup = data.get("statusCheckRollup") or []
     failing = next(
