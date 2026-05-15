@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Check actor mailbox depth. Andon-on-overflow — used by /sweep --pipeline tick.
+
+Usage:
+  inbox-depth                # human-readable report
+  inbox-depth --json         # machine-readable
+  inbox-depth --andon-only   # exit 2 if any actor is over its bound
+
+Reads:  ~/.sweep/inbox/<actor>.jsonl   (messages from senders)
+        ~/.sweep/inbox/_acks.jsonl     (acks from receivers)
+        ~/.sweep/config.json           (optional: bounds.<actor>)
+
+Definitions:
+  unacked: a message whose msg_id has no matching ack
+  depth:   count of unacked messages per actor
+  andon:   depth > bound for that actor
+"""
+
+import json
+import os
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+INBOX = Path.home() / ".sweep" / "inbox"
+CONFIG = Path.home() / ".sweep" / "config.json"
+
+DEFAULT_BOUNDS = {
+    "qa": 3,
+    "investigate": 5,
+    "drip": 5,
+    "retro": 1_000_000,  # batch; effectively unbounded
+}
+
+
+def load_bounds():
+    bounds = dict(DEFAULT_BOUNDS)
+    if CONFIG.exists():
+        try:
+            cfg = json.load(open(CONFIG))
+            for actor, b in (cfg.get("bounds") or {}).items():
+                bounds[actor] = int(b)
+        except Exception:
+            pass
+    return bounds
+
+
+def load_jsonl(path):
+    if not path.exists():
+        return []
+    out = []
+    for line in open(path):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            continue
+    return out
+
+
+def main():
+    args = set(sys.argv[1:])
+    bounds = load_bounds()
+
+    acks = load_jsonl(INBOX / "_acks.jsonl")
+    acked = {a.get("msg_id") for a in acks if a.get("msg_id")}
+
+    report = {}
+    for inbox in sorted(INBOX.glob("*.jsonl")):
+        if inbox.name.startswith("_"):
+            continue
+        actor = inbox.stem
+        msgs = load_jsonl(inbox)
+        # latest message per msg_id (senders may re-emit, idempotent on receiver)
+        latest = {}
+        for m in msgs:
+            mid = m.get("msg_id")
+            if mid:
+                latest[mid] = m
+        unacked = [m for mid, m in latest.items() if mid not in acked]
+        bound = bounds.get(actor, 10)
+        depth = len(unacked)
+        report[actor] = {
+            "depth": depth,
+            "bound": bound,
+            "over": depth > bound,
+            "oldest_ts": min((m.get("ts", "") for m in unacked), default=None),
+        }
+
+    any_andon = any(r["over"] for r in report.values())
+
+    if "--json" in args:
+        print(json.dumps(report, indent=2))
+    else:
+        for actor, r in sorted(report.items()):
+            tag = "ANDON" if r["over"] else "ok"
+            print(f"  [{tag}] {actor:13s} depth={r['depth']:>3d}  bound={r['bound']:>3d}"
+                  + (f"  oldest={r['oldest_ts']}" if r["oldest_ts"] else ""))
+        if any_andon:
+            print("\nANDON: pause dispatch. The supervisor should stop delivering new "
+                  "messages to overflowing actors until depth drops below bound.",
+                  file=sys.stderr)
+
+    if "--andon-only" in args:
+        sys.exit(2 if any_andon else 0)
+
+
+if __name__ == "__main__":
+    main()

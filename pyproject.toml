@@ -1,0 +1,8 @@
+[project]
+name = "sweep"
+version = "0.1.0"
+description = "Temporal-supervised PR pipeline"
+requires-python = ">=3.12"
+dependencies = [
+    "temporalio>=1.27.2",
+]

@@ -2,260 +2,189 @@
 
 Two tools, same repo.
 
-**For contributors:** Contribute to open source at scale. Claude Opus orchestrates, Codex implements, Gemini gates. Finds issues, writes fixes, ships PRs — one per org, quality-gated.
+**For contributors:** Contribute to open source at scale. A Temporal-supervised pipeline finds maintainer-acknowledged bugs, writes failing tests, implements fixes, runs adversarial code review, and queues PRs at a pace that builds standing instead of getting banned. One PR per org at a time, every gate has a hashed receipt, andon halts the line when a postcondition fails.
 
 **For maintainers:** [Protect your repo against AI slop.](#pr-quality-gate) Same checks the pipeline enforces on itself, packaged as a GitHub Action. Advisory, not blocking.
 
 ## What it does
 
-Scans GitHub for repos with maintainer-acknowledged bugs, writes failing tests, implements fixes, runs adversarial code review, and queues PRs at a pace that builds standing instead of getting banned.
+Scans GitHub for repos with acknowledged bugs, picks the actionable ones, writes failing tests and minimal fixes, runs codex + gemini as adversarial reviewers, captures each reviewer's raw response as a tamper-evident receipt, and ships through a paced drip queue. The supervisor (a Temporal workflow) restarts crashed work, halts on contract violations, and exposes a deep-linked Web UI for one-hop investigation when something goes wrong.
 
-## Checklist
-
-Before you paste the setup prompt below into Claude Code:
-
-- [ ] [Claude Code](https://claude.ai/code) installed (Opus model required — orchestration is judgment-heavy)
-- [ ] `gh auth status` passes (GitHub CLI authenticated)
-- [ ] `jq` installed (`brew install jq` or `apt install jq`)
-- [ ] `gemini` CLI installed ([google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli))
-- [ ] `OPENAI_API_KEY` set in environment (for `/codex` crosscheck)
-- [ ] A working directory you don't mind cloning repos into (`~/Documents/` by default)
-
-## Setup
-
-Do not clone this repo. The pipeline state (drip queues, repos.jsonl, gate files) is per-machine and will conflict. Copy the prompt below into Claude Code and run it — it creates everything from scratch.
-
----
-
-Set up the sweep pipeline on this machine. Create the following directory structure and files exactly as specified. Do not skip any file.
-
-### 1. Directory structure
+## Architecture
 
 ```
-mkdir -p ~/.sweep/{bin,drip-queue,repos,gates,retro,actionable,cooldown}
+                  ┌────────────────────────────────────────┐
+                  │           GitHub (the world)            │
+                  └─────────────────┬──────────────────────┘
+                                    │ gh / API
+                                    ▼
+                  ┌─────────────────────────────────────────┐
+                  │  pr-state workflow (classifier/dispatcher) │
+                  │  buckets: qa | investigate | rebase | …  │
+                  └────────┬─────────┬──────────┬────────────┘
+                           │ signal  │ signal   │ signal
+                           ▼         ▼          ▼
+                  ┌──────────┐ ┌──────────┐ ┌──────────┐
+                  │ QaActor  │ │  Drip    │ │ Investig.│  (long-running workflows)
+                  │  WIP=1   │ │  WIP=1   │ │  WIP=1   │
+                  └────┬─────┘ └────┬─────┘ └────┬─────┘
+                       │            │            │
+                       ▼            ▼            ▼
+                  ┌─────────────────────────────────────┐
+                  │  Activities — typed, asserted        │
+                  │  test_attestation, codex_review,     │
+                  │  gemini_review, qa_one_entry, …      │
+                  │  Each writes a hashed receipt to     │
+                  │  ~/.sweep/attestations/<msg_id>/     │
+                  └─────────────────────────────────────┘
 ```
 
-### 2. config.json
+Two operational modes:
 
-Write to `~/.sweep/config.json`:
-```json
-{"concurrency": 5, "dry_run": true}
-```
+| Mode | When | Substrate |
+|------|------|-----------|
+| **Terminal** | Manual dev / debug one entry / experiment | Markdown skills in `~/.claude/skills/` invoked from a Claude session. No Temporal. State files written directly to `~/.sweep/`. |
+| **Hyper-supervision** | Unattended autonomous runs | Temporal server + Python worker. Workflows orchestrate, activities execute, history is the audit log. No long-running Claude session. |
 
-### 3. repos.jsonl
+Skills and Python activities share the same contract — one `msg_id`, one repo, one branch, gates produced with hashed artifacts — so the two modes are interchangeable per entry, not per pipeline. Skills are useful for ad-hoc; production runs through Temporal.
 
-Write an empty file at `~/.sweep/repos.jsonl`. This is the repo roster — append-only, one JSON object per line.
+## Prerequisites
 
-### 4. SWEEP_LOG.md
+- [Claude Code](https://claude.ai/code) installed
+- `gh auth status` passes
+- `uv` ([installation](https://docs.astral.sh/uv/getting-started/installation/))
+- `temporal` CLI ([installation](https://docs.temporal.io/cli)) — single binary, `temporal server start-dev` is enough
+- `ANTHROPIC_API_KEY` set in env (for Haiku-in-tests; Opus/Sonnet for prod)
+- `OPENAI_API_KEY` set in env (for codex review)
+- A working directory you don't mind cloning repos into (`~/Documents/` by default)
 
-Write to `~/.sweep/SWEEP_LOG.md`:
-```
-# Sweep Log
-```
+## Quick start
 
-### 5. bin/tick.py
+Sweep keeps its state at `~/.sweep/`. The git repo at `~/Documents/sweep/` holds the code. They're separate by design — don't clone this repo into `~/.sweep`.
 
-Write to `~/.sweep/bin/tick.py` and `chmod +x` it. This is the pipeline status display.
-
-```python
-#!/usr/bin/env python3
-"""Pipeline tick. Reads drip queues, prints bucket chain, auto-advances qa_passed entries where org gate is clear."""
-
-import json, os, glob, sys, subprocess
-from collections import defaultdict
-from datetime import datetime, timezone
-
-drip_dir = os.path.expanduser("~/.sweep/drip-queue")
-repos_file = os.path.expanduser("~/.sweep/repos.jsonl")
-state_file = os.path.expanduser("~/.sweep/bin/.tick_state.json")
-
-def attested(e):
-    g = e.get("gates", {})
-    return isinstance(g.get("bugs_found"), int)
-
-sc = defaultdict(int)
-demoted = 0
-all_qa = []
-
-for f in glob.glob(os.path.join(drip_dir, "*.jsonl")):
-    issues = {}
-    for line in open(f):
-        line = line.strip()
-        if not line: continue
-        try:
-            e = json.loads(line)
-            key = e.get("issue", e.get("branch", "?"))
-            issues[str(key)] = e
-            if "branch" in e:
-                issues[e["branch"]] = e
-        except: pass
-    seen = set()
-    for key, e in issues.items():
-        eid = id(e)
-        if eid in seen: continue
-        seen.add(eid)
-        status = e.get("status", "?")
-        if status == "qa_passed" and not attested(e):
-            sc["queued"] += 1
-            demoted += 1
-        else:
-            sc[status] += 1
-            if status == "qa_passed" and attested(e):
-                repo = e.get("repo", "")
-                org = repo.split("/")[0] if "/" in repo else ""
-                all_qa.append((f, key, e, org))
-
-rs = {}
-if os.path.exists(repos_file):
-    for line in open(repos_file):
-        try:
-            e = json.loads(line.strip())
-            rs[e["repo"]] = e
-        except: pass
-
-r = sum(1 for e in rs.values() if e.get("status") == "ready")
-q = sc.get("queued", 0) + sc.get("ready", 0) + sc.get("triaged", 0)
-qa = sc.get("qa_passed", 0)
-d = sc.get("dripped", 0)
-s = sc.get("shipped", 0)
-m = sc.get("merged", 0)
-
-mode = sys.argv[1] if len(sys.argv) > 1 else "dry-run"
-prev = {}
-if os.path.exists(state_file):
-    try: prev = json.load(open(state_file))
-    except: pass
-tick = prev.get("tick", 0) + 1
-
-print(f"tick {tick} [{mode}]")
-print(f"  ready[{r}] -> triaged[{q}] -> qa[{qa}] -> dripped[{d}] -> shipped[{s}] -> merged[{m}]")
-
-json.dump({"tick": tick, "r": r, "q": q, "qa": qa, "d": d, "s": s, "m": m}, open(state_file, "w"))
-```
-
-### 6. bin/org-gate
-
-Write to `~/.sweep/bin/org-gate` and `chmod +x` it. Checks if an org slot is available for a new PR.
+### 1. Install the code
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-repo="${1:?Usage: org-gate <owner/repo>}"
-org="${repo%%/*}"
-# Check if you have any open PRs in this org
-OPEN=$(gh search prs --author="$(gh api user --jq .login)" --state=open --limit=100 --json repository --jq "[.[] | select(.repository.nameWithOwner | startswith(\"$org/\"))] | length" 2>/dev/null || echo "0")
-if [ "$OPEN" -gt 0 ]; then
-  echo "{\"verdict\": \"blocked\", \"org\": \"$org\", \"open\": $OPEN}"
-else
-  echo "{\"verdict\": \"clear\", \"org\": \"$org\"}"
-fi
+git clone https://github.com/kimjune01/sweep ~/Documents/sweep
+cd ~/Documents/sweep
+uv sync
 ```
 
-### 7. hooks/gate-pr-create.sh
-
-Write to `~/.claude/hooks/gate-pr-create.sh` and `chmod +x` it. This is a pre-tool-use hook that blocks `gh pr create` unless a gate attestation file exists.
+### 2. Create state directory
 
 ```bash
-#!/bin/bash
-INPUT=$(cat)
-CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
-[ -z "$CMD" ] && exit 0
-
-STRIPPED=$(echo "$CMD" | sed "s/'[^']*'//g" | sed 's/"[^"]*"//g')
-if echo "$STRIPPED" | grep -qE 'gh[[:space:]]+pr[[:space:]]+create'; then
-  REPO=$(echo "$CMD" | grep -oE '\-\-repo[= ][A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+' | head -1 | sed 's/--repo[= ]*//')
-  [ -z "$REPO" ] && { echo "BLOCKED: gh pr create missing --repo flag." >&2; exit 2; }
-  GATE_FILE="$HOME/.sweep/gates/${REPO//\//-}.gate"
-  [ ! -f "$GATE_FILE" ] && { echo "BLOCKED: no gate file at $GATE_FILE. Run /drip first." >&2; exit 2; }
-  for field in gemini_verdict gemini_first gemini_last codex_verdict test_attestation; do
-    val=$(jq -r ".$field // empty" "$GATE_FILE" 2>/dev/null)
-    [ -z "$val" ] && { echo "BLOCKED: gate file missing $field." >&2; exit 2; }
-  done
-  rm "$GATE_FILE"
-fi
-exit 0
+mkdir -p ~/.sweep/{attestations,inbox}
+ln -s ~/Documents/sweep/bin ~/.sweep/bin
+ln -s ~/Documents/sweep/templates ~/.sweep/templates
 ```
 
-Then register it in `.claude/settings.json` under hooks:
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/gate-pr-create.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-### 8. Skills
-
-Fetch each skill and install it. Each link is the raw skill definition:
-
-- [sweep](https://github.com/kimjune01/sweep/blob/master/skills/sweep.md) — multi-repo orchestrator
-- [triage](https://github.com/kimjune01/sweep/blob/master/skills/triage.md) — per-repo investigation + implementation
-- [qa](https://github.com/kimjune01/sweep/blob/master/skills/qa.md) — adversarial code review (gemini + codex)
-- [drip](https://github.com/kimjune01/sweep/blob/master/skills/drip.md) — process gates (staleness, org gate, tone)
-- [ship](https://github.com/kimjune01/sweep/blob/master/skills/ship.md) — PR creation (only path to `gh pr create`)
-- [actionable](https://github.com/kimjune01/sweep/blob/master/skills/actionable.md) — find repos worth contributing to
-- [retro](https://github.com/kimjune01/sweep/blob/master/skills/retro.md) — compress outcomes into durable artifacts
-- [review-schema](https://github.com/kimjune01/sweep/blob/master/skills/review-schema.md) — induce repo review culture
+### 3. Install the skills (terminal mode)
 
 ```bash
-for skill in sweep triage qa drip ship actionable retro review-schema; do
+for skill in actionable drip investigate qa retro review-schema sweep triage pr-state; do
   mkdir -p ~/.claude/skills/"$skill"
-  curl -sL "https://raw.githubusercontent.com/kimjune01/sweep/master/skills/${skill}.md" \
-    -o ~/.claude/skills/"$skill"/skill.md
+  ln ~/Documents/sweep/skills/"$skill".md ~/.claude/skills/"$skill"/skill.md
 done
 ```
 
-The skills reference `/codex` and `/gemini` for adversarial code review. These are separate skills that call external models:
-- `/codex` sends code to OpenAI's GPT-5.5 (codex) for structural review. Requires `OPENAI_API_KEY`.
-- `/gemini` sends code to Google's Gemini for logic tracing. Requires `gemini` CLI installed.
+### 4. Run the supervisor (hyper-supervision mode)
 
-Both are required. The gate hook blocks shipping without attestations from both. This is not optional — session 4 shipped 22 PRs without review and 27% had bugs. The gates exist because skipping them was tried and it failed.
+In one terminal:
 
-### 9. Verify
-
-Run `python3 ~/.sweep/bin/tick.py` — should print:
-```
-tick 1 [dry-run]
-  ready[0] -> triaged[0] -> qa[0] -> dripped[0] -> shipped[0] -> merged[0]
+```bash
+temporal server start-dev
+# Web UI now at http://localhost:8233
 ```
 
-### 10. First run
+In another terminal:
 
-Start with `/actionable` to seed your repo roster, then `/sweep --dry-run` to triage without shipping. Review the branches before removing `--dry-run`.
+```bash
+cd ~/Documents/sweep
+uv run python -m sweep.worker
+```
 
----
+The worker registers the `QaActor` workflow + activities against task queue `qa-tq` and waits for signals.
+
+### 5. Send a synthetic message
+
+```bash
+uv run python -m sweep.client --synthetic
+```
+
+Watch the workflow in the Web UI. Click into its history to see every activity call, input, output, and the hashed receipt path for the captured LLM responses.
 
 ## Pipeline
 
 ```
-/actionable -> repos.jsonl -> /sweep -> /triage (per repo) -> /qa -> /drip -> /ship
-                                                    |              |         |
-                                               branch + test   gate file   gh pr create
+gh search ──► pr-state ──┬─► QaActor       ──► codex/gemini volley ──► gates
+                         ├─► InvestigateActor ► respond to reviewer
+                         ├─► DripActor       ► close / rebase / ship
+                         └─► retro            ► audit only (wait bucket)
 ```
 
-One PR per org at a time. Quality gates block shipping until gemini + codex + tests all pass. The gate hook enforces this — no gate file, no PR.
+Each `Actor` is a long-running Temporal workflow. `pr-state` runs as a recurring workflow (cron-scheduled), classifies every open authored PR into a bucket, and signals the matching actor with a `Message`. The actor's signal handler dedupes on `msg_id` (idempotent receivers), the workflow processes one message at a time (WIP=1 — the activity signature accepts only one repo + one branch), and posts an ack when done.
+
+### Receipts and attestations
+
+Forgery surface: an LLM agent will happily write `gemini_verdict: "pass"` without calling gemini. The fix is structural — every gate attestation is a hashed pointer to a captured artifact, not a verdict claim.
+
+```python
+@dataclass
+class GateAttestation:
+    verdict: Literal["pass", "fail", "revise", "stubbed"]
+    artifact_path: str   # ~/.sweep/attestations/<msg_id>/codex.txt
+    sha256: str          # hash of the raw bytes
+    verbatim_excerpt: str  # must substring-match artifact contents
+    rounds: int
+    provenance: str      # "codex" | "opus-fallback" | "haiku-test"
+```
+
+The activity that calls codex/gemini is the only thing that ever writes to the artifact path. The downstream gate-pr-create hook re-hashes the file at push time — mismatch or missing artifact → block. The agent cannot fabricate bytes that hash to a value it doesn't know.
+
+### Andon (postcondition failures halt the line)
+
+Every activity ends with assertions:
+
+```python
+@activity.defn
+async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
+    ...
+    assert result.bugs_found is not None and isinstance(result.bugs_found, int)
+    assert Path(result.codex.artifact_path).exists()
+    assert Path(result.gemini_last.artifact_path).exists()
+    return result
+```
+
+Failed assertion → `ApplicationError(non_retryable=True)` → Temporal records the stack trace in workflow history → the actor's signal-handling loop catches it and flips `self.halted = True`. The workflow keeps existing and buffering signals, but stops processing until you send a `clear_andon` signal (after fixing the root cause).
+
+The andon path runs on **every** invocation — there's no dev/prod split for assertions. Pulling the cord is just a test that runs in production. The test scaffolding uses Haiku (variance ~15%) to exercise the assertion paths ~14× more often than Opus would, so by the time you flip to Opus the gate logic is battle-tested.
+
+### Kanban + investigation
+
+Each per-PR workflow tags itself with search attributes (`bucket`, `repo`, `pr`, `msg_id`). A kanban view is just `client.list_workflows("WorkflowType='PrPipeline'")` grouped by `bucket`. Click any card → land on the Temporal Web UI page for that workflow execution → full event history, activity inputs/outputs, retry traces, signal log. O(1) investigation.
+
+## Pipeline stages
+
+| Stage | Actor / workflow | Output |
+|-------|-----------------|--------|
+| Discover | `actionable` (terminal mode) or scheduled crawl | `repos.jsonl` entries |
+| Plan repo | `review-schema` workflow | repo's gate/signal/tiebreaker profile |
+| Triage | `TriageActor` | branch + failing test in `~/Documents/<repo>` |
+| QA | `QaActor` | gates with hashed receipts; verdict pass/fail |
+| Drip | `DripActor` | staleness check, push, PR created (one per org at a time) |
+| Ship | `gh pr create` (gated by hook) | PR open on GitHub |
+| Monitor | `pr-state` (recurring) | bucket signal to whichever actor next |
+| Retro | `retro` batch workflow | parameter updates feeding back into `actionable` scoring |
 
 ## Rules
 
-- One PR per org at a time (org gate)
-- Zero em dashes in any PR text
-- Read CONTRIBUTING.md before implementing
-- Test must fail on main, pass on fix branch
-- Never `gh pr create` outside of `/ship`
-- Closed is closed — no adjustments to merge rate
-
----
+- **One PR per org at a time** (org gate enforced by activity).
+- **Zero em dashes in any PR text** (validator in drip activity).
+- **Read CONTRIBUTING.md** before implementing (triage activity asserts this).
+- **Test must fail on main, pass on fix branch** (`test_attestation` is a hard gate).
+- **Never `gh pr create` outside `DripActor`** (PreToolUse hook blocks it).
+- **Closed is closed** — no retroactive adjustments to merge rate.
+- **Haiku for test scaffolding, never for production judgment** (env-var gated).
 
 ## PR Quality Gate
 
@@ -296,7 +225,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # required, ~$0.001/PR
 ```
-
 
 ---
 

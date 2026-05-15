@@ -219,7 +219,20 @@ Fast tick for advancing work. **Keep the work queue saturated.** Don't wait for 
 1. **Spawn triage agents for ALL untriaged ready repos.** Use `model: "opus"`. The number of concurrent agents is dynamic — scale to the work. 30 repos waiting should produce 30 agents, not 3. Pick order: warm leads first, then high-star. Running agents from prior ticks don't reduce the count.
 2. **Run `/drip` on every unblocked queued branch.** Check org gate, then push. Branches sitting in the queue are wasted work — push them.
 3. **Spawn impl agents** for any stalled pipeline (TRIAGE_GRAPH.md exists but no drip queue branch).
-4. **"Idle" is rare.** It means ALL THREE are empty: zero ready repos, zero queued branches, zero stalled pipelines. If any of these have items, do the work. Don't rationalize inaction.
+4. **Supervise actor mailboxes.** Sweep is the supervisor for the OTP-style actors (`/qa`, `/investigate`, `/drip`, `/retro`). For each `~/.sweep/inbox/<actor>.jsonl`:
+   - Read messages and `~/.sweep/inbox/_acks.jsonl`. Pair by `msg_id`.
+   - For each unacked message, compute age = now − msg `ts`.
+   - **Stall threshold:** actor's declared takt × 6 (qa: 5 min × 6 = 30 min; investigate: 15 min × 6 = 90 min; drip: 5 min × 6 = 30 min; retro: batch, no stall check).
+   - If the oldest unacked message exceeds threshold: spawn the actor once with a prompt referencing that single `msg_id` (the block-qa-batching hook enforces WIP=1 — supervisor restarts are single-message restarts).
+   - If still stalled on the next `--pipeline` tick (i.e., same `msg_id` exceeds threshold again after one restart): write a stall record to `SWEEP_GRAPH.md` under a `## Stalled actors` section and stop restarting until human ack. Three restarts on the same message would be a flapping actor, not a stall — surface it.
+   - Log every restart and stall to `~/.sweep/sweep-log/<date>.jsonl` with the `msg_id` so retro can mine flap patterns.
+
+5. **Andon — check mailbox depth (boundedness).** Stall detection above is age-based; this is count-based. Run `~/.sweep/bin/inbox-depth --andon-only`. If exit code is 2, an actor's unacked count exceeds its bound (default qa=3, investigate=5, drip=5; override via `~/.sweep/config.json` → `bounds`). Andon response:
+   - **Stop dispatch to the overflowing actor.** `/pr-state` must not append new messages to that inbox until depth drops. The supervisor sets an `andon` flag at `~/.sweep/inbox/_andon.jsonl` (one line per andon event with actor + ts + depth); dispatchers read this file and skip blocked actors.
+   - **Spawn an extra worker** of the overflowing actor (still WIP=1 per worker — the hook enforces this — so two workers means two single-message processes).
+   - **Surface in `SWEEP_GRAPH.md`** under `## Andon` with the actor, depth, bound, and oldest-message ts.
+   - The andon clears automatically when `inbox-depth` reports depth ≤ bound on a subsequent tick. Append `{"action":"clear",...}` to `_andon.jsonl`.
+5. **"Idle" is rare.** It means ALL FOUR are empty: zero ready repos, zero queued branches, zero stalled pipelines, zero stalled inboxes. If any of these have items, do the work. Don't rationalize inaction.
 
 #### `--monitor` tick (hourly at :23)
 
