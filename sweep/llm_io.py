@@ -52,17 +52,41 @@ async def call(
 
     # Miss — call the provider.
     if model.provider == "anthropic":
+        import anthropic
         from anthropic import AsyncAnthropic
 
         client = AsyncAnthropic()
         t0 = time.time()
-        resp = await client.messages.create(
-            model=model.model_id,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
+        try:
+            resp = await client.messages.create(
+                model=model.model_id,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+        except anthropic.APIError as e:
+            # Record the failed attempt so the attestation chain has no
+            # silent gaps. Provider errors are inherently transient (429,
+            # 5xx, network timeouts) so the caller decides whether to
+            # retry; we just make sure the failure is observable.
+            duration_ms = int((time.time() - t0) * 1000)
+            attestations.record_call(
+                key=key,
+                model_id=model.model_id,
+                model_nick=model.nick,
+                provider=model.provider,
+                duration_ms=duration_ms,
+                input_tokens=0,
+                output_tokens=0,
+                msg_id=msg_id,
+                repo=repo,
+                pr=pr,
+                prompt=f"SYSTEM: {system}\n\nUSER: {user}",
+                response=f"<error: {type(e).__name__}: {str(e)[:500]}>",
+                response_id=None,
+            )
+            raise
         duration_ms = int((time.time() - t0) * 1000)
         response_text = "".join(
             block.text for block in resp.content if hasattr(block, "text")
