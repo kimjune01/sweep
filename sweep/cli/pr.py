@@ -183,17 +183,20 @@ MERGE_GLYPHS = {
 
 
 def _render_attest(*, artifacts: bool, verdict: str | None) -> None:
-    """Local stats — attestation pivot. ⛩️ (torii) means the cascade
-    passed; 🚧 means receipts exist but the verdict isn't pass yet.
-    Absent means the cascade hasn't run.
+    """Local stats — attestation pivot. The PR is either ⛩️ Attested
+    (cascade ran and the verdict is pass) or 🚧 Unattested (anything
+    else: cascade hasn't run, is in flight, or returned a non-pass
+    verdict). Always rendered because the pivot is binary and load-
+    bearing — it determines whether sweep ships the PR.
 
     Local properties only — what sweep knows from its own substrate.
     Kept on a separate line from the remote stats below because
     mixing local and remote facts confuses the operator about which
     half of the system to interrogate when something's wrong."""
-    if not artifacts:
-        return
-    glyph = "⛩️ attested" if verdict == "pass" else "🚧 failing"
+    if artifacts and verdict == "pass":
+        glyph = "⛩️ Attested"
+    else:
+        glyph = "🚧 Unattested"
     print(f"`{glyph}`")
     print()
 
