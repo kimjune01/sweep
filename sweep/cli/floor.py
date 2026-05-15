@@ -193,7 +193,10 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     # the strongest signal, actionable is softer. Quiet retros (empty-P
     # accumulating chains) don't earn cockpit space.
     if retro_state.is_halted():
-        parts.append("📋 HALTED")
+        # Uppercase RETRO mirrors the urgency: 🌱 retro is "at your pace,"
+        # 📋 RETRO is "the line is stopped on this." Same noun, different
+        # voice. The badge names the cause (retro) over the effect (halted).
+        parts.append("📋 RETRO")
     else:
         retros = retro_state.list_retros()
         actionable = any(retro_state.has_prescription(r) for r in retros)
