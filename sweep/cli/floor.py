@@ -58,15 +58,21 @@ def _render_andon() -> None:
     retros = retro_state.list_retros()
     halted = retro_state.is_halted()
     state = "HALTED" if halted else "running"
-    print(f"retros: {len(retros)}/{retro_state.RETRO_CAP}  pipeline: {state}")
+    # 📋 in the summary line is the glance-able "you owe an Attend" signal —
+    # at least one pending retro has a non-empty P. Per-retro lines below
+    # carry the same emoji so the operator can see which one to read.
+    actionable = [r for r in retros if retro_state.has_prescription(r)]
+    badge = " 📋" if actionable else ""
+    print(f"retros: {len(retros)}/{retro_state.RETRO_CAP}{badge}  "
+          f"pipeline: {state}")
     if not retros:
         print("  (no pending retros)")
         return
     for r in retros:
         has_p = retro_state.has_prescription(r)
-        flag = "actionable" if has_p else "accumulating"
+        flag = "📋 actionable" if has_p else "🌱 accumulating"
         print(f"  {r.written_at.isoformat(timespec='minutes')}  "
-              f"{r.name}  [{flag}]")
+              f"{r.name}  {flag}")
 
 
 # ---------------------------------------------------------------- conveyor
