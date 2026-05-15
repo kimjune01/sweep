@@ -77,9 +77,15 @@ Renderer is ready (⬆️ in the inbox); no producer yet. Candidates:
 
 Pick one, prototype, see if it earns its keep.
 
+### 7. Operator controls + TUI — `BOOTSTRAP-TUI.md`
+
+Two pipeline-wide controls + the Bubble Tea TUI that surfaces them. Dry mode lets actors rehearse without external mutations (no `gh pr create`, no `git push`); soft-pause stops dequeue while in-flight work completes. Toggled from the CLI (`sweep dry`, `sweep pause`) or live from the TUI (`sweep-tui`, with `d` and `p` keybindings).
+
+Substrate and TUI ship together — substrate without the storefront is a personal tool nobody discovers; storefront without the factory is a demo. One product across two languages, bridged by flag files at `~/.sweep/control/`.
+
 ## Later
 
-- **Bubble Tea overlay.** A Go binary that watches `~/.sweep/events.jsonl` and renders a live dashboard. Substrate stays Python; the Go binary is the salesperson. Worth it once the rest of the pipeline is producing enough events to make a live view interesting.
+- **Cold storage for events.** The cursor was built for this — once retro proves it captures everything it needs across a few cycles, the lines before the cursor become safe to archive (gzip + S3 / wherever). Until then, events.jsonl grows append-only and that's fine.
 - **Cold storage for events.** The cursor was built for this — once retro proves it captures everything it needs across a few cycles, the lines before the cursor become safe to archive (gzip + S3 / wherever). Until then, events.jsonl grows append-only and that's fine.
 - **Counter histograms for retro.** `qa_volley_hist:1`, `qa_volley_hist:2`, … etc. already work; need a CLI/skill that reads them and surfaces distribution shape (`sweep observe hist qa_volley`).
 

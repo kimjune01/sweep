@@ -70,7 +70,7 @@ Two halves: substrate (Python, no new deps) + TUI (Go, Bubble Tea).
    ```
 5. **Resilience**: if `sweep floor --plain` fails (worker down, gh auth expired), render the stderr in red and keep the previous good frame on screen.
 
-The TUI is a Charm-stack salesperson on top of the Python substrate. It writes flag files; the Python actors read them. No RPC, no shared memory, no socket — just files. The same files the CLI subcommands write, so the TUI and the CLI are interchangeable from the substrate's perspective.
+The TUI is the salesperson; the Python substrate is the factory. Neither ships alone: the factory without a storefront is a personal tool nobody discovers; the storefront without a factory is a demo. They are one product across two languages, bridged by flag files at `~/.sweep/control/` — TUI writes them, Python actors read them, same files the CLI subcommands write so all three surfaces are interchangeable.
 
 ## Acceptance
 
@@ -84,7 +84,7 @@ The TUI is a Charm-stack salesperson on top of the Python substrate. It writes f
 
 - Commit messages: lowercase subject with area prefix (`control:`, `tui:`, `dry:`). One commit per logical chunk. Match `git log --oneline -10`.
 - Don't bundle dry-mode wiring across activities into one commit — `qa: skip git push under dry`, `drip: skip gh pr create under dry`, etc.
-- Substrate goes first; TUI is the last commit cluster. Substrate alone is shippable; the TUI is the cherry.
+- **Both halves ship together.** Substrate without the TUI is a tool that nobody can see; TUI without the substrate is a demo with no engine. Land them in the same cycle. If the substrate is ready and the TUI isn't, keep going — don't merge the half.
 - No new Python deps. Go side gets Bubble Tea + Lip Gloss + Bubbles + Glamour — match versions used in `glow`'s go.mod if helpful.
 - Don't add a "force kill in-flight" mode. Soft-pause is *soft* by design; in-flight always completes.
 
