@@ -109,14 +109,19 @@ def close_open_issues() -> None:
     out = run(["gh", "issue", "list", "--repo", FIXTURE_REPO,
                "--state", "open", "--limit", "100", "--json", "number"])
     for row in json.loads(out.stdout or "[]"):
-        run(["gh", "issue", "close", str(row["number"]), "--repo", FIXTURE_REPO])
+        # check_=False: a concurrent run may have already closed this issue
+        # between the list and the close. Better to no-op than abort the
+        # whole stage.
+        run(["gh", "issue", "close", str(row["number"]),
+             "--repo", FIXTURE_REPO], check_=False)
 
 
 def close_open_prs() -> None:
     out = run(["gh", "pr", "list", "--repo", FIXTURE_REPO,
                "--state", "open", "--limit", "100", "--json", "number"])
     for row in json.loads(out.stdout or "[]"):
-        run(["gh", "pr", "close", str(row["number"]), "--repo", FIXTURE_REPO])
+        run(["gh", "pr", "close", str(row["number"]),
+             "--repo", FIXTURE_REPO], check_=False)
 
 
 def apply_fix(workdir: str) -> None:
