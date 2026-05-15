@@ -343,8 +343,24 @@ def models_cmd() -> None:
 # ----- punch list: cross-inbox actionable view
 
 
+def _load_msg_id_set(path: Path) -> set[str]:
+    out: set[str] = set()
+    if not path.exists():
+        return out
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            a = json.loads(line)
+            if a.get("msg_id"):
+                out.add(a["msg_id"])
+        except json.JSONDecodeError:
+            pass
+    return out
+
+
 def _read_inbox(actor: str) -> tuple[list[dict], set[str]]:
-    """Return (unacked messages, all_acked_msg_ids)."""
+    """Backward-compat: return (unacked messages, acked_msg_ids)."""
     inbox = Path.home() / ".sweep" / "inbox" / f"{actor}.jsonl"
     if not inbox.exists():
         return [], set()
@@ -359,19 +375,42 @@ def _read_inbox(actor: str) -> tuple[list[dict], set[str]]:
         except json.JSONDecodeError:
             pass
 
-    acks_path = Path.home() / ".sweep" / "inbox" / "_acks.jsonl"
-    acked: set[str] = set()
-    if acks_path.exists():
-        for line in acks_path.read_text().splitlines():
+    acked = _load_msg_id_set(Path.home() / ".sweep" / "inbox" / "_acks.jsonl")
+    return [m for mid, m in seen.items() if mid not in acked], acked
+
+
+def _inbox_states(actor: str) -> dict[str, list[dict]]:
+    """Partition an inbox into {'queued', 'in_flight', 'done'}.
+
+    queued    = msg present, no start record
+    in_flight = msg present, start record but no ack
+    done      = msg present, ack record (regardless of start)
+    """
+    inbox = Path.home() / ".sweep" / "inbox" / f"{actor}.jsonl"
+    seen: dict[str, dict] = {}
+    if inbox.exists():
+        for line in inbox.read_text().splitlines():
             if not line.strip():
                 continue
             try:
-                a = json.loads(line)
-                if a.get("msg_id"):
-                    acked.add(a["msg_id"])
+                m = json.loads(line)
+                if m.get("msg_id"):
+                    seen[m["msg_id"]] = m
             except json.JSONDecodeError:
                 pass
-    return [m for mid, m in seen.items() if mid not in acked], acked
+
+    started = _load_msg_id_set(Path.home() / ".sweep" / "inbox" / "_started.jsonl")
+    acked = _load_msg_id_set(Path.home() / ".sweep" / "inbox" / "_acks.jsonl")
+
+    states: dict[str, list[dict]] = {"queued": [], "in_flight": [], "done": []}
+    for mid, m in seen.items():
+        if mid in acked:
+            states["done"].append(m)
+        elif mid in started:
+            states["in_flight"].append(m)
+        else:
+            states["queued"].append(m)
+    return states
 
 
 SPARK_CHARS = " ▁▂▃▄▅▆▇█"  # 9 levels including empty
@@ -455,35 +494,46 @@ def punch(
         "retro":       "audit only (wait bucket)",
     }
 
-    sections: dict[str, list[dict]] = {}
+    states: dict[str, dict[str, list[dict]]] = {}
+    sections: dict[str, list[dict]] = {}  # unacked = queued + in_flight, for the per-item list
     for actor in ACTIONABLE:
-        msgs, _ = _read_inbox(actor)
-        sections[actor] = sorted(msgs, key=lambda x: x.get("ts", ""))
+        s = _inbox_states(actor)
+        states[actor] = s
+        sections[actor] = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
 
-    def _status_for(actor: str, wip: int, bound: int | None) -> str:
-        if wip == 0:
+    def _status_for(actor: str, queued: int, in_flight: int, limit: int | None) -> str:
+        total_open = queued + in_flight
+        if total_open == 0:
             return "idle"
-        if bound is not None and wip > bound:
-            return "**ANDON**"
+        if limit is not None and queued > limit:
+            return "**STALLED**"
         if actor == "retro":
             return "history"
-        return "working"
+        if in_flight > 0:
+            return "working"
+        return "queued"
 
-    rows: list[tuple[str, int, str, str, str, str]] = []
+    rows: list[tuple[str, int, int, str, str, str, str]] = []
     for actor in ACTIONABLE:
-        msgs = sections[actor]
-        wip = len(msgs)
-        bound = BOUND.get(actor)
-        sparks = _bucketize([m.get("ts", "") for m in msgs], spark_minutes, spark_buckets)
+        s = states[actor]
+        queued = len(s["queued"])
+        in_flight = len(s["in_flight"])
+        limit = BOUND.get(actor)
+        sparks = _bucketize(
+            [m.get("ts", "") for m in (s["queued"] + s["in_flight"])],
+            spark_minutes, spark_buckets,
+        )
         spark = _sparkline(sparks) or "·" * spark_buckets
-        bound_str = "∞" if bound is None else str(bound)
+        limit_str = "∞" if limit is None else str(limit)
+        oldest = _oldest_age_str(s["queued"] + s["in_flight"])
         rows.append((
             actor,
-            wip,
-            bound_str,
-            _oldest_age_str(msgs),
+            queued,
+            in_flight,
+            limit_str,
+            oldest,
             spark,
-            _status_for(actor, wip, bound),
+            _status_for(actor, queued, in_flight, limit),
         ))
 
     if rich_mode:
@@ -495,10 +545,10 @@ def punch(
     print()
     print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
     print()
-    print(f"| station | WIP | bound | oldest | flow ({spark_minutes}m × {spark_buckets}) | status |")
-    print( "|---|---:|---:|---|---|---|")
-    for actor, wip, bound_str, oldest, spark, status in rows:
-        print(f"| → {actor} | {wip} | {bound_str} | {oldest} | `{spark}` | {status} |")
+    print(f"| station | queued | in-flight | limit | oldest | flow ({spark_minutes}m × {spark_buckets}) | status |")
+    print( "|---|---:|---:|---:|---|---|---|")
+    for actor, queued, in_flight, limit_str, oldest, spark, status in rows:
+        print(f"| → {actor} | {queued} | {in_flight} | {limit_str} | {oldest} | `{spark}` | {status} |")
     print()
 
     total = sum(len(sections[a]) for a in ACTIONABLE if a != "retro")
@@ -541,19 +591,23 @@ def _punch_rich(rows, sections, actionable, action_hint, include_wait, spark_buc
         padding=(0, 1),
     )
     panels = []
-    for actor, wip, bound_str, oldest, spark, status in rows:
-        if status.startswith("**ANDON"):
-            border, color, label = "red", "red bold", "ANDON"
+    for actor, queued, in_flight, limit_str, oldest, spark, status in rows:
+        if "STALLED" in status:
+            border, color, label = "red", "red bold", "STALLED"
         elif status == "idle":
             border, color, label = "green", "green", "idle"
         elif status == "history":
             border, color, label = "dim", "dim", "history"
+        elif status == "queued":
+            border, color, label = "blue", "blue", "queued"
         else:
             border, color, label = "yellow", "yellow", "working"
         body = Text()
-        body.append("WIP   ", style="dim"); body.append(f"{wip}", style="bold"); body.append(f" / {bound_str}\n", style="dim")
-        body.append(f"old   {oldest}\n", style="dim")
-        body.append("flow  ", style="dim"); body.append(spark, style="cyan"); body.append("\n")
+        body.append("queued    ", style="dim"); body.append(f"{queued}\n", style="bold")
+        body.append("in-flight ", style="dim"); body.append(f"{in_flight}\n", style="bold")
+        body.append("limit     ", style="dim"); body.append(f"{limit_str}\n", style="dim")
+        body.append(f"oldest    {oldest}\n", style="dim")
+        body.append("flow      ", style="dim"); body.append(spark, style="cyan"); body.append("\n")
         body.append(label, style=color)
         panels.append(Panel(body, title=f"[bold]{actor}[/]", border_style=border, width=22, padding=(0, 1)))
 
