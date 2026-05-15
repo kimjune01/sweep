@@ -23,14 +23,16 @@ def board(
     items: dict[str, list[str]] = {}
     for actor in cols:
         s = inbox_states(actor)
+        in_flight_ids = {m.get("msg_id") for m in s["in_flight"]}
         msgs = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
-        items[actor] = [
-            (
+        items[actor] = []
+        for m in msgs:
+            link = (
                 f"[{m.get('repo', '?')}#{m.get('pr', '-')}]"
                 f"(https://github.com/{m.get('repo', '')}/pull/{m.get('pr', '')})"
             )
-            for m in msgs
-        ]
+            prefix = "✈️ " if m.get("msg_id") in in_flight_ids else ""
+            items[actor].append(f"{prefix}{link}")
 
     height = max((len(items[a]) for a in cols), default=0)
     headers = [f"{a} ({len(items[a])})" for a in cols]

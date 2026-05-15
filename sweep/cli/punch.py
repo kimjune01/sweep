@@ -74,10 +74,12 @@ def _once(include_wait, spark_minutes, spark_buckets, outcome_days, rich_mode, n
 
     states: dict[str, dict[str, list[dict]]] = {}
     sections: dict[str, list[dict]] = {}
+    in_flight_ids: dict[str, set[str]] = {}
     for actor in actionable:
         s = inbox_states(actor)
         states[actor] = s
         sections[actor] = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
+        in_flight_ids[actor] = {m.get("msg_id") for m in s["in_flight"]}
 
     rows = _build_rows(states, actionable, spark_minutes, spark_buckets)
 
@@ -85,8 +87,8 @@ def _once(include_wait, spark_minutes, spark_buckets, outcome_days, rich_mode, n
         _render_rich(rows, sections, actionable, include_wait)
         return
 
-    _render_markdown(rows, sections, actionable, include_wait, spark_minutes, spark_buckets,
-                     outcome_days, no_outcomes)
+    _render_markdown(rows, sections, in_flight_ids, actionable, include_wait,
+                     spark_minutes, spark_buckets, outcome_days, no_outcomes)
 
 
 def _build_rows(states, actionable, spark_minutes, spark_buckets):
@@ -138,8 +140,8 @@ def _status_for(actor, queued, in_flight, q_cap, f_cap) -> str:
 # ---------------------------------------------------------- markdown render
 
 
-def _render_markdown(rows, sections, actionable, include_wait, spark_minutes,
-                     spark_buckets, outcome_days, no_outcomes) -> None:
+def _render_markdown(rows, sections, in_flight_ids, actionable, include_wait,
+                     spark_minutes, spark_buckets, outcome_days, no_outcomes) -> None:
     sys = system_status()
     cpu = sys.get("cpu", 0.0)
     mem = sys.get("mem", 0.0)
@@ -184,7 +186,8 @@ def _render_markdown(rows, sections, actionable, include_wait, spark_minutes,
                 reason = payload.get("reason", "")
                 ts = m.get("ts", "")[:19]
                 url = f"https://github.com/{repo}/pull/{pr}"
-                print(f"- **[{repo}#{pr}]({url})** — {reason}  _({ts})_")
+                prefix = "✈️ " if m.get("msg_id") in in_flight_ids.get(actor, set()) else ""
+                print(f"- {prefix}**[{repo}#{pr}]({url})** — {reason}  _({ts})_")
             print()
 
     if no_outcomes:
