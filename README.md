@@ -20,25 +20,21 @@ Two operator views — both emit GitHub-flavored markdown, both render styled in
 
 One screen: status line, compressed pipeline flow, per-station table, human inbox under the table.
 
-```
-# coding factory — floor
-
-`cpu 0% · mem 46% · 0 agents · 🌱 1 actionable`
-
-`Triage ~ Investigate ~ ⌊8⌋ QA ~ ⌊1⌋ Drip ~ ⌊19⌋ In Review ~ Respondable`  _| `sweep kanban`_
-
-| station       | queued | in-flight | rate  | var | trend (10m × 12, % of cap) | oldest | status                |
-| ------------- | -----: | --------: | ----: | :-: | -------------------------- | ------ | --------------------- |
-| → triaged     |      0 |         0 | 0.0/h |  ·  |                            |   —    | idle                  |
-| → investigate |      0 |         0 | 0.0/h |  ·  |                            |   —    | idle                  |
-| → qa          |      8 |         0 | 0.0/h |  ·  |                            |  10h   | **queue capped** (8/3) |
-| → drip        |      1 |         0 | 0.0/h |  ·  |                            |  10h   | queued                |
-| → respondable |      1 |         0 | 0.5/h |  ●  |  ▁                         |   0s   | queued                |
-
-- 🌱 retro 2026-05-15-1319 — `sweep retro show 2026-05-15-1319`
-- 💬 [mgree/ffs#146](https://github.com/mgree/ffs/pull/146) — maintainer asked: opt-in?
-- ⬆️ [sharkdp/bat#3741](https://github.com/sharkdp/bat/pull/3741) — rebase onto main
-```
+> `cpu 0% · mem 46% · 0 agents · 🌱 1 actionable`
+>
+> `Triage ~ Investigate ~ ⌊8⌋ QA ~ ⌊1⌋ Drip ~ ⌊19⌋ In Review ~ Respondable`  _| `sweep kanban`_
+>
+> | station       | queued | in-flight | rate  | var | trend (10m × 12, % of cap) | oldest | status                |
+> | ------------- | -----: | --------: | ----: | :-: | -------------------------- | ------ | --------------------- |
+> | → triaged     |      0 |         0 | 0.0/h |  ·  |                            |   —    | idle                  |
+> | → investigate |      0 |         0 | 0.0/h |  ·  |                            |   —    | idle                  |
+> | → qa          |      8 |         0 | 0.0/h |  ·  |                            |  10h   | **queue capped** (8/3) |
+> | → drip        |      1 |         0 | 0.0/h |  ·  |                            |  10h   | queued                |
+> | → respondable |      1 |         0 | 0.5/h |  ●  |  ▁                         |   0s   | queued                |
+>
+> - 🌱 retro 2026-05-15-1319 — `sweep retro show 2026-05-15-1319`
+> - 💬 [mgree/ffs#146](https://github.com/mgree/ffs/pull/146) — maintainer asked: opt-in?
+> - ⬆️ [sharkdp/bat#3741](https://github.com/sharkdp/bat/pull/3741) — rebase onto main
 
 Read top-to-bottom: status (is the line green?), flow (where's the pressure?), table (per-station numbers), inbox (what *you* owe — every other station belongs to an LLM actor). Each row tells you more than the one above; scan as far as you need.
 
@@ -51,13 +47,11 @@ Read top-to-bottom: status (is the line green?), flow (where's the pressure?), t
 
 Per-station PR detail. The flow line in `floor` points here when you want names instead of numbers.
 
-```
-| triaged (0) | investigate (0) | qa (8) | drip (1) | in review (19) | respondable (1) |
-| ----------- | --------------- | ------ | -------- | -------------- | --------------- |
-|             |                 | [kimjune01/bat#2](https://github.com/kimjune01/bat/pull/2)        | [mgree/ffs#146](https://github.com/mgree/ffs/pull/146) | [kimjune01/sptlrx#2](https://github.com/kimjune01/sptlrx/pull/2)         | [sharkdp/bat#3741](https://github.com/sharkdp/bat/pull/3741) |
-|             |                 | [sharkdp/bat#3741](https://github.com/sharkdp/bat/pull/3741)      |                                                        | [kimjune01/sptlrx#1](https://github.com/kimjune01/sptlrx/pull/1)         |                                                              |
-|             |                 | _… +6 more_                                                       |                                                        | _… +17 more_                                                             |                                                              |
-```
+> | triaged (0) | investigate (0) | qa (8) | drip (1) | in review (19) | respondable (1) |
+> | ----------- | --------------- | ------ | -------- | -------------- | --------------- |
+> |             |                 | [kimjune01/bat#2](https://github.com/kimjune01/bat/pull/2) | [mgree/ffs#146](https://github.com/mgree/ffs/pull/146) | [kimjune01/sptlrx#2](https://github.com/kimjune01/sptlrx/pull/2) | [sharkdp/bat#3741](https://github.com/sharkdp/bat/pull/3741) |
+> |             |                 | [sharkdp/bat#3741](https://github.com/sharkdp/bat/pull/3741) |  | [kimjune01/sptlrx#1](https://github.com/kimjune01/sptlrx/pull/1) |  |
+> |             |                 | _… +6 more_ |  | _… +17 more_ |  |
 
 Columns truncate at `--height` rows with a `_… +N more_` indicator. Useful when you want to grep "what's actually in qa" rather than "how full is qa."
 
