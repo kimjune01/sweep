@@ -30,24 +30,32 @@ RETROS = Path.home() / ".sweep" / "retros"
 RETRO_CAP = 2
 
 
-# The SOAP one-pager contract. Documented here so the /retro skill and any
-# human reader share the same template. The skill renders this shape; the
-# A section names codebase components (qa cascade, prospect labels, gh_io
-# cache, observe) — projection through the Natural Framework is unnecessary
-# because the pipeline is already structurally decomposed by role.
-SOAP_TEMPLATE = """\
-# Retro {slug} — events {events_from}..{events_to}
+# The SOAP one-pager contract. The skill renders one "round block" per
+# firing; rounds accumulate in the most-recent file until that file has
+# a non-empty P (prescription). Once it does, the next firing starts a
+# fresh file. Empty-P rounds therefore don't burn cap slots — quiet
+# stretches accumulate context without halting the pipeline.
+#
+# A section names codebase components (qa cascade, prospect labels,
+# gh_io cache, observe) — projection through the Natural Framework is
+# unnecessary because the pipeline is already structurally decomposed
+# by role.
+FILE_HEADER = "# Retro chain — opened {slug}\n"
 
-## S
+ROUND_TEMPLATE = """\
+
+## Round {slug} — events {events_from}..{events_to}
+
+### S
 {subjective}
 
-## O
+### O
 {objective}
 
-## A
+### A
 {assessment}
 
-## P
+### P
 {plan}
 """
 
@@ -88,22 +96,79 @@ def slug_for_now() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d-%H%M")
 
 
-def write_retro(content: str, *, slug: str | None = None) -> Path:
-    """Lay down a retro file. Raises RuntimeError if the cap is full.
+def most_recent_retro() -> RetroFile | None:
+    files = _retros()
+    return files[-1] if files else None
 
-    Caller (the /retro skill) is responsible for the content shape — this
-    function only enforces the cap and the atomic write. The slug defaults
-    to the current minute; pass an explicit slug to override (e.g. when
-    re-writing a draft).
+
+def _last_p_content(text: str) -> str:
+    """Extract the body of the last `### P` section. Empty string means
+    no prescriptions yet."""
+    marker = "\n### P\n"
+    idx = text.rfind(marker)
+    if idx < 0:
+        return ""
+    body = text[idx + len(marker):]
+    # The next "### " or "## " ends the P section if more rounds follow,
+    # but since P is always the last subsection of a round, only a "## "
+    # (new round) can terminate it.
+    end = body.find("\n## ")
+    if end >= 0:
+        body = body[:end]
+    return body.strip()
+
+
+def has_prescription(retro: RetroFile) -> bool:
+    """True if the file's last P section has non-whitespace content beyond
+    the conventional "(none)" placeholder."""
+    try:
+        text = retro.path.read_text()
+    except OSError:
+        return False
+    body = _last_p_content(text)
+    if not body:
+        return False
+    # Treat conventional placeholders as "still empty" so the skill can
+    # write "(none)" in a round and still expect append-mode next firing.
+    return body.lower() not in {"(none)", "none", "_none_", "—", "-"}
+
+
+def record_round(round_block: str, *, slug: str | None = None) -> Path:
+    """The skill's main entry. Each call is one SOAP round.
+
+    Behavior:
+      - If no prior file exists, or the most-recent file already has a
+        prescription, start a new file with FILE_HEADER + this round.
+      - Otherwise append this round to the most-recent file (the active
+        empty-P chain accumulates context until something actionable
+        shows up).
+
+    The cap is on file count, not round count. Empty-P rounds stack into
+    one file and don't push the cap; only prescriptive retros consume
+    slots. Raises RuntimeError if writing a new file would exceed the
+    cap. Appends never raise — the active chain can always grow.
     """
+    name = slug or slug_for_now()
+    RETROS.mkdir(parents=True, exist_ok=True)
+    recent = most_recent_retro()
+    if recent is not None and not has_prescription(recent):
+        # Append to the active empty-P chain. No cap pressure.
+        try:
+            existing = recent.path.read_text()
+        except OSError:
+            existing = FILE_HEADER.format(slug=recent.name)
+        merged = existing.rstrip("\n") + "\n" + round_block
+        atomic_write_text(recent.path, merged if merged.endswith("\n") else merged + "\n")
+        return recent.path
+
+    # Need a new file. Cap check applies here.
     if is_halted():
         raise RuntimeError(
             f"retro cap reached ({RETRO_CAP}); clear one of "
             f"{[r.name for r in _retros()]} before writing"
         )
-    name = slug or slug_for_now()
-    RETROS.mkdir(parents=True, exist_ok=True)
     path = RETROS / f"{name}.md"
+    content = FILE_HEADER.format(slug=name) + round_block
     atomic_write_text(path, content if content.endswith("\n") else content + "\n")
     if is_halted():
         # Local import: observe.event swallows exceptions so this is best-
