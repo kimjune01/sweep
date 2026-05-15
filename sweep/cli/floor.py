@@ -1,4 +1,5 @@
-"""`sweep punch` — coding factory cockpit. Single-line status + kanban table."""
+"""`sweep floor` — factory floor cockpit. Single status line + compressed
+flow + per-station table. Pairs with `sweep kanban` (swim-lane detail)."""
 
 from __future__ import annotations
 
@@ -36,11 +37,11 @@ FLOW_ORDER = ("triaged", "investigate", "qa", "drip", "retro", "respondable")
 
 
 def register(app: typer.Typer) -> None:
-    """Attach the punch command to a top-level Typer app."""
-    app.command("punch")(punch)
+    """Attach the floor command to a top-level Typer app."""
+    app.command("floor")(floor)
 
 
-def punch(
+def floor(
     include_wait: bool = typer.Option(False, "--include-wait", help="Also show retro/wait stations"),
     spark_minutes: int = typer.Option(10, help="Sparkline bucket size in minutes"),
     spark_buckets: int = typer.Option(12, help="Number of sparkline buckets (default 12 × 10min = 2h)"),
@@ -48,7 +49,11 @@ def punch(
     watch: bool = typer.Option(False, "--watch", "-w", help="Refresh continuously as a live dashboard"),
     interval: int = typer.Option(5, "--interval", "-i", help="Refresh interval (seconds) when --watch"),
 ) -> None:
-    """Coding-factory cockpit — single status line + per-station kanban table.
+    """Factory-floor cockpit — single status line, compressed pipeline flow,
+    per-station table. The operator's "what's the line doing right now" view.
+
+    Pairs with `sweep kanban` (per-station swim lanes with PR detail). Floor
+    is the gemba view; kanban is the work-in-progress board.
 
     Default output is GitHub-flavored markdown — renders in Claude Code, looks
     fine in a plain terminal, and pipes cleanly to files / clipboard. Use
@@ -168,7 +173,7 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     mem = sys.get("mem", 0.0)
     running = sys.get("running", [])
 
-    print("# coding factory — kanban")
+    print("# coding factory — floor")
     print()
 
     runline = f"{len(running)} agents" if running else "0 agents"
