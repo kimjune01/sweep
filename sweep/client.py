@@ -457,6 +457,21 @@ def _bucketize(timestamps: list[str], bucket_minutes: int, n_buckets: int) -> li
     return counts
 
 
+def _rate_per_hour(counts: list[int], bucket_minutes: int) -> float:
+    """Total events / window hours."""
+    total = sum(counts)
+    hours = (len(counts) * bucket_minutes) / 60.0
+    return total / hours if hours else 0.0
+
+
+def _stddev(counts: list[int]) -> float:
+    """Sample stddev of bucket counts. Variance gauge — steady=low, spiky=high."""
+    if len(counts) < 2:
+        return 0.0
+    mean = sum(counts) / len(counts)
+    return (sum((c - mean) ** 2 for c in counts) / (len(counts) - 1)) ** 0.5
+
+
 def _oldest_age_str(msgs: list[dict]) -> str:
     if not msgs:
         return "—"
@@ -540,25 +555,33 @@ def punch(
             return "working"
         return "queued"
 
-    rows: list[tuple[str, int, int, str, str, str]] = []
+    rows: list[tuple[str, int, int, str, str, str, str, str]] = []
     for actor in ACTIONABLE:
         s = states[actor]
         queued = len(s["queued"])
         in_flight = len(s["in_flight"])
         q_cap = CAPS.get(actor, {}).get("queued")
         f_cap = CAPS.get(actor, {}).get("in_flight")
+        # For the cockpit, throughput + variance live over the entire delivered
+        # history of this actor (not just open msgs) — captures completed work too.
+        all_msgs = s["queued"] + s["in_flight"] + s["done"]
         sparks = _bucketize(
-            [m.get("ts", "") for m in (s["queued"] + s["in_flight"])],
+            [m.get("ts", "") for m in all_msgs],
             spark_minutes, spark_buckets,
         )
         spark = _sparkline_pct(sparks, q_cap) or "·" * spark_buckets
-        oldest = _oldest_age_str(s["queued"] + s["in_flight"])
+        rate_h = _rate_per_hour(sparks, spark_minutes)
+        sigma = _stddev(sparks)
+        rate_str = f"{rate_h:.1f}/h"
+        sigma_str = f"{sigma:.1f}"
         rows.append((
             actor,
             queued,
             in_flight,
-            oldest,
+            rate_str,
+            sigma_str,
             spark,
+            _oldest_age_str(s["queued"] + s["in_flight"]),
             _status_for(actor, queued, in_flight, q_cap, f_cap),
         ))
 
@@ -571,10 +594,13 @@ def punch(
     print()
     print("`intake: pr-state` (reads GitHub, classifies, routes by bucket) →")
     print()
-    print(f"| station | queued | in-flight | oldest | flow ({spark_minutes}m × {spark_buckets}, % of cap) | status |")
-    print( "|---|---:|---:|---|---|---|")
-    for actor, queued, in_flight, oldest, spark, status in rows:
-        print(f"| → {actor} | {queued} | {in_flight} | {oldest} | `{spark}` | {status} |")
+    print(f"| station | queued | in-flight | rate | σ | trend ({spark_minutes}m × {spark_buckets}, % of cap) | oldest | status |")
+    print( "|---|---:|---:|---:|---:|---|---|---|")
+    for actor, queued, in_flight, rate_str, sigma_str, spark, oldest, status in rows:
+        print(
+            f"| → {actor} | {queued} | {in_flight} | {rate_str} | {sigma_str} "
+            f"| `{spark}` | {oldest} | {status} |"
+        )
     print()
 
     total = sum(len(sections[a]) for a in ACTIONABLE if a != "retro")
@@ -617,7 +643,7 @@ def _punch_rich(rows, sections, actionable, action_hint, include_wait, spark_buc
         padding=(0, 1),
     )
     panels = []
-    for actor, queued, in_flight, oldest, spark, status in rows:
+    for actor, queued, in_flight, rate_str, sigma_str, spark, oldest, status in rows:
         plain_status = status.replace("**", "")
         if "capped" in status:
             border, color = "red", "red bold"
@@ -630,10 +656,12 @@ def _punch_rich(rows, sections, actionable, action_hint, include_wait, spark_buc
         else:
             border, color = "yellow", "yellow"
         body = Text()
-        body.append("queued    ", style="dim"); body.append(f"{queued}\n", style="bold")
-        body.append("in-flight ", style="dim"); body.append(f"{in_flight}\n", style="bold")
-        body.append(f"oldest    {oldest}\n", style="dim")
-        body.append("flow      ", style="dim"); body.append(spark, style="cyan"); body.append("\n")
+        body.append("queued     ", style="dim"); body.append(f"{queued}\n", style="bold")
+        body.append("in-flight  ", style="dim"); body.append(f"{in_flight}\n", style="bold")
+        body.append("rate       ", style="dim"); body.append(f"{rate_str}\n", style="bold")
+        body.append("σ          ", style="dim"); body.append(f"{sigma_str}\n", style="bold")
+        body.append(f"oldest     {oldest}\n", style="dim")
+        body.append("trend      ", style="dim"); body.append(spark, style="cyan"); body.append("\n")
         body.append(plain_status, style=color)
         panels.append(Panel(body, title=f"[bold]{actor}[/]", border_style=border, width=22, padding=(0, 1)))
 
