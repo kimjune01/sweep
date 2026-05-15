@@ -146,13 +146,6 @@ def search_repos(query: str, *, sort: str = "stars", order: str = "desc",
     return _cached_json("search_repos", args, ttl)
 
 
-def search_issues(query: str, *, limit: int = 30,
-                   fields: str | None = None, ttl: int = 120) -> list[dict]:
-    args = ["search", "issues", *_split_query(query), "--limit", str(limit),
-            "--json", fields or "number,title,url,labels,updatedAt,repository"]
-    return _cached_json("search_issues", args, ttl)
-
-
 def search_prs(query: str, *, state: str | None = None, limit: int = 30,
                 fields: str | None = None, ttl: int = 60) -> list[dict]:
     args = ["search", "prs", *_split_query(query), "--limit", str(limit),
