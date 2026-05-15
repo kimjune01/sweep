@@ -31,6 +31,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from sweep.io_safe import atomic_write_text
+
 
 EVENTS = Path.home() / ".sweep" / "events.jsonl"
 COUNTERS_DB = Path.home() / ".sweep" / "counters.db"
@@ -52,8 +54,14 @@ def _now() -> str:
 
 
 def _conn() -> sqlite3.Connection:
+    # timeout=5: under concurrent writers (worker + CLI + scripts), SQLite's
+    # deferred isolation lets two writers both observe "no row" before either
+    # commits, so the loser hits SQLITE_BUSY. Wait up to 5s for the writer
+    # lock before raising; with the upsert pattern below, that's enough for
+    # all realistic contention. Without this, the loser's incr is silently
+    # dropped by the bare-except in incr().
     COUNTERS_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(COUNTERS_DB))
+    conn = sqlite3.connect(str(COUNTERS_DB), timeout=5)
     conn.executescript(_SCHEMA)
     return conn
 
@@ -178,10 +186,17 @@ def cursor_get() -> int:
 
 def cursor_set(offset: int) -> None:
     """Mark events up to `offset` bytes as consumed. Caller advances after
-    successfully processing the range; never auto-advanced by writers."""
+    successfully processing the range; never auto-advanced by writers.
+
+    Atomic via write-then-rename so a crash mid-write can't rewind the
+    cursor to 0 — cursor_get falls back to 0 on JSONDecodeError, which
+    would force retro to re-walk the entire event log if a torn write
+    were visible."""
     try:
-        ARCHIVE_CURSOR.parent.mkdir(parents=True, exist_ok=True)
-        ARCHIVE_CURSOR.write_text(json.dumps({"offset": int(offset), "ts": _now()}))
+        atomic_write_text(
+            ARCHIVE_CURSOR,
+            json.dumps({"offset": int(offset), "ts": _now()}),
+        )
     except OSError:
         pass
 
@@ -200,9 +215,15 @@ def events_since_cursor(*, advance: bool = False) -> list[dict]:
             payload = f.read()
             end = f.tell()
     except OSError:
+        # Disk full / file removed / permission flipped — return empty
+        # rather than letting the caller (CLI or retro) crash.
         return []
     out: list[dict] = []
-    for line in payload.decode("utf-8", errors="replace").splitlines():
+    try:
+        decoded = payload.decode("utf-8", errors="replace")
+    except UnicodeDecodeError:
+        decoded = ""
+    for line in decoded.splitlines():
         if not line.strip():
             continue
         try:
