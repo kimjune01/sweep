@@ -1,1 +1,0 @@
-{"repo":"thanos-io/thanos","branch":"fix-8506-bucketweb-labels-visible","issue":8506,"title":"bucketweb: display block labels on each source row","status":"pushed","pr":"https://github.com/thanos-io/thanos/pull/8816","created":"2026-05-09","pushed":"2026-05-09"}

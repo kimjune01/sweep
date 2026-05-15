@@ -1,2 +1,0 @@
-{"repo":"VictoriaMetrics/VictoriaMetrics","branch":"feat/basic-auth-username-file","issue":9436,"title":"app/{vmagent,vmalert}: add basicAuth.usernameFile command-line flags","status":"ready","created":"2026-05-09","clone_path":"/Users/junekim/Documents/VictoriaMetrics"}
-{"ts":"2026-05-09T17:00:00Z","repo":"VictoriaMetrics/VictoriaMetrics","branch":"feat/basic-auth-username-file","issue":9436,"status":"pushed","pr_url":"https://github.com/VictoriaMetrics/VictoriaMetrics/pull/10934"}

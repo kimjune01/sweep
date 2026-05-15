@@ -1,1 +1,0 @@
-{"repo":"excalidraw/excalidraw","branch":"fix/line-editor-ghost-highlight-9500","issue":9500,"title":"fix: prevent ghost highlight when element moves after point drag","status":"ready","commit":"612215d09b2f80b6e7cb8606d602657b53883d4a","created":"2026-05-09"}

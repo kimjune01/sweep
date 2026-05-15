@@ -1,4 +1,0 @@
-{"ts":"2026-05-09T09:00:00Z","key":"external_merge_rate","value":0.7,"reason":"retro: 7/10 external PRs merged. Solo maintainer, 24h turnaround."}
-{"ts":"2026-05-09T09:00:00Z","key":"hypothesis","value":"H2/H5","reason":"retro: solo maintainer tests standing gate + review efficiency differently than teams."}
-{"ts":"2026-05-09T09:00:00Z","key":"active_maintainers","value":["antonmedv"],"reason":"retro: solo maintainer."}
-{"ts":"2026-05-09T09:00:00Z","key":"fix_ready","value":{"issue":408,"lines":80,"description":"custom string preview via FX_PREVIEW env var"},"reason":"retro: investigated, ~80 lines, follows FX_EDITOR pattern."}

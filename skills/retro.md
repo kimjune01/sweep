@@ -164,7 +164,6 @@ When a lesson changes how a skill should operate, edit the skill file directly. 
 - `skills/investigate/skill.md`
 - `skills/drip/skill.md`
 - `skills/retro/skill.md`
-- `skills/dashboard/skill.md`
 - `skills/MANIFEST.md`
 
 All other skills (copyedit, humanize, codex, gemini, design, etc.) are off-limits. If a lesson applies to a non-pipeline skill, log it to the worklog for human review.

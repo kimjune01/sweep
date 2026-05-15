@@ -1,2 +1,0 @@
-{"issue":23218,"title":"Remove temporary SBOM permission override in ArtifactListPageService","branch":"fix/remove-sbom-permission-override","status":"ready","type":"bug-fix","risk":"low","files_changed":2,"additions":13,"deletions":2}
-{"ts":"2026-05-10T01:30:00Z","repo":"goharbor/harbor","branch":"fix/remove-sbom-permission-override","issue":23218,"status":"pushed","pr_url":"https://github.com/goharbor/harbor/pull/23223"}

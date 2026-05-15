@@ -1,2 +1,0 @@
-{"ts":"2026-05-09T18:00:00Z","tick":4,"mode":"dry-run","actions":["evict telegraf","verify click branch","spawn 4 impl agents (sh,ruff,mypy,mcp-cli)","spawn actionable agent"]}
-{"ts":"2026-05-09T18:40:00Z","tick":5,"mode":"dry-run","actions":["staleness check: 5/5 OPEN","competing PR check: 0 new","quality gates deferred to next tick"]}

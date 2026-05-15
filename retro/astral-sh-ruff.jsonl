@@ -1,4 +1,0 @@
-{"ts":"2026-05-09T13:30:00Z","key":"voice_crosscheck","value":"PASSED","reason":"retro: Gemini couldn't identify candidate. Called it 'telegraphic' matching human summary style."}
-{"ts":"2026-05-09T13:30:00Z","key":"external_merge_rate","value":"0/15 first-timer","reason":"retro: 0/15 first-timer external merge rate. Core team dominates (MichaReiser, charliermarsh ~80%)."}
-{"ts":"2026-05-09T13:30:00Z","key":"ai_policy","value":"screening_active","reason":"retro: PR #24198 added AI policy to PR template. Disclosure required."}
-{"ts":"2026-05-09T13:30:00Z","key":"prior_td003_attempts","value":4,"reason":"retro: 4 prior external PRs on TD003 (#24774, #24260, #24156, #23101), all closed. Pattern: scope creep."}

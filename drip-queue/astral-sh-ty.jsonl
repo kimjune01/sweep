@@ -1,1 +1,0 @@
-{"issue": 3366, "repo": "astral-sh/ty", "pr_repo": "astral-sh/ruff", "pr_number": 25073, "branch": "fix/hover-content-format", "title": "[ty] Respect client's contentFormat preference order in hover and completion", "status": "open", "created": "2026-05-09", "pushed": "2026-05-09"}

@@ -1,4 +1,0 @@
-{"ts":"2026-05-09T07:00:00Z","key":"merge_rate","value":0.0,"reason":"retro: 0/2 PRs merged. #4941 (topics) and #4940 (union-find summarizer) both closed. Feature PRs to aider fail — paul-gauthier merges his own work exclusively."}
-{"ts":"2026-05-09T07:00:00Z","key":"approach","value":"issue_first_only","reason":"retro: previous feature PRs rejected. #3702 is issue-first with maintainer priority label. Bug fixes may succeed where features fail."}
-{"ts":"2026-05-09T07:00:00Z","key":"competing_pr_risk","value":"check_diverdale","reason":"retro: diverdale posted diagnosis on #3702 (Apr 30) with thumbs-down reaction. May have PR in flight. Check before submitting."}
-{"ts":"2026-05-09T07:00:00Z","key":"active_maintainers","value":["paul-gauthier"],"reason":"retro: solo maintainer, 0 reviews on merged PRs. He merges his own code."}

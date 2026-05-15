@@ -1,2 +1,0 @@
-{"branch":"fix-8785-kwargs-no-value-for-parameter","issue":8785,"repo":"pylint-dev/pylint","title":"Fix no-value-for-parameter false negative with **kwargs unpacking","status":"ready","created":"2026-05-09"}
-{"ts":"2026-05-09T23:00:00Z","repo":"pylint-dev/pylint","branch":"fix-8785-kwargs-no-value-for-parameter","issue":8785,"status":"pushed","pr_url":"https://github.com/pylint-dev/pylint/pull/11002"}

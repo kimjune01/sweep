@@ -1,2 +1,0 @@
-{"repo":"pyro-ppl/pyro","issue":3407,"branch":"fix-negative-plate-size","title":"Raise ValueError for negative plate sizes","status":"committed","type":"bug-fix","competing_prs":0,"created":"2026-05-09"}
-{"ts":"2026-05-10T01:15:00Z","repo":"pyro-ppl/pyro","branch":"fix-negative-plate-size","issue":3407,"status":"pushed","pr_url":"https://github.com/pyro-ppl/pyro/pull/3451"}

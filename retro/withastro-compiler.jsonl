@@ -1,5 +1,0 @@
-{"ts":"2026-05-09T05:30:00Z","key":"review_cadence","value":"slow","reason":"retro: external contributor on #1156 waited 5 weeks, 3 pings. PR #1162 is day 2 with 0 reviews."}
-{"ts":"2026-05-09T05:30:00Z","key":"first_ping_after_days","value":7,"reason":"retro: repo norm is weekly pings. Don't ping before day 7."}
-{"ts":"2026-05-09T05:30:00Z","key":"active_maintainers","value":["matthewp","Princesseuh"],"reason":"retro: based on recent merge history (#1153, #1156, #1161)."}
-{"ts":"2026-05-09T05:30:00Z","key":"changeset_required","value":true,"reason":"retro: changeset-bot flags PRs without changesets. Behavior changes need patch bump."}
-{"ts":"2026-05-09T05:30:00Z","key":"first_contributor_ci_gate","value":true,"reason":"retro: GitHub Actions requires maintainer approval for first-time contributors. All 3 CI runs showed action_required."}

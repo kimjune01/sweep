@@ -1,3 +1,0 @@
-{"ts":"2026-05-09T13:30:00Z","key":"voice_crosscheck","value":"PASSED","reason":"retro: Gemini flagged Entry 3 (real mypyc PR) as AI. Called ours 'specific edge-case error message' with 'human PR shorthand.'"}
-{"ts":"2026-05-09T13:30:00Z","key":"external_merge_rate","value":"1/15","reason":"retro: 1/15 external merge rate. Tight core team (JukkaL ~60%, ilevkivskyi ~20%)."}
-{"ts":"2026-05-09T13:30:00Z","key":"member_invitation","value":"JelleZijlstra 2020","reason":"retro: member explicitly invited PR on #8603. 6 years old but no one completed it."}

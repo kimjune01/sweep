@@ -1,2 +1,0 @@
-{"issue": 5675, "title": "Add testable examples for consumer package", "branch": "add-consumer-testable-example", "commit": "52bacb4a7", "repo": "open-telemetry/opentelemetry-collector", "status": "ready", "type": "enhancement", "created": "2026-05-09"}
-{"ts":"2026-05-10T02:15:00Z","repo":"open-telemetry/opentelemetry-collector","branch":"add-consumer-testable-example","issue":5675,"status":"pushed","pr_url":"https://github.com/open-telemetry/opentelemetry-collector/pull/15281"}

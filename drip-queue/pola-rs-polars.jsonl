@@ -1,2 +1,0 @@
-{"repo":"pola-rs/polars","branch":"fix/qcut-empty-include-breaks","issue":27284,"title":"fix(rust): Return correct Struct dtype from qcut when include_breaks=True on empty/all-null series","status":"committed","commit":"a868fec53e","created":"2026-05-09"}
-{"ts":"2026-05-09T23:10:00Z","repo":"pola-rs/polars","branch":"fix/qcut-empty-include-breaks","issue":27284,"status":"pushed","pr_url":"https://github.com/pola-rs/polars/pull/27561"}

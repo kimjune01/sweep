@@ -1,5 +1,0 @@
-{"ts":"2026-05-09T07:00:00Z","key":"merge_rate","value":"high","reason":"retro: 8 external PRs merged from 5 contributors in 3 months (Feb-Apr 2026). Solo maintainer, high code quality bar, but welcoming."}
-{"ts":"2026-05-09T07:00:00Z","key":"active_maintainers","value":["mvdan"],"reason":"retro: solo maintainer Daniel Marti."}
-{"ts":"2026-05-09T07:00:00Z","key":"pr_template","value":{"title":"terse, matches shfmt convention","body":"short, reference issue number","gate":"go test ./..."},"reason":"retro: inferred from recent merged PRs."}
-{"ts":"2026-05-09T07:00:00Z","key":"skip_issues","value":[1233],"reason":"retro: #1233 zsh associative arrays is a parser design limitation. Maintainer acknowledges as caveat, not bug. No clean fix."}
-{"ts":"2026-05-09T13:30:00Z","key":"voice_crosscheck","value":"PASSED","reason":"retro: Gemini flagged Entry 1 (real Cursor-disclosed PR) and Entry 4 (real human). Called ours 'deeply contextual' with 'exact AST/function references.'"}
