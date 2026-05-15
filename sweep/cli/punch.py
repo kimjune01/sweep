@@ -152,7 +152,11 @@ def _render_flow(flow_states: dict[str, dict[str, list[dict]]]) -> str:
         queued = len(s.get("queued", []))
         in_flight = len(s.get("in_flight", []))
         name = FLOW_NAMES[actor]
-        prefix = f"[{queued}] " if queued > 0 else ""
+        # ⌊ ⌋ are lower-corner brackets — only the bottom corners are
+        # drawn, so a queued count reads as sitting in an open bucket.
+        # Differentiates inboxes (containers caught from above) from WIP
+        # (parens, sideways-opening, things in motion through hands).
+        prefix = f"⌊{queued}⌋ " if queued > 0 else ""
         suffix = f"({in_flight})" if in_flight > 0 else ""
         parts.append(f"{prefix}{name}{suffix}")
     return " ~ ".join(parts)
