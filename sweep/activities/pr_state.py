@@ -16,7 +16,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import gh_io, models, observe
+from sweep import gh_io, models, observe, retro_state
 from sweep.io_safe import atomic_write_text
 from sweep.types import (
     BUCKET_ROUTING,
@@ -222,6 +222,11 @@ async def route_classified() -> dict:
     over the same classified.jsonl produce the same msg_ids, and downstream
     inbox readers dedup on msg_id.
     """
+    if retro_state.is_halted():
+        # Backpressure: don't move classified records into actor inboxes
+        # while the human owes Attend on pending SOAP one-pagers.
+        observe.incr("halted_skip:route")
+        return {"read": 0, "routed": {}, "skipped_acked": 0, "halted": True}
     if not CLASSIFIED_INBOX.exists():
         return {"read": 0, "routed": {}, "skipped_acked": 0}
 

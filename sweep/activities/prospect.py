@@ -23,7 +23,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import gh_io, observe, org_state, seen
+from sweep import gh_io, observe, org_state, retro_state, seen
 from sweep.io_safe import atomic_write_text
 from sweep.types import Message
 
@@ -288,6 +288,16 @@ async def deposit_issue_to_triaged(issue: IssueCandidate) -> str:
 async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
     """One sweep step. Descend the star cursor by `budget` repos, surface
     actionable issues from the ones that pass lightweight filters."""
+    if retro_state.is_halted():
+        # Backpressure from the retro pager. Forward pass stops until the
+        # human Attends to at least one of the pending SOAP one-pagers.
+        observe.incr("halted_skip:prospect")
+        return ProspectPassResult(
+            repos_visited=0, repos_processed=0, issues_found=0,
+            delivered_msg_ids=[],
+            cursor_before=_load_cursor(), cursor_after=_load_cursor(),
+            lap_reset=False,
+        )
     cursor_before = _load_cursor()
     lap_reset = False
 
