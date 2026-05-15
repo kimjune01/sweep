@@ -216,8 +216,6 @@ def _render_respondable(s: dict[str, list[dict]] | None) -> None:
     if not msgs:
         return
     print()
-    print(f"## respondable ({len(msgs)})")
-    print()
     for m in msgs:
         repo = m.get("repo", "?")
         pr = m.get("pr") or "-"
