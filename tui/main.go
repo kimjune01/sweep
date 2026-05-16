@@ -51,6 +51,19 @@ func sweepGlamourStyle() ansi.StyleConfig {
 	cfg.H1.BackgroundColor = nil
 	cfg.H1.Color = nil
 	cfg.H1.Bold = boolPtr(true)
+	// H2/H3/H4 → strip the literal '##'/'###' prefix glamour inserts;
+	// bold-only typography carries the heading without the markdown
+	// punctuation leaking through to the rendered view.
+	empty := ""
+	cfg.H2.Prefix = empty
+	cfg.H2.BackgroundColor = nil
+	cfg.H2.Bold = boolPtr(true)
+	cfg.H3.Prefix = empty
+	cfg.H3.BackgroundColor = nil
+	cfg.H3.Bold = boolPtr(true)
+	cfg.H4.Prefix = empty
+	cfg.H4.BackgroundColor = nil
+	cfg.H4.Bold = boolPtr(true)
 	// Code spans → neutral; cockpit wraps the flow/status lines in
 	// backticks to preserve monospace, not to flag "this is code."
 	cfg.Code.BackgroundColor = nil
@@ -109,6 +122,29 @@ func injectPulse(body string) string {
 			continue
 		}
 		lines[i] = strings.TrimRight(line, " ") + pulseGlyph
+		break
+	}
+	return strings.Join(lines, "\n")
+}
+
+// appendH1Emoji puts the view's emoji to the right of the H1 line so
+// every view's title carries its own factory glyph (🏭 cockpit, 📥 inbox,
+// 🛣 lanes, 🗑 waste). Skips if the emoji already appears in the line —
+// idempotent so it's safe to call before injectPulse.
+func appendH1Emoji(body, emoji string) string {
+	if emoji == "" {
+		return body
+	}
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		trim := strings.TrimSpace(line)
+		if trim == "" {
+			continue
+		}
+		if strings.Contains(line, emoji) {
+			break
+		}
+		lines[i] = strings.TrimRight(line, " ") + " " + emoji
 		break
 	}
 	return strings.Join(lines, "\n")
@@ -220,7 +256,7 @@ var views = []struct {
 	{"🏭", "cockpit", []string{"cockpit", "--plain"}},
 	{"📥", "inbox", []string{"inbox"}},
 	{"🛣", "lanes", []string{"lanes"}},
-	{"🗑", "waste", []string{"waste"}},
+	{"🗑", "wasteboard", []string{"waste"}},
 }
 
 type model struct {
@@ -386,7 +422,7 @@ func (m model) View() string {
 	dryLabel := fmt.Sprintf("%s %s", keyStyle.Render("d"), modeBadge(m.dryOn, "🌵 DRY", "💧 LIVE"))
 	pauseLabel := fmt.Sprintf("%s %s", keyStyle.Render("p"), modeBadge(m.paused, "🚦 PAUSED", "🟢 RUNNING"))
 	v := views[m.viewIdx]
-	viewLabel := fmt.Sprintf("%s %s %s", keyStyle.Render("t"), v.emoji, v.label)
+	viewLabel := fmt.Sprintf("%s 🔄 cycle", keyStyle.Render("t"))
 
 	bar := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -408,6 +444,10 @@ func (m model) View() string {
 		// Trim the trailing newline glamour appends so the bottom border
 		// hugs the content instead of leaving an empty interior row.
 		body := strings.TrimRight(m.viewBody, "\n")
+		// Append the view's emoji to the right of the H1 so every
+		// title carries its factory glyph. Done before the pulse so
+		// the pulse dot lands at the far right when active.
+		body = appendH1Emoji(body, v.emoji)
 		// Pulse: while the refresh window is open, append a subtle dot
 		// to the first non-empty line so the operator's eye registers
 		// that the snapshot just updated.

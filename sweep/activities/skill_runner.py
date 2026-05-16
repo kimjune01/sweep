@@ -58,9 +58,12 @@ async def _run_skill(slash_argv: list[str], label: str,
             non_retryable=True,
         )
     if result.returncode != 0:
+        # claude --print writes diagnostics to stdout, not stderr — fall
+        # back to the stdout tail when stderr is empty so andon shows why.
+        detail = (result.stderr or "").strip() or (result.stdout or "").strip()
         raise ApplicationError(
             f"{label}: '{' '.join(slash_argv)}' failed (rc={result.returncode}): "
-            f"{(result.stderr or '')[:400]}",
+            f"{detail[-400:]}",
             non_retryable=True,
         )
     return {

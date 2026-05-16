@@ -68,13 +68,29 @@ def andon_list() -> None:
 def andon_clear(actor: str = typer.Argument(..., help="Actor name (e.g. triage_cycle, qa)")) -> None:
     """Clear the halt for one actor — signals the workflow's clear_andon,
     which both flips its `halted` flag and removes the marker file. Use
-    `sweep andon list` to see actor names."""
+    `sweep andon list` to see actor names.
+
+    Watchdog-style halts (e.g. `prospect_puller` from the API budget
+    watchdog) have no workflow exception to flip — just remove the
+    marker file directly, since the next watchdog tick will re-fire if
+    the condition is still bad."""
     from temporalio.client import Client
 
     wf_id = _CLEAR_TARGETS.get(actor)
-    if not wf_id:
-        print(f"unknown actor {actor!r}; known: {sorted(_CLEAR_TARGETS)}")
-        raise typer.Exit(1)
+
+    if wf_id is None:
+        marker = ANDON_DIR / f"{actor}.json"
+        if not marker.exists():
+            print(f"unknown actor {actor!r}; known: {sorted(_CLEAR_TARGETS)}")
+            raise typer.Exit(1)
+        # Watchdog clear: remove the marker and lift the pause if this
+        # was the last one (same coupling as clear_andon_marker).
+        from sweep.control_state import set_paused
+        marker.unlink()
+        if not any(ANDON_DIR.glob("*.json")):
+            set_paused(False)
+        print(f"cleared watchdog andon for {actor} (marker removed)")
+        return
 
     async def run() -> None:
         from sweep.workflows.qa_actor import QaActor

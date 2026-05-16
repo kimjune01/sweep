@@ -11,8 +11,10 @@ on the same files.
   only writes that hit the outside world (inbox delivery, gh pr create,
   git push) are gated. The line rehearses without touching the world.
 - paused: forward-pass actors no-op at takt entry; in-flight work
-  completes normally. Operator-initiated and clears manually, distinct
-  from the retro-cap halt which is automatic backpressure.
+  completes normally. Set by the operator (`sweep pause on`) or
+  automatically by an andon firing (something broke → don't produce
+  more). Clears when the operator runs `sweep pause off` OR when the
+  last andon marker is cleared (operator signaling "ready to run").
 """
 
 from __future__ import annotations

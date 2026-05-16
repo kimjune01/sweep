@@ -33,6 +33,31 @@ with workflow.unsafe.imports_passed_through():
     from sweep.types import Message
 
 
+def _unwrap_reason(e: BaseException) -> str:
+    """Walk Temporal's exception chain to find a meaningful message.
+
+    ActivityError(message='Activity task failed') usually has a `.cause`
+    pointing at the ApplicationError raised inside the activity, which
+    carries the rich detail (rc, stdout tail, etc). Standard
+    `__cause__` is the fallback for non-Temporal nesting.
+    """
+    cur: BaseException | None = e
+    seen: set[int] = set()
+    fallback = f"{type(e).__name__}: {str(e)[:300]}"
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        msg = getattr(cur, "message", None)
+        if isinstance(msg, str) and msg and msg != "Activity task failed":
+            return f"{type(cur).__name__}: {msg}"
+        text = str(cur)
+        if text and text != "Activity task failed" and text != fallback.split(": ", 1)[-1]:
+            # Keep the first meaningful str() in case no .message exists
+            # downstream; we'll prefer a deeper .message if we find one.
+            fallback = f"{type(cur).__name__}: {text[:300]}"
+        cur = getattr(cur, "cause", None) or getattr(cur, "__cause__", None)
+    return fallback
+
+
 @workflow.defn
 class SkillActor:
     def __init__(self) -> None:
@@ -107,14 +132,18 @@ class SkillActor:
                 )
             except Exception as e:
                 self.halted = True
+                # Temporal wraps an activity-raised ApplicationError in
+                # ActivityError before re-throwing here; str(e) is the
+                # uninformative "Activity task failed". Walk .cause to
+                # find the original message so the andon marker says why.
+                reason = _unwrap_reason(e)
                 workflow.logger.error(
                     "andon (unexpected): actor=%s msg_id=%s type=%s reason=%s",
-                    activity_name, msg.msg_id, type(e).__name__, str(e)[:300],
+                    activity_name, msg.msg_id, type(e).__name__, reason[:300],
                 )
                 await workflow.execute_activity(
                     record_andon,
-                    args=[activity_name, msg.msg_id,
-                          f"{type(e).__name__}: {str(e)[:400]}"],
+                    args=[activity_name, msg.msg_id, reason[:500]],
                     start_to_close_timeout=timedelta(seconds=5),
                 )
             await workflow.execute_activity(

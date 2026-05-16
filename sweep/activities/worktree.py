@@ -76,9 +76,16 @@ ANDON_DIR = Path.home() / ".sweep" / "control" / "andon"
 async def record_andon(actor: str, msg_id: str, reason: str) -> None:
     """Write a marker file when an actor halts. Cockpit reads the dir to
     show a red banner. One file per actor (replaces any prior marker for
-    the same actor, since the actor only halts once at a time)."""
+    the same actor, since the actor only halts once at a time).
+
+    Also pauses the line — andon is "something broke," which by
+    definition means the line should not be producing more work until
+    the operator looks. The pause clears in `clear_andon_marker` once
+    the last andon marker is removed.
+    """
     import datetime as _dt
     import json
+    from sweep.control_state import set_paused
     ANDON_DIR.mkdir(parents=True, exist_ok=True)
     path = ANDON_DIR / f"{actor}.json"
     payload = {
@@ -88,17 +95,27 @@ async def record_andon(actor: str, msg_id: str, reason: str) -> None:
         "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
     }
     path.write_text(json.dumps(payload))
+    set_paused(True)
 
 
 @activity.defn
 async def clear_andon_marker(actor: str) -> None:
     """Remove the marker file when an actor's andon is cleared. No-op if
-    the file doesn't exist (clearing an unhalted actor is fine)."""
+    the file doesn't exist (clearing an unhalted actor is fine).
+
+    When this clear leaves no markers behind, lift the pause that
+    `record_andon` set — the operator clearing the last error is the
+    "ready to run" signal. Independent andons on other actors keep the
+    line paused until they're all cleared.
+    """
+    from sweep.control_state import set_paused
     path = ANDON_DIR / f"{actor}.json"
     try:
         path.unlink()
     except FileNotFoundError:
         pass
+    if not any(ANDON_DIR.glob("*.json")):
+        set_paused(False)
 
 
 def _ensure_worktree_blocking(repo: str, branch: str) -> str:

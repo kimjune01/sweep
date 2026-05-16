@@ -221,8 +221,13 @@ def _prospect_info() -> dict:
             from sweep.cli._common import PROSPECT_PULLER_ID
             from sweep.system import TEMPORAL_ADDR
 
-            c = await Client.connect(TEMPORAL_ADDR)
-            state = await c.get_workflow_handle(PROSPECT_PULLER_ID).query("state")
+            # Short timeouts — a missing/slow Temporal server should not
+            # stall the cockpit (the rest of the view is local).
+            c = await asyncio.wait_for(Client.connect(TEMPORAL_ADDR), timeout=0.5)
+            state = await asyncio.wait_for(
+                c.get_workflow_handle(PROSPECT_PULLER_ID).query("state"),
+                timeout=1.0,
+            )
         except Exception:
             return {}
         raw = state.get("last_state") or ""
