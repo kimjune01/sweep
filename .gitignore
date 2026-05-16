@@ -1,9 +1,40 @@
+# Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
 .venv/
+venv/
 .python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg
 
-# TUI build output
+# Go (TUI)
 /bin/sweep-tui
 /bin/sweep-tui-linux
+# `go build .` default output inside the package dir (tui/ → ./tui/tui)
+/tui/tui
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Direnv / env
+.envrc
+.env
+.env.local
+
+# Logs / scratch
+*.log
+.scratch/

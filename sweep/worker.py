@@ -49,6 +49,8 @@ from sweep.activities.worktree import (
     mark_started,
     record_andon,
 )
+from sweep.activities.leakdog import leakdog_tick
+from sweep.workflows.leakdog import LeakdogDaemon
 from sweep.workflows.notification_poller import NotificationPoller
 from sweep.workflows.pr_state_workflow import PrStateWorkflow
 from sweep.workflows.prospect_puller import ProspectPuller
@@ -65,7 +67,7 @@ async def _amain() -> None:
     worker = Worker(
         client,
         task_queue=SWEEP_TASK_QUEUE,
-        workflows=[QaActor, SkillActor, PrStateWorkflow, ProspectPuller, UsagePoller, NotificationPoller],
+        workflows=[QaActor, SkillActor, PrStateWorkflow, ProspectPuller, UsagePoller, NotificationPoller, LeakdogDaemon],
         activities=[
             # qa
             test_attestation, codex_review, gemini_review,
@@ -87,6 +89,8 @@ async def _amain() -> None:
             deposit_classified, route_classified, deliver_to_inbox,
             # notifications (push-shaped pr-state freshness)
             poll_github_notifications, mark_thread_read,
+            # leakdog daemon (independent watchdog for resource leaks)
+            leakdog_tick,
         ],
     )
     logging.info("worker up on task queue=%s", SWEEP_TASK_QUEUE)

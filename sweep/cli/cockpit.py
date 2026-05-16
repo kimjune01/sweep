@@ -426,7 +426,12 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     if n:
         print()
         print(f"📥   {n}  _| `sweep inbox`_")
-    retro_count = len((flow_states.get("retro") or {}).get("queued", []))
+    # Retro inbox is the wait-bucket audit trail; pr-state appends
+    # a fresh entry every poll cycle for each open PR, so raw length
+    # over-counts. Dedupe by (repo, pr) to get "PRs currently in
+    # review," which is what the chip is trying to convey.
+    retro_queued = (flow_states.get("retro") or {}).get("queued", [])
+    retro_count = len({(m.get("repo"), m.get("pr")) for m in retro_queued})
     if retro_count:
         print()
         print(f"👀   {retro_count} in review")

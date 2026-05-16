@@ -627,3 +627,47 @@ How to apply: tag scientist-class repos in repos.jsonl with `reception: scientis
 **Cost framing:** the outage is free experiment — it would otherwise require deliberately disabling codex for a controlled period, with the same "what does the pipeline lose" question and no way to recover gracefully. Use the window.
 
 **Compounds with:** the pushout design (`project_sweep_investigate_pushout.md`). If H19 holds (sole-Claude is sufficient), the pushout default secondary stays at sonnet rather than upgrading to codex — saves cost without losing signal. If H19 fails, the pushout MUST cross families.
+
+## H20: Activity-owned observability is more reliable than skill-emitted events
+
+**Prediction:** When an activity wrapper (e.g. `triage_cycle`) shells out to a skill (e.g. `/triage`), the wrapper emitting observability events post-hoc (by reading the artifact the skill produced) catches strictly more events than relying on the skill to call `observe.event` itself.
+
+**Status: CONFIRMED (2026-05-16, retro this-session).** triage_cycle previously delegated event emission to the /triage skill. Of 80 acked triage items, only 1 emitted a `triage_decision` event. After fix (wrapper re-reads the attestation post-skill-run and emits the event from there), 23 historical events backfilled instantly from existing attestations on disk, and the structural pathway now guarantees emission whenever the artifact exists. The skill was silently skipping its own logging in 79/80 cases — invisible until the leakdog manifest revealed the funnel mismatch.
+
+**Mechanism:** skills are LLM-driven free-form executions. Even when prompted to emit observability events, the skill skips them under variable conditions (different prompt versions, error paths, summarization passes). The Python wrapper around the skill is deterministic code and runs every time.
+
+**Generalization:** any pipeline stage that shells out should derive its observability from the *side-effect artifact* (attestation file, branch push, PR opened), not from the *log message the skill chose to emit*. The artifact is the receipt; the log is editorial.
+
+**Falsifier:** if a skill consistently emits its own event AND the wrapper double-emits the same event, downstream gets duplicates that break dedup. This would force a per-event ownership decision. Hasn't happened — skills mostly underemit.
+
+**Compounds with:** [[H21-watchdog-independence]] — both are about putting observability/recovery infrastructure outside the thing being observed.
+
+## H21: Watchdog auto-recovery must run independent of the workflow it governs
+
+**Prediction:** When an auto-recovery mechanism (e.g. "clear the API-budget andon when projected < 40%") lives inside the same workflow loop that the andon also blocks, a wedged workflow can never recover. The recovery must run from an independent tick.
+
+**Status: CONFIRMED (2026-05-16).** API budget watchdog fired correctly at 77% projected and set the prospect_puller andon. Projection dropped to 37% (well below the 40% recover threshold) but the marker stayed because the auto-clear lived inside `check_pull_conditions`, which only runs when the prospect-puller advances. The puller was wedged retrying a different activity (attempt #15 of `prospect_recency_window` with no progress). Result: line stayed paused 30+ minutes past the condition that should have lifted it; required manual `sweep andon clear prospect_puller` to recover.
+
+**Mechanism:** if the recovery path is downstream of the wedge point, the wedge blocks its own recovery. This is a classic supervisor problem — the supervisor cannot itself be supervised by the thing it supervises. Toyota's andon cord works because pulling it stops the *line*, not the *operator who pulls it*.
+
+**Fix shape (not yet wired):** move `_clear_budget_andon_if_held` to a separate periodic activity scheduled by a sibling workflow (not by prospect-puller), or to a cron-style external tick. Same heartbeat that watchdog-fires the andon should be capable of clearing it.
+
+**Falsifier:** if a fully independent watchdog also stops firing under similar wedge conditions (the worker process itself dies), then a higher-level supervisor is needed. Most likely outcome: independent tick is sufficient because Temporal workers restart cleanly and worker-internal wedges don't propagate to sibling workflows.
+
+**Compounds with:** [[H20-activity-owned-observability]] — both are jidoka-discipline. Recovery and observability infrastructure must sit outside the thing they monitor.
+
+## H22: Interface accounting (leakdog) detects silent-drop failure modes earlier than downstream symptoms
+
+**Prediction:** A per-interface in/out/drop/pending balance, computed from event stream + inbox state, surfaces silent processing failures (acked but no event emitted) before they manifest as downstream symptoms (no QA convergence, no merges).
+
+**Status: CONFIRMED (2026-05-16).** The leakdog row "prospect → triage: 50 in, 25 out, 25 leak ⚠️" was the first observable signal of the triage_cycle silent-skip bug ([[H20-activity-owned-observability]]). Without the leakdog, the only visible symptom was "investigations not triggering QA" — a downstream effect 3+ stages removed from the actual leak point, with multiple plausible explanations. Leakdog narrowed it to the prospect→triage interface in one read.
+
+**Mechanism:** funnel-accounting is a generic supervisor pattern. Every stage transition is an interface; every interface should balance. Imbalance localizes the bug to the interface, not the broader pipeline. Same principle as double-entry bookkeeping: every debit needs a credit, every drop needs a reason.
+
+**Refinement (key learning):** `leak = in - out - dropped - pending`. Without subtracting `pending` (items still queued or in-flight), slow processing masquerades as loss. The first version of leakdog over-reported leaks because it counted events only.
+
+**Operational discipline:** zero unaccounted leaks as the target. Every drop must have an explicit decision event (e.g. `triage_decision(decision=drop|surface|defer)`, `investigate_done(no_fix=true)`). When a leak appears, the immediate fix is either (a) emit the missing decision event, or (b) backflow the item one stage upstream and re-process.
+
+**Falsifier:** if leakdog routinely shows persistent leaks that are genuinely benign (e.g. items that drop out for legitimate reasons no one wants to log), the zero-leak target erodes into noise. Hasn't happened — every leak found so far has been a real bug or a missing event.
+
+**Compounds with:** [[H20-activity-owned-observability]] (the structural fix for most leaks); [[H21-watchdog-independence]] (the leakdog itself must run on its own tick, not behind the pipeline it watches).

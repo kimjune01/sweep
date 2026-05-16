@@ -23,7 +23,7 @@ from pathlib import Path
 
 import typer
 
-from sweep import gh_io, glyphs, observe, org_state, outcomes as _outcomes
+from sweep import gh_io, glyphs, observe, org_state, outcomes as _outcomes, retro_state
 from sweep.inbox_state import inbox_states
 
 
@@ -167,6 +167,20 @@ def waste(
             "streak", streak_window,
             f"{streak} ✅" if streak else "0 (last was closed)",
         ])
+    # Retro takt floor: daily standup cadence. Source is the canonical
+    # SOAP one-pager dir via retro_state.most_recent_retro() — distinct
+    # from the per-repo params dir (`retro-params/`, formerly `retro/`),
+    # which tracks knob history per repo and would give a misleading
+    # "fresh" reading on any param tweak. Overdue is a soft signal here;
+    # the hard signal would be an andon at 2× the floor.
+    last = retro_state.most_recent_retro()
+    if last:
+        age_s = (now - last.written_at).total_seconds()
+        cell = _fmt_age(age_s) + " ago"
+        if age_s > 86400:
+            cell += " ⚠️ overdue"
+        score_rows.append(["last retro", "daily takt", cell])
+
     if score_rows:
         lines += ["# Wasteboard", "", "```"]
         kw = max(len(r[0]) for r in score_rows)

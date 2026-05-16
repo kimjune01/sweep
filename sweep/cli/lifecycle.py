@@ -106,11 +106,12 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     """
     from temporalio.client import Client
     from sweep.cli._common import (
-        DRIP_ACTOR_ID, INVESTIGATE_ACTOR_ID, NOTIFICATION_POLLER_ID,
-        PROSPECT_PULLER_ID, QA_ACTOR_ID, SWEEP_TASK_QUEUE,
-        TRIAGE_ACTOR_ID, USAGE_POLLER_ID,
+        DRIP_ACTOR_ID, INVESTIGATE_ACTOR_ID, LEAKDOG_DAEMON_ID,
+        NOTIFICATION_POLLER_ID, PROSPECT_PULLER_ID, QA_ACTOR_ID,
+        SWEEP_TASK_QUEUE, TRIAGE_ACTOR_ID, USAGE_POLLER_ID,
     )
     from sweep.system import TEMPORAL_ADDR
+    from sweep.workflows.leakdog import LeakdogDaemon
     from sweep.workflows.notification_poller import NotificationPoller
     from sweep.workflows.prospect_puller import ProspectPuller
     from sweep.workflows.qa_actor import QaActor
@@ -142,6 +143,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (PROSPECT_PULLER_ID,    ProspectPuller.run, ()),
         (USAGE_POLLER_ID,       UsagePoller.run,    ()),
         (NOTIFICATION_POLLER_ID, NotificationPoller.run, ()),
+        (LEAKDOG_DAEMON_ID,     LeakdogDaemon.run,  ()),
     ]
     for wf_id, run, run_args in actors:
         try:

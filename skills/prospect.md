@@ -237,7 +237,7 @@ This is the endgame. The issue is your hypothesis. The PR is your fix. Your stan
 
 ## Process
 
-1. Read `~/.sweep/repos.jsonl` and `~/.sweep/retro/*.jsonl`. **Read `~/.sweep/banlist.txt` — these repos are permanently banned. Never add, investigate, or re-add a banned repo. The banlist is human-edited only.**
+1. Read `~/.sweep/repos.jsonl` and `~/.sweep/retro-params/*.jsonl`. **Read `~/.sweep/banlist.txt` — these repos are permanently banned. Never add, investigate, or re-add a banned repo. The banlist is human-edited only.**
 2. Score active repos. Drop dormant ones. Respect cooldowns.
 3. For repos above the standing threshold (3+ merges), run standing-gated bug hunt.
 4. Search for issues: contributed repos, then adjacent, then cold.

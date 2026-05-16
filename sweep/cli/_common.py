@@ -17,6 +17,7 @@ INVESTIGATE_ACTOR_ID = "investigate-actor"
 PROSPECT_PULLER_ID = "prospect-puller"
 USAGE_POLLER_ID = "usage-poller"
 NOTIFICATION_POLLER_ID = "notification-poller"
+LEAKDOG_DAEMON_ID = "leakdog-daemon"
 
 
 def new_msg_id() -> str:

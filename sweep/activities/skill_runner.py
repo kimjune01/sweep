@@ -106,9 +106,9 @@ async def triage_cycle(msg: Message) -> dict:
     if not msg.repo or not msg.pr:
         raise ApplicationError("triage: repo + issue required",
                                non_retryable=True)
+    from sweep import observe
     cached = _read_triage_attestation(msg.repo, msg.pr)
     if cached is not None:
-        from sweep import observe
         observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
                       decision=cached.get("decision", "unknown"),
                       reason="cached:" + str(cached.get("reason", "")),
@@ -116,7 +116,24 @@ async def triage_cycle(msg: Message) -> dict:
         return {"label": "triage", "rc": 0, "cached": True,
                 "decision": cached.get("decision")}
     ref = f"{msg.repo}#{msg.pr}"
-    return await _run_skill(["/triage", ref], label="triage", timeout_s=180)
+    result = await _run_skill(["/triage", ref], label="triage", timeout_s=180)
+    # Emit the decision event ourselves by re-reading the attestation
+    # the skill just wrote. Don't trust the skill to call observe.event
+    # — that was the structural leak (79/80 acked items emitted no
+    # event because the skill silently skipped its own logging).
+    fresh = _read_triage_attestation(msg.repo, msg.pr)
+    if fresh is not None:
+        observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
+                      decision=fresh.get("decision", "unknown"),
+                      reason=str(fresh.get("reason", "")),
+                      score=fresh.get("score", 0))
+    else:
+        # No attestation after the skill ran = the skill failed to
+        # decide. Surface that as its own event so we can see this
+        # failure mode in the manifest instead of just losing the item.
+        observe.event("triage_no_attestation", repo=msg.repo,
+                      issue=msg.pr, rc=result.get("rc", 0))
+    return result
 
 
 def _read_triage_attestation(repo: str, issue: int) -> dict | None:
@@ -162,10 +179,29 @@ def _read_triage_attestation(repo: str, issue: int) -> dict | None:
 @activity.defn
 async def investigate_cycle(msg: Message) -> dict:
     """Run /investigate on one issue. Long-running (full hypothesis
-    graph, fan-out, adversarial review) — needs the larger timeout."""
+    graph, fan-out, adversarial review) — needs the larger timeout.
+
+    Emits an `investigate_done` event so the funnel is legible: without
+    it we can see "investigations enqueued" and "qa converged" but
+    nothing between, and can't tell silent-no-fix from broken bridge."""
     if not msg.repo or not msg.pr:
         raise ApplicationError("investigate: repo + issue required",
                                non_retryable=True)
     ref = f"{msg.repo}#{msg.pr}"
-    return await _run_skill(["/investigate", ref], label="investigate",
-                            timeout_s=1800)
+    from sweep import observe
+    result = await _run_skill(["/investigate", ref], label="investigate",
+                              timeout_s=1800)
+    # Heuristic: /investigate's terminal lines usually mention either
+    # the opened PR ("opened https://github.com/..." or "branch ...
+    # pushed") or a no-fix verdict ("no fix", "BLOCKED", "skip").
+    # Stamp both signals so the post-hoc funnel can tell them apart.
+    tail = (result.get("stdout_tail") or "").lower()
+    produced_pr = ("pull/" in tail or "opened pr" in tail
+                   or "pushed branch" in tail or "drip-ready" in tail)
+    no_fix = ("no fix" in tail or "blocked" in tail or "skip" in tail
+              or "no actionable" in tail)
+    observe.event(
+        "investigate_done", repo=msg.repo, issue=msg.pr,
+        rc=result.get("rc", 0), produced_pr=produced_pr, no_fix=no_fix,
+    )
+    return result
