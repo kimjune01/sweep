@@ -156,7 +156,7 @@ def render_leakdog(hours: int = 24) -> list[str]:
       investigate → drip         (investigate_done(produced_pr) → pr_state_classified)
       pr-state    → qa           (pr_state_classified(bucket=qa) → qa_converged)
 
-    A row's `leak` = `in − (out + drop + still_in_inbox)`. The inbox
+    A row's `leak` = `in − (out + screened + still_in_inbox)`. The inbox
     subtraction is what separates real loss from slow processing. Lag
     tolerance still applies to `in` so items too fresh to have been
     processed yet don't get counted."""
@@ -184,36 +184,49 @@ def render_leakdog(hours: int = 24) -> list[str]:
     invest_done = count("investigate_done")
     invest_pending = _inbox_pending("investigate")
 
-    # investigate → pr-state: only investigations that produced a PR
+    # investigate → qa: investigations that produced a PR should flow
+    # through to a qa_converged outcome. pr-state is the dispatcher
+    # that routes the open PR — bookkeeping, not a logical stage.
     invest_with_pr = aged("investigate_done", lag_minutes=45,
                           pred=lambda e: e.get("produced_pr"))
     invest_no_fix = count("investigate_done",
                           pred=lambda e: e.get("no_fix") or not e.get("produced_pr"))
-    pr_classified = count("pr_state_classified")
-    drip_pending = _inbox_pending("drip")
-
-    # pr-state → qa: bucket=qa is the qa-bound flow; other buckets are
-    # legitimate "drops" from qa's perspective (they routed elsewhere)
-    pr_qa = aged("pr_state_classified", lag_minutes=30,
-                 pred=lambda e: e.get("bucket") == "qa")
-    pr_other = count("pr_state_classified",
-                     pred=lambda e: e.get("bucket") != "qa")
     qa_done = count("qa_converged")
     qa_pending = _inbox_pending("qa")
 
-    # rows: (label, in, out, drop, pending)
+    # qa → drip: PRs that qa passed should hit drip for a push.
+    # screened = qa failures (verdict != pass).
+    qa_pass = aged("qa_converged", lag_minutes=30,
+                   pred=lambda e: e.get("verdict") == "pass")
+    qa_fail = count("qa_converged",
+                    pred=lambda e: e.get("verdict") != "pass")
+    drip_done = count("drip_done")
+    drip_pending = _inbox_pending("drip")
+
+    # drip → ship: pushed drips should result in a PR pr-state can see.
+    # Distinct (repo, pr) pairs in pr_state_classified within the
+    # window is the closest proxy we have for "actually shipped".
+    drip_pushed = aged("drip_done", lag_minutes=30,
+                       pred=lambda e: e.get("pushed"))
+    shipped_keys = {(e.get("repo"), e.get("pr")) for e in events
+                    if e.get("kind") == "pr_state_classified"}
+    shipped = len(shipped_keys)
+    drip_not_pushed = count("drip_done",
+                            pred=lambda e: not e.get("pushed"))
+
+    # rows: (label, in, out, screened, pending)
     rows = [
-        ("prospect    → triage",      deposits,        triaged_total,  0,             triaged_pending),
-        ("triage      → investigate", triaged_invest,  invest_done,    triaged_other, invest_pending),
-        ("investigate → pr-state",    invest_with_pr,  pr_classified,  invest_no_fix, drip_pending),
-        ("pr-state    → qa",          pr_qa,           qa_done,        pr_other,      qa_pending),
+        ("prospect    → triage",      deposits,        triaged_total,  0,               triaged_pending),
+        ("triage      → investigate", triaged_invest,  invest_done,    triaged_other,   invest_pending),
+        ("investigate → qa",          invest_with_pr,  qa_done,        invest_no_fix,   qa_pending),
+        ("qa          → drip",        qa_pass,         drip_done,      qa_fail,         drip_pending),
+        ("drip        → ship",        drip_pushed,     shipped,        drip_not_pushed, 0),
     ]
 
     lines = [
-        f"# leakdog — interface accounting, last {hours}h "
-        "(target: 0 unaccounted leaks)",
+        f"# Leakdog — sniffing, last {hours}h (target: 0)",
         "",
-        "| interface | in | out | dropped | pending | leak |",
+        "| interface | in | out | screened | pending | leak |",
         "|---|---:|---:|---:|---:|---:|",
     ]
     total_leak = 0
@@ -225,9 +238,51 @@ def render_leakdog(hours: int = 24) -> list[str]:
             f"| {label} | {inn} | {out} | {drop} | {pend} | {leak}{flag} |"
         )
     lines += ["", f"_total leak: {total_leak} (zero is the target — "
-              "`pending` items are in transit, not lost; `dropped` "
-              "items have an explicit decision event)._"]
+              "`pending` items are in transit, not lost; `screened` "
+              "items were filtered out by an explicit decision event "
+              "and didn't continue here for a reason)._"]
+    # Rejected jobs — skills that declined the work explicitly. Different
+    # from `leak` (silent loss) and `screened` (decided-no). Rejection
+    # means "I cannot fulfill this," and the operator should look.
+    rejected = _rejected_summary(hours)
+    if rejected:
+        lines += ["", "**Rejected jobs (operator review):**", ""]
+        for skill, n in rejected:
+            lines.append(f"- `{skill}` × {n}")
     return lines
+
+
+def _rejected_summary(hours: int) -> list[tuple[str, int]]:
+    """Count rejected-inbox entries by skill in the last `hours`. Returns
+    [(skill, count), ...] sorted by count desc, or [] when none."""
+    import datetime as _dt
+    import json as _json
+    from collections import Counter
+    from pathlib import Path
+    path = Path.home() / ".sweep" / "inbox" / "rejected.jsonl"
+    if not path.exists():
+        return []
+    cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=hours)
+    counts: Counter[str] = Counter()
+    try:
+        text = path.read_text()
+    except OSError:
+        return []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = _json.loads(line)
+        except _json.JSONDecodeError:
+            continue
+        try:
+            ts = _dt.datetime.fromisoformat(entry.get("ts", ""))
+        except (ValueError, TypeError):
+            continue
+        if ts < cutoff:
+            continue
+        counts[entry.get("skill", "unknown")] += 1
+    return counts.most_common()
 
 
 # ---------------------------------------------------------- entry
@@ -257,7 +312,7 @@ def lanes(
             cols.append({"label": label, "items": items})
         print(_json.dumps(cols))
         return
-    print("# sweep lanes — PRs by station")
+    print("# Sweep lanes")
     print()
     for line in render_lanes(height):
         print(line)

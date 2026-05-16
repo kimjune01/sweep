@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""gh shim: record the call against sweep's per-actor budget, then
+exec the real gh transparently.
+
+Closes the subprocess budget blindspot: LLM-spawned skills shell out
+to `gh` directly, bypassing our Python `gh_io` wrapper. This shim
+sits earliest on PATH (prepended by skill_runner) so every such call
+gets stamped with the SWEEP_BUDGET_CALLER actor name.
+
+Stdlib only, no decoration — runs once per gh call (~80/min under
+load), so startup time matters. Never raises on I/O failure: budget
+accounting must not break the gh call itself.
+"""
+import datetime
+import os
+import sys
+
+
+def _record(caller):
+    try:
+        budget_dir = os.path.join(
+            os.path.expanduser("~"), ".sweep", "budget",
+        )
+        os.makedirs(budget_dir, exist_ok=True)
+        path = os.path.join(budget_dir, caller + ".jsonl")
+        # UTC ISO-8601 with offset, matching sweep.budget.record().
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with open(path, "a") as f:
+            f.write(now_iso + "\n")
+    except Exception:
+        pass
+
+
+def _find_real_gh():
+    """Walk PATH and return the first `gh` whose realpath differs from
+    this shim's realpath. Returns None if no other gh is found."""
+    self_real = os.path.realpath(__file__)
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if not entry:
+            continue
+        candidate = os.path.join(entry, "gh")
+        if not os.path.isfile(candidate):
+            continue
+        if not os.access(candidate, os.X_OK):
+            continue
+        if os.path.realpath(candidate) == self_real:
+            continue
+        return candidate
+    return None
+
+
+def main():
+    caller = os.environ.get("SWEEP_BUDGET_CALLER", "unknown")
+    _record(caller)
+    real_gh = _find_real_gh()
+    if real_gh is None:
+        sys.stderr.write("gh shim: real gh not found on PATH\n")
+        sys.exit(127)
+    try:
+        os.execv(real_gh, [real_gh] + sys.argv[1:])
+    except OSError as e:
+        sys.stderr.write("gh shim: execv failed: " + str(e) + "\n")
+        sys.exit(127)
+
+
+if __name__ == "__main__":
+    main()

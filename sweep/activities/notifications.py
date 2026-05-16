@@ -58,6 +58,8 @@ async def poll_github_notifications(since_iso: str | None = None) -> dict:
     `since_iso` is an optimization: GitHub returns threads updated at or
     after this timestamp. Omit on cold start — GitHub returns all unread.
     """
+    from sweep import budget as _budget
+    _budget.set_caller("notifications")
     args = ["gh", "api", "/notifications", "-X", "GET",
             "-F", "all=false", "-F", "per_page=50"]
     if since_iso:
@@ -109,6 +111,8 @@ async def mark_thread_read(thread_id: str) -> bool:
     Returns True on success, False on failure (caller decides whether
     to retry; not advancing the watermark just means we re-process
     next tick, which is harmless given inbox dedup)."""
+    from sweep import budget as _budget
+    _budget.set_caller("notifications")
     if not thread_id:
         return False
     try:

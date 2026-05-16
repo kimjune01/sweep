@@ -23,6 +23,7 @@ When adding a skill actor:
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 
 from temporalio import activity
@@ -30,9 +31,16 @@ from temporalio.exceptions import ApplicationError
 
 from sweep.types import Message
 
+# Directory holding the gh shim. Prepended to PATH for skill subprocesses
+# so every `gh` call inside the LLM-spawned subprocess gets stamped to
+# the right actor's budget log. The shim execs the real gh after
+# recording, so semantics are unchanged.
+_SHIM_BIN = "/Users/junekim/Documents/sweep/bin"
+
 
 async def _run_skill(slash_argv: list[str], label: str,
-                     timeout_s: int = 600) -> dict:
+                     timeout_s: int = 600,
+                     caller: str | None = None) -> dict:
     """Shell out to claude with a slash command. Common plumbing for
     every skill-actor activity. Returns rc + stdout tail; raises
     non-retryable ApplicationError on missing claude / timeout / failure
@@ -44,9 +52,16 @@ async def _run_skill(slash_argv: list[str], label: str,
     actor and Temporal sees the worker as gone ("no poller seen").
     """
     cmd = ["claude", "--print", " ".join(slash_argv)]
+    # Inject gh shim onto PATH + tag the caller so every gh call inside
+    # the subprocess gets attributed to this actor's budget. Without
+    # this, the LLM's gh calls vanish from per-actor accounting.
+    env = os.environ.copy()
+    env["PATH"] = _SHIM_BIN + os.pathsep + env.get("PATH", "")
+    env["SWEEP_BUDGET_CALLER"] = caller or label
     try:
         result = await asyncio.to_thread(
-            subprocess.run, cmd, capture_output=True, text=True, timeout=timeout_s,
+            subprocess.run, cmd, capture_output=True, text=True,
+            timeout=timeout_s, env=env,
         )
     except FileNotFoundError as e:
         raise ApplicationError(
@@ -85,8 +100,38 @@ _DRIP_FLAG = {"ship": "--push", "rebase": "--push", "close": "--check"}
 async def drip_cycle(msg: Message) -> dict:
     if not msg.repo:
         raise ApplicationError("drip: repo required", non_retryable=True)
-    flag = _DRIP_FLAG.get(msg.intent or "ship", "--check")
-    return await _run_skill(["/drip", msg.repo, flag], label="drip")
+    from sweep import budget as _budget, observe, skill_result
+    _budget.record_subprocess_estimate("drip")
+    intent = msg.intent or "ship"
+    flag = _DRIP_FLAG.get(intent, "--check")
+    result = await _run_skill(["/drip", msg.repo, flag], label="drip")
+    # Shim Sonnet over the skill's stdout for a guaranteed outcome
+    # dict. Falls back to the stdout-tail heuristics if the shim
+    # can't parse (rollout transition).
+    parsed = skill_result.shim("drip", result.get("stdout_tail", ""))
+    if skill_result.is_rejected(parsed):
+        skill_result.record_rejection("drip", msg.__dict__, parsed)
+        return result
+    if parsed:
+        observe.event(
+            "drip_done", repo=msg.repo, pr=msg.pr, intent=intent,
+            rc=result.get("rc", 0),
+            pushed=bool(parsed.get("pushed")),
+            outcome=str(parsed.get("outcome", "")),
+            reason=str(parsed.get("reason", ""))[:200],
+        )
+        return result
+    # Heuristic fallback.
+    tail = (result.get("stdout_tail") or "").lower()
+    pushed = (intent in ("ship", "rebase") and result.get("rc") == 0
+              and ("pushed" in tail or "opened pr" in tail
+                   or "pull/" in tail or "drip-ready" in tail))
+    observe.event(
+        "drip_done", repo=msg.repo, pr=msg.pr, intent=intent,
+        rc=result.get("rc", 0), pushed=pushed,
+        outcome="(heuristic-fallback)",
+    )
+    return result
 
 
 # ------------------------------------------------------------ triage
@@ -107,6 +152,8 @@ async def triage_cycle(msg: Message) -> dict:
         raise ApplicationError("triage: repo + issue required",
                                non_retryable=True)
     from sweep import observe
+    from sweep import budget as _budget
+    _budget.record_subprocess_estimate("triage")
     cached = _read_triage_attestation(msg.repo, msg.pr)
     if cached is not None:
         observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
@@ -117,20 +164,33 @@ async def triage_cycle(msg: Message) -> dict:
                 "decision": cached.get("decision")}
     ref = f"{msg.repo}#{msg.pr}"
     result = await _run_skill(["/triage", ref], label="triage", timeout_s=180)
-    # Emit the decision event ourselves by re-reading the attestation
-    # the skill just wrote. Don't trust the skill to call observe.event
-    # — that was the structural leak (79/80 acked items emitted no
-    # event because the skill silently skipped its own logging).
+    # Shim Sonnet over the skill's stdout to get a schema-guaranteed
+    # decision dict. Subscription-friendly. Falls back to reading the
+    # attestation file (and then to triage_no_attestation) so we keep
+    # backward compat with skill invocations that pre-date the shim.
+    from sweep import skill_result
+    parsed = skill_result.shim("triage", result.get("stdout_tail", ""))
+    if skill_result.is_rejected(parsed):
+        # Skill declined the job. Route the original msg to the
+        # rejected inbox for operator review; do NOT emit a normal
+        # triage_decision (that would mark this item as decided).
+        skill_result.record_rejection("triage", msg.__dict__, parsed)
+        return result
+    if parsed:
+        observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
+                      decision=parsed.get("decision", "unknown"),
+                      reason=str(parsed.get("reason", ""))[:200],
+                      score=int(parsed.get("score") or 0))
+        return result
+    # Shim couldn't parse stdout. Fall back to the attestation file
+    # the skill writes as a side-effect.
     fresh = _read_triage_attestation(msg.repo, msg.pr)
     if fresh is not None:
         observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
                       decision=fresh.get("decision", "unknown"),
-                      reason=str(fresh.get("reason", "")),
+                      reason="attestation-fallback: " + str(fresh.get("reason", "")),
                       score=fresh.get("score", 0))
     else:
-        # No attestation after the skill ran = the skill failed to
-        # decide. Surface that as its own event so we can see this
-        # failure mode in the manifest instead of just losing the item.
         observe.event("triage_no_attestation", repo=msg.repo,
                       issue=msg.pr, rc=result.get("rc", 0))
     return result
@@ -188,13 +248,29 @@ async def investigate_cycle(msg: Message) -> dict:
         raise ApplicationError("investigate: repo + issue required",
                                non_retryable=True)
     ref = f"{msg.repo}#{msg.pr}"
-    from sweep import observe
+    from sweep import budget as _budget, observe, skill_result
+    _budget.record_subprocess_estimate("investigate")
     result = await _run_skill(["/investigate", ref], label="investigate",
                               timeout_s=1800)
-    # Heuristic: /investigate's terminal lines usually mention either
-    # the opened PR ("opened https://github.com/..." or "branch ...
-    # pushed") or a no-fix verdict ("no fix", "BLOCKED", "skip").
-    # Stamp both signals so the post-hoc funnel can tell them apart.
+    # Shim first: ask Sonnet to extract the structured outcome from
+    # the skill's stdout. Falls back to the original stdout-tail
+    # heuristics when the shim can't parse (so we still get partial
+    # signal during the rollout window when skills haven't been
+    # taught to emit JSON yet).
+    parsed = skill_result.shim("investigate", result.get("stdout_tail", ""))
+    if skill_result.is_rejected(parsed):
+        skill_result.record_rejection("investigate", msg.__dict__, parsed)
+        return result
+    if parsed:
+        observe.event(
+            "investigate_done", repo=msg.repo, issue=msg.pr,
+            rc=result.get("rc", 0),
+            produced_pr=bool(parsed.get("produced_pr")),
+            no_fix=bool(parsed.get("no_fix")),
+            summary=str(parsed.get("summary", ""))[:200],
+        )
+        return result
+    # Heuristic fallback (pre-shim behavior).
     tail = (result.get("stdout_tail") or "").lower()
     produced_pr = ("pull/" in tail or "opened pr" in tail
                    or "pushed branch" in tail or "drip-ready" in tail)
@@ -203,5 +279,6 @@ async def investigate_cycle(msg: Message) -> dict:
     observe.event(
         "investigate_done", repo=msg.repo, issue=msg.pr,
         rc=result.get("rc", 0), produced_pr=produced_pr, no_fix=no_fix,
+        summary="(heuristic-fallback, shim parse failed)",
     )
     return result

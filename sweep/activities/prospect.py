@@ -130,6 +130,8 @@ def _save_cursor(stars: int, *, lap_reset: bool = False) -> None:
 async def gh_search_repos_below_stars(stars_ceiling: int, limit: int,
                                        languages: list[str]) -> list[RepoCandidate]:
     """Fetch the next `limit` repos with stars < ceiling, descending stars."""
+    from sweep import budget as _budget
+    _budget.set_caller("prospect")
     if stars_ceiling <= 0:
         return []
     q_parts = [f"stars:<{stars_ceiling}", "is:public", "archived:false"]
@@ -297,6 +299,8 @@ async def gh_search_actionable_issues(repo: str, limit: int) -> list[IssueCandid
     `gh api /search/issues?q=...` with a URL-encoded query gives us
     direct control over the quoting that reaches the search backend.
     """
+    from sweep import budget as _budget
+    _budget.set_caller("prospect")
     if "/" not in repo:
         raise ApplicationError("repo must be owner/repo", non_retryable=True)
 
@@ -575,6 +579,8 @@ async def prospect_recency_window(req: ProspectRunRequest) -> dict:
     long as triage has slack; the system naturally waits until valid
     work appears, no retry logic needed.
     """
+    from sweep import budget as _budget
+    _budget.set_caller("prospect")
     if retro_state.is_halted():
         observe.incr("halted_skip:prospect")
         return {"considered": 0, "deposited": 0, "filtered": {}, "halted": True}

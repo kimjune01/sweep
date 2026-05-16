@@ -41,7 +41,29 @@ async def leakdog_tick() -> dict:
     except Exception as e:
         out["budget_error"] = f"{type(e).__name__}: {str(e)[:200]}"
 
-    # --- (2) Respondable inbox staleness refresh ------------------
+    # --- (2) Per-actor budget watchdog ----------------------------
+    # Higher-resolution than the global core-budget check above: each
+    # actor declares its own share, accumulates calls in its own log,
+    # and pulls its own andon when it exceeds (share + overshoot).
+    # Leakdog auto-clears the per-actor andon when usage drops back
+    # under the actor's share (no extra hysteresis needed — the share
+    # boundary is itself the dead band before re-firing at +overshoot).
+    try:
+        from sweep import budget as _budget
+        per_actor = {}
+        for actor in _budget.SHARES:
+            reason = _budget.check_and_andon(actor)
+            if reason:
+                per_actor[actor] = reason
+            else:
+                # Under cap — try to clear any held andon for this actor.
+                if _budget.clear_andon_if_held(actor):
+                    per_actor[actor] = "cleared"
+        out["per_actor_budget"] = per_actor
+    except Exception as e:
+        out["per_actor_budget_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+
+    # --- (3) Respondable inbox staleness refresh ------------------
     # When the operator answers a maintainer's question on GitHub,
     # the PR's bucket flips away from "respondable" but our inbox
     # entry lingers until either the maintainer replies (notification

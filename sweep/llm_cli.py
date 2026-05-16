@@ -18,20 +18,28 @@ import subprocess
 from temporalio.exceptions import ApplicationError
 
 
-def call(system: str, user: str, *, timeout_s: int = 120) -> str:
+def call(system: str, user: str, *, timeout_s: int = 120,
+         model: str | None = None) -> str:
     """One claude --print invocation. Combines system + user into a
     single prompt (the CLI's print mode is single-message). Returns
     trimmed stdout. Raises ApplicationError on missing binary,
     timeout, non-zero exit, or empty stdout — all of which are
     structural failures the caller's actor should andon on, not
-    treat as a non-answer."""
+    treat as a non-answer.
+
+    `model` overrides the default; pass 'sonnet' for cheap shaping
+    tasks like skill_result.shim where Opus would be overkill."""
     if not user.strip():
         raise ApplicationError("llm_cli: empty user prompt",
                                non_retryable=True)
     prompt = f"{system.strip()}\n\n---\n\n{user.strip()}" if system.strip() else user
+    cmd = ["claude", "--print"]
+    if model:
+        cmd += ["--model", model]
+    cmd.append(prompt)
     try:
         result = subprocess.run(
-            ["claude", "--print", prompt],
+            cmd,
             capture_output=True, text=True, timeout=timeout_s,
         )
     except FileNotFoundError as e:

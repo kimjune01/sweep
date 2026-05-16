@@ -288,17 +288,19 @@ def waste(
     try:
         import subprocess as _sp
         import time as _time
-        # 10s cache: the gh subprocess is ~0.3s, which dominates the
-        # waste view's wall time when called per refresh. The `reset`
-        # timestamps are absolute (we still compute countdown from
-        # now), so caching only stales the `used` count — by at most
-        # 10s of pipeline activity, which is invisible in the % shown.
+        # TTL via sweep.cache_policy. The `reset` timestamps are
+        # absolute (countdown computed from now, not from cached
+        # snapshot), so caching only stales the `used` count — at
+        # most RATE_LIMIT_TTL of pipeline activity, invisible in
+        # the % display. TUI refreshes every 5s; cache shields the
+        # ~0.3s subprocess on most of those.
+        from sweep.cache_policy import RATE_LIMIT_TTL
         cache_path = Path.home() / ".sweep" / "cache" / "gh_rate_limit.json"
         data = None
         if cache_path.exists():
             try:
                 cached = json.loads(cache_path.read_text())
-                if _time.time() - cached.get("fetched_at", 0) < 10:
+                if _time.time() - cached.get("fetched_at", 0) < RATE_LIMIT_TTL:
                     data = cached.get("resources")
             except (json.JSONDecodeError, OSError):
                 pass

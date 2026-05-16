@@ -67,10 +67,9 @@ def inbox_default(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     lines = operator_inbox_lines()
+    print(f"# inbox ({len(lines)})")
     if not lines:
-        print("# inbox — empty")
         return
-    print("# inbox")
     print()
     for line in lines:
         print(line)

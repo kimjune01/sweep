@@ -82,12 +82,16 @@ CLASSIFIED_INBOX = INBOX_DIR / "classified.jsonl"
 async def gh_search_open_authored(limit: int = 50) -> list[dict]:
     """List my open PRs across GitHub. Returns minimal fields; callers fetch
     detail per PR via gh_pr_view."""
-    proc = await asyncio.to_thread(
-        subprocess.run,
-        ["gh", "api", "user", "--jq", ".login"],
-        capture_output=True, text=True, check=True,
-    )
-    user = proc.stdout.strip()
+    from sweep import budget
+    budget.set_caller("pr-state")
+    # Use gh_io.api with a 24h cache instead of a fresh subprocess —
+    # identity doesn't change in practice. Same TTL the rest of the
+    # codebase uses for `gh api user`. Saves ~1 call per workflow tick.
+    from sweep.cache_policy import IDENTITY_TTL
+    u = gh_io.api("user", ttl=IDENTITY_TTL)
+    user = (u.get("login") if isinstance(u, dict) else "") or ""
+    if not user:
+        return []
     return gh_io.search_prs(
         f"author:{user}",
         state="open",
@@ -102,8 +106,11 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     """Pull live state for one PR. Independently callable for development."""
     if "/" not in repo:
         raise ApplicationError("repo must be owner/repo", non_retryable=True)
+    from sweep import budget
+    budget.set_caller("pr-state")
     try:
-        data = gh_io.pr_view(repo, pr, ttl=60)
+        from sweep.cache_policy import PR_STATE_TTL
+        data = gh_io.pr_view(repo, pr, ttl=PR_STATE_TTL)
     except subprocess.CalledProcessError as e:
         raise ApplicationError(
             f"gh pr view failed: {(e.stderr or '')[:300]}",
@@ -116,12 +123,24 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
         )
 
     # Inline code-review comments live on a separate REST endpoint
-    # (not exposed via `gh pr view --json`).
-    try:
-        data["_inline_comments"] = gh_io.pr_inline_comments(repo, pr)
-    except Exception as e:
-        observe.event("inline_comments_failed", repo=repo, pr=pr,
-                      error_type=type(e).__name__, error=str(e)[:200])
+    # (not exposed via `gh pr view --json`). Lazy-fetch: only when the
+    # PR is plausibly respondable — CHANGES_REQUESTED or maintainer has
+    # commented. For wait/ship/qa-mechanical PRs (~90% of the queue),
+    # the inline comments don't influence the classification, so we
+    # skip the call entirely. Halves the per-PR fetch cost in steady
+    # state.
+    needs_inline = (
+        data.get("reviewDecision") == "CHANGES_REQUESTED"
+        or bool(data.get("comments"))
+    )
+    if needs_inline:
+        try:
+            data["_inline_comments"] = gh_io.pr_inline_comments(repo, pr)
+        except Exception as e:
+            observe.event("inline_comments_failed", repo=repo, pr=pr,
+                          error_type=type(e).__name__, error=str(e)[:200])
+            data["_inline_comments"] = []
+    else:
         data["_inline_comments"] = []
 
     # CI derivation

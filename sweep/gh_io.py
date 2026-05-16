@@ -102,12 +102,21 @@ def _cache_put(key: str, endpoint: str, args: list[str],
 
 
 def _gh(args: list[str]) -> str:
-    """Run `gh ARGS`, return stdout. Non-zero exit raises subprocess.CalledProcessError."""
+    """Run `gh ARGS`, return stdout. Non-zero exit raises subprocess.CalledProcessError.
+
+    Every successful call charges 1 against the current caller's budget
+    (see sweep.budget). Callers tag themselves via `budget.as_caller(...)`
+    at activity entry so the per-actor share accounting works. Calls
+    that escape attribution land in the 'unknown' bucket — leakdog
+    surfaces that gap."""
     out = subprocess.run(["gh"] + args, capture_output=True, text=True, check=False)
     if out.returncode != 0:
         raise subprocess.CalledProcessError(
             out.returncode, ["gh"] + args, output=out.stdout, stderr=out.stderr,
         )
+    # Local import — budget imports nothing from gh_io, so no cycle.
+    from sweep import budget as _budget
+    _budget.record(1)
     return out.stdout
 
 
@@ -187,7 +196,7 @@ def search_issues(*, labels: list[str] | None = None,
 
 
 def pr_view(repo: str, pr: int, *,
-             fields: str | None = None, ttl: int = 60) -> dict:
+             fields: str | None = None, ttl: int = 600) -> dict:
     if "/" not in repo:
         raise ValueError(f"repo must be owner/repo, got {repo!r}")
     args = ["pr", "view", str(pr), "--repo", repo, "--json",
@@ -258,16 +267,25 @@ def repo_ai_policy(repo: str, *, ttl: int = 24 * 3600) -> str:
       "permissive" — file present, no restrictions
       "unknown"    — no file found or unreadable
 
-    Cached aggressively (24h default) because policies don't change daily
-    and we don't want to redo it for every issue from the same repo.
+    Cached aggressively (24h default) because policies don't change daily.
+    The verdict itself is what we cache (a short string), not the raw
+    file contents — so this path uses _cache_get/_cache_put directly
+    rather than _cached_json. Cache key includes the repo only; if any
+    of AGENTS.md/CONTRIBUTING.md changes, the verdict re-derives on
+    the next miss after expiry.
     """
     if "/" not in repo:
         return "unknown"
+    cache_key = _key("repo_ai_policy", [repo])
+    hit = _cache_get(cache_key)
+    if hit is not None:
+        from sweep import observe
+        observe.incr("gh_hit:repo_ai_policy")
+        return hit
+    from sweep import observe
+    observe.incr("gh_miss:repo_ai_policy")
     # AGENTS.md first (the emerging convention), then CONTRIBUTING.md.
-    # NOTE: this path is uncached — _cached_json only serializes JSON
-    # bodies, and these endpoints return raw markdown. The docstring's
-    # 24h cache claim refers to the intended behavior; making it real
-    # requires a _cached_text variant (TODO). Today every call hits gh.
+    verdict = "unknown"
     for path in ("AGENTS.md", "CONTRIBUTING.md", "CONTRIBUTING.rst"):
         try:
             text = _gh(["api", f"repos/{repo}/contents/{path}",
@@ -276,10 +294,12 @@ def repo_ai_policy(repo: str, *, ttl: int = 24 * 3600) -> str:
             continue
         if not text or text.startswith("{"):
             continue
-        verdict = _classify_ai_policy(text)
-        if verdict != "unknown":
-            return verdict
-    return "unknown"
+        v = _classify_ai_policy(text)
+        if v != "unknown":
+            verdict = v
+            break
+    _cache_put(cache_key, "repo_ai_policy", [repo], verdict, ttl)
+    return verdict
 
 
 _HOSTILE_PATTERNS = (
