@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""dep-pool — emit unique GitHub deps of active roster repos.
+
+For each non-evicted repo in ~/.sweep/repos.jsonl (and the sweep repo
+itself), pull the GitHub Dependency Graph SBOM, extract every package
+whose PURL points at a github.com repo, dedupe by owner/repo, drop
+self-owned (kimjune01) repos, and print one owner/repo per line.
+
+This is the warm channel for slop-filter targeting: deps of repos we
+already touch are higher-affinity than the cold star-shard walk.
+
+The downstream dedup (banlist, cursor, AI-policy gate, evidence check)
+lives in offer-slop-filter. dep-pool just emits the candidate set;
+filtering is the caller's job.
+
+Usage:
+    dep-pool                   # all active roster repos + sweep
+    dep-pool --include EXTRA   # also walk EXTRA (owner/repo)
+    dep-pool --limit N         # cap output at N (default: all)
+    dep-pool --json            # emit {repo, source: "deps", via: "..."}
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+REPOS_JSONL = HOME / ".sweep" / "repos.jsonl"
+# Side-channel from prospect: repos dropped due to hostile AI policy.
+# Those are warm slop-filter targets (publicly committed to the framing).
+SEED_FILE = HOME / ".sweep" / "inbox" / "slop_offer_seeds.txt"
+SELF_REPO = "kimjune01/sweep"
+SELF_OWNER = "kimjune01"
+
+# PURL patterns that resolve to a GitHub repo.
+# pkg:github/OWNER/REPO@VERSION  → direct
+# Plus npm/PyPI packages whose package metadata happens to live on GitHub
+# we DON'T try to resolve — too many false positives. github PURL only.
+GH_PURL_RE = re.compile(r"^pkg:github/([^/]+)/([^@?#]+)")
+
+
+def active_roster() -> list[str]:
+    """Read repos.jsonl, return non-evicted repos in last-wins order."""
+    if not REPOS_JSONL.exists():
+        return []
+    state: dict[str, str] = {}
+    for line in REPOS_JSONL.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        repo = row.get("repo")
+        status = row.get("status", "")
+        if not repo:
+            continue
+        state[repo] = status
+    return [r for r, s in state.items() if s != "evicted"]
+
+
+def sbom_deps(repo: str) -> set[str]:
+    """Fetch SBOM for OWNER/REPO; return set of github.com owner/repo deps."""
+    try:
+        r = subprocess.run(
+            ["gh", "api", f"repos/{repo}/dependency-graph/sbom"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return set()
+    if r.returncode != 0:
+        return set()
+    try:
+        sbom = json.loads(r.stdout).get("sbom", {})
+    except json.JSONDecodeError:
+        return set()
+    deps: set[str] = set()
+    for pkg in sbom.get("packages", []):
+        for ref in pkg.get("externalRefs", []):
+            purl = ref.get("referenceLocator", "")
+            m = GH_PURL_RE.match(purl)
+            if not m:
+                continue
+            owner, name = m.group(1), m.group(2)
+            if owner == SELF_OWNER:
+                continue  # never self
+            deps.add(f"{owner}/{name}")
+    return deps
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--include", action="append", default=[],
+                    help="Extra repo to walk (owner/repo); repeatable")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="Max repos to emit (0 = all)")
+    ap.add_argument("--json", action="store_true",
+                    help="Emit JSON rows with provenance")
+    args = ap.parse_args()
+
+    sources = active_roster() + [SELF_REPO] + args.include
+    sources = list(dict.fromkeys(sources))  # dedupe, preserve order
+
+    # repo -> first source that introduced it (provenance for retros)
+    seen: dict[str, str] = {}
+
+    # Side-channel seeds first: prospect-flagged AI-policy repos are the
+    # warmest targets (publicly committed to the framing). They get
+    # emitted before SBOM-derived deps.
+    if SEED_FILE.exists():
+        try:
+            for line in SEED_FILE.read_text().splitlines():
+                r = line.strip()
+                if r and "/" in r and r != SELF_REPO:
+                    owner = r.split("/", 1)[0]
+                    if owner != SELF_OWNER and r not in seen:
+                        seen[r] = "prospect/ai-policy"
+        except Exception:
+            pass
+
+    for src in sources:
+        for dep in sbom_deps(src):
+            if dep not in seen and dep != SELF_REPO:
+                seen[dep] = src
+
+    items = list(seen.items())
+    if args.limit > 0:
+        items = items[: args.limit]
+
+    for repo, via in items:
+        if args.json:
+            print(json.dumps({"repo": repo, "source": "deps", "via": via}))
+        else:
+            print(repo)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

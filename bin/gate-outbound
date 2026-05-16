@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""gate-outbound — quality gate for outbound text we send to GitHub.
+
+Symmetric with the PR Quality Gate we offer to maintainers: the same
+class of cheap deterministic checks, applied to our own output. Runs on
+the rendered issue/PR/comment body before it ships.
+
+Default mode is strict — non-zero exit means caller refuses to send.
+
+Usage:
+    cat body.md | gate-outbound --title "PR title"           # strict
+    cat body.md | gate-outbound --title "..." --warn         # warn-only
+
+Checks:
+    1. Em dash / double hyphen in title (near-dispositive)
+    2. Em dash / double hyphen in body prose (outside code blocks)
+    3. Unrendered template slot ({{...}})
+    4. Title too long (>72 chars truncates in GitHub list views)
+    5. Body too short (<200 chars probably means a slot didn't render)
+    6. Broken inline markdown links (basic shape only; no network)
+
+Code blocks, frontmatter, and table cells are pass-through for em-dash
+checks (matches the policy we apply to maintainer outbound surface).
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+
+
+EM_DASH = "—"
+EN_DASH = "–"
+DOUBLE_EN_DASH = EN_DASH + EN_DASH
+DOUBLE_HYPHEN_RE = re.compile(r"--[A-Za-z]|[A-Za-z]--|\s--\s")
+
+# Code-fence boundary; lines inside a fenced block pass through.
+FENCE_RE = re.compile(r"^```")
+# Table row (cells separated by |). We pass these through because
+# table cells often use em-dashes structurally.
+TABLE_RE = re.compile(r"^\s*\|.*\|\s*$")
+# Template slot left behind.
+SLOT_RE = re.compile(r"\{\{[^}]+\}\}")
+# Inline markdown link shape; we don't fetch, just check it parses.
+LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+
+
+def strip_codeblocks(body: str) -> str:
+    """Return body with fenced code blocks and table rows removed."""
+    out: list[str] = []
+    in_fence = False
+    for line in body.splitlines():
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if TABLE_RE.match(line):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def check_title(title: str) -> list[str]:
+    issues: list[str] = []
+    if EM_DASH in title:
+        issues.append(f"title contains em dash (U+2014). Near-dispositive — human-typed titles don't produce this. Title: {title!r}")
+    if DOUBLE_EN_DASH in title:
+        issues.append(f"title contains double en-dash. Title: {title!r}")
+    if DOUBLE_HYPHEN_RE.search(title):
+        issues.append(f"title contains double hyphen. Title: {title!r}")
+    if len(title) > 72:
+        issues.append(f"title is {len(title)} chars (>72 truncates in GitHub list views). Title: {title!r}")
+    return issues
+
+
+def check_body(body: str) -> list[str]:
+    issues: list[str] = []
+    prose = strip_codeblocks(body)
+
+    if EM_DASH in prose:
+        # Find each line containing it for actionable feedback.
+        for i, line in enumerate(prose.splitlines(), 1):
+            if EM_DASH in line:
+                issues.append(f"em dash in prose, line {i}: {line.strip()[:100]!r}")
+    if DOUBLE_EN_DASH in prose:
+        for i, line in enumerate(prose.splitlines(), 1):
+            if DOUBLE_EN_DASH in line:
+                issues.append(f"double en-dash in prose, line {i}: {line.strip()[:100]!r}")
+    for i, line in enumerate(prose.splitlines(), 1):
+        if DOUBLE_HYPHEN_RE.search(line):
+            issues.append(f"double hyphen in prose, line {i}: {line.strip()[:100]!r}")
+
+    # Unrendered slots are the worst class of brown M&M.
+    # Use stripped prose so GHA `${{ secrets.X }}` inside yaml fences
+    # doesn't false-positive.
+    slots = SLOT_RE.findall(prose)
+    if slots:
+        issues.append(f"unrendered template slot(s): {slots}")
+
+    if len(body.strip()) < 200:
+        issues.append(f"body is {len(body.strip())} chars (<200 probably means a slot didn't render)")
+
+    # Basic link-shape check; don't fetch.
+    for m in LINK_RE.finditer(body):
+        url = m.group(1)
+        if not url.strip():
+            issues.append(f"empty link target: {m.group(0)!r}")
+        elif url.startswith("(") or url.endswith("("):
+            issues.append(f"malformed link target: {m.group(0)!r}")
+
+    return issues
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--title", required=True)
+    ap.add_argument("--warn", action="store_true",
+                    help="Report issues but exit 0 even on failures.")
+    args = ap.parse_args()
+
+    body = sys.stdin.read()
+
+    issues = check_title(args.title) + check_body(body)
+
+    if not issues:
+        return 0
+
+    for it in issues:
+        print(f"  gate: {it}", file=sys.stderr)
+
+    if args.warn:
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

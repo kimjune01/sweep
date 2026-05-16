@@ -35,6 +35,8 @@ See [Memory Compression](https://june.kim/memory-compression). The pattern is re
 | Propose an eviction (skill / memory not earning its keep) | `sweep retro evict --target <name> --reason …` |
 | Surface mid-run edits an agent made to a skill spec | `sweep retro mid-run-edits --since YYYY-MM-DD` |
 | List CLI commands agents tried to call but that don't exist | `sweep retro missing-calls --since YYYY-MM-DD` |
+| Check outbound links + anchors in the outbound surface still resolve | `sweep retro ref-drift [--fix-dead]` |
+| Audit em-dashes in prose on the outbound surface (zero budget) | `sweep retro em-dash-audit` |
 
 ### Policy boundaries before aggregation
 
@@ -78,6 +80,9 @@ Each compression has four parts. Write them all.
 Special inputs that don't fit the gather shape:
 - **Missing CLI calls.** `sweep retro missing-calls` returns every `sweep <subcmd> …` invocation an agent tried that failed with "command not found" or "unknown subcommand," grouped by the requested call and ranked by frequency. **Each missing call is a wishlist entry the agent demonstrated by reaching for it.** This is how the CLI grows: not from spec, from agent demand. Three agents on three repos all tried `sweep drip checkup --repo X` → build it next. The skill markdown stays honest because failures are visible.
 - **Mid-run skill edits.** `sweep retro mid-run-edits` surfaces ad-hoc changes agents made to skill specs during the cycle. Each one is a compression opportunity — the agent already noticed the pattern; retro's job is to formalize it (and remove the ad-hoc patch, or fold it in deliberately).
+- **The outbound surface.** "Outbound" means anything actively sent to GitHub or sitting at the front door of a linked-from-outbound repo: issue/PR bodies the pipeline produces, issue/PR comments (including withdrawal notices), the README of any repo cross-referenced from an outbound artifact, `action.yml` description + any text the action emits as PR comments, blog posts cross-referenced from outbound. Specifically watched: [`pr-to-merged`](https://june.kim/pr-to-merged), [`internal-reasoning-of-prose-compiler`](https://june.kim/internal-reasoning-of-prose-compiler), [`speedrunning-open-source`](https://june.kim/speedrunning-open-source), [`the-natural-framework`](https://june.kim/the-natural-framework) — these are linked from issue templates and READMEs, so a rename or stale section breaks the outbound chain. NOT outbound: `skills/*.md`, hypothesis/retro graphs, worklogs, `~/.sweep/*`, internal bootstrap/roadmap docs, CLAUDE.md. The distinction is whether a maintainer evaluating us reads it, not whether it's checked into a public repo.
+- **Reference drift.** `sweep retro ref-drift` walks the outbound surface and verifies every `https://github.com/...` path and `#anchor` still resolves. A renamed heading or moved file silently turns a load-bearing pointer into a 404 the maintainer sees first. The check fetches each unique target once per pass, caches for 24h, and reports broken refs grouped by source file. **Triage these as obvious compressions.** A broken outbound link is a receipt against our own pipeline. Fix the link or the heading; don't ship another issue against a 404.
+- **Em-dash audit.** `sweep retro em-dash-audit` greps the outbound surface for em-dashes (`—`) and double-hyphens (`--`) in prose, excluding code blocks, table cells, and reference-list separators. Budget is zero. This is a Van Halen rider: the PR Quality Gate flags em-dashes as a low-effort signal, so an outbound artifact containing one proves we don't dogfood. The maintainer doesn't read it as voice; they read it as a competence canary. Internal artifacts (skills, retros, memory) are out of scope; em-dashes that face us are fine.
 - **The H0-H6 meta-hypotheses graph** (`~/.sweep/repos/<owner>-<repo>/RETRO_GRAPH.md`). One graph per repo, one entry per PR, classifying which meta-hypotheses the outcome supports or refutes. This is a long-running compression artifact, updated each pass.
 
 ## Obvious vs ambiguous (the fan-out gate)
@@ -118,6 +123,7 @@ The metric retro optimizes for is **time × quality preserved per artifact**. Hi
 1. `sweep retro gather --repo <r> --since <d>` — pull all events.
 2. `sweep retro outcomes --repo <r>` — pull PR outcomes (own + prior art) since last pass.
 3. `sweep retro missing-calls --since <d>` — pull the CLI-wishlist (commands agents reached for that don't exist). **Triage these first** — every entry is the strongest possible evidence for a CLI gap: an agent already needed it. Rank by frequency, name the verb-noun shape, queue as CLI work.
+3a. `sweep retro ref-drift` and `sweep retro em-dash-audit` — walk the outbound surface, report broken refs and any em-dashes in prose. Both block the ship, not the retro. A broken link or a stray em-dash in an outbound artifact is a receipt-failure against our own pipeline.
 4. **Find the repetitions.** Three+ similar episodes → compression target. Group by axis (kill reason, reviewer language, scoring miss, drip pacing, agent failure mode).
 5. **For each compression target, write the four parts** (episode, artifact, loss, level). Choose the lightest artifact form. Apply via the matching `sweep retro …` CLI.
 6. **Update the meta-graph.** For each PR outcome, classify which of H0-H6 it supports/refutes. Append to `RETRO_GRAPH.md` for the repo.
@@ -134,6 +140,7 @@ The metric retro optimizes for is **time × quality preserved per artifact**. Hi
 - **Bans don't decay.** `cooldown_until` is the one parameter retro never auto-resets; humans clear it.
 - **Don't grow without pruning.** Every pass should propose at least one eviction (or explain why nothing's prunable).
 - **Skills evolve during the run.** Mid-run edits are evidence the agent already saw the pattern. Treat each as a half-done compression to either formalize or roll back.
+- **The outbound surface is a brown-M&M test.** Anything a maintainer reads to evaluate us (issues, comments, READMEs of linked repos, `action.yml`, cross-linked blog posts) is a competence canary. Broken refs, em-dashes in prose, and other low-effort tells fail the canary before the maintainer reaches the argument. Outbound-surface checks block the ship, not the retro. Internal artifacts (skills, retros, memory, worklogs) are out of scope; only the surface the maintainer sees matters.
 
 ## What this skill does not do
 

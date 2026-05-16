@@ -1,4 +1,4 @@
-# PR Quality Gate — protect your repo against AI slop.
+# PR Quality Gate: protect your repo against AI slop.
 #
 # Checks derived from 76 PR outcomes across 38 repos.
 # Each check corresponds to a pattern that predicted merge vs. closure.
@@ -16,7 +16,7 @@ inputs:
     required: true
     default: ${{ github.token }}
   anthropic-api-key:
-    description: 'Anthropic API key for description depth analysis (uses Haiku, ~$0.001/PR). Optional — falls back to heuristics without it.'
+    description: 'Anthropic API key for description depth analysis (uses Haiku, ~$0.001/PR). Optional. Falls back to heuristics without it.'
     required: false
     default: ''
 runs:
@@ -63,7 +63,7 @@ runs:
 
         if [ "$PRIOR_STRIKES" -ge 3 ]; then
           BAN_COMMENT=$(cat <<'BANEOF'
-        ### PR Quality Gate — auto-closed
+        ### PR Quality Gate: auto-closed
 
         This author has had 3+ PRs closed by quality gate checks across this org. Future PRs will be auto-closed without review.
 
@@ -93,12 +93,22 @@ runs:
           esac
         }
 
-        # 1. Em-dash, double en-dash, and double-hyphen scan
-        # Em-dash (U+2014) = \xe2\x80\x94; double en-dash (U+2013 U+2013) = \xe2\x80\x93\xe2\x80\x93; double hyphen = --
-        if printf '%s' "$PR_TITLE$PR_BODY" | grep -qE $'\xe2\x80\x94|\xe2\x80\x93\xe2\x80\x93| -- |--[a-zA-Z]|[a-zA-Z]--'; then
-          add_result "Em dashes" "warn" "Found em dashes, double en-dashes, or double hyphens in PR text. Common in AI-generated prose."
+        # 1a. Em-dash in title: near-dispositive. A 60-char human-typed title
+        # does not naturally produce U+2014. It's an LLM output that wasn't
+        # proofread. Treated as its own check so the verdict comment names
+        # the strong signal separately from the weaker body-text check.
+        if printf '%s' "$PR_TITLE" | grep -qE $'\xe2\x80\x94|\xe2\x80\x93\xe2\x80\x93|--'; then
+          add_result "Em dash in title" "warn" "Em dash, double en-dash, or double hyphen in PR title. Human-typed titles do not produce U+2014; this is an unproofread LLM output."
         else
-          add_result "Em dashes" "pass" "No em dashes, double en-dashes, or double hyphens found"
+          add_result "Em dash in title" "pass" "No em dash in title"
+        fi
+
+        # 1b. Em-dash in body: weaker signal. Pasted source material can carry
+        # legitimate em-dashes. Still flagged, still closes for first-timers.
+        if printf '%s' "$PR_BODY" | grep -qE $'\xe2\x80\x94|\xe2\x80\x93\xe2\x80\x93| -- |--[a-zA-Z]|[a-zA-Z]--'; then
+          add_result "Em dash in body" "warn" "Em dash, double en-dash, or double hyphen in PR body. Common in AI-generated prose."
+        else
+          add_result "Em dash in body" "pass" "No em dash in body"
         fi
 
         # 2. Description depth

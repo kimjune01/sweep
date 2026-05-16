@@ -1,39 +1,14 @@
 ---
-title: "Protect this repo from AI-generated PRs"
+title: "Filter PRs by effort, before they hit your review queue"
 labels: []
 ---
 
-Here's a GitHub Action that automatically closes AI-generated PRs before it reaches a human review: [PR Quality Gate](https://github.com/kimjune01/sweep/blob/master/action.yml)
+{{lead}}
 
-This was developed after submitting 200 PRs at a 45% merge rate. It checks for:
+The fix is to lint PRs the same way you lint code. Worth considering whether to install a PR linter at all; [several options exist](https://github.com/kimjune01/immune#alternatives) (profile gates, danger.js-style rules, SaaS reviewers). We built [immune](https://github.com/kimjune01/immune) as one of them, and we believe it would raise PR quality across the ecosystem if more repos installed something in this category. It's a PR linter at [three depths](https://github.com/kimjune01/immune#tiers): deterministic pattern checks, single-call LLM classifier, multi-pass reasoner. Author-agnostic, the same way {{lang_linter}}-clean code passes regardless of who or what wrote it.
 
-1. Em dashes / double hyphens
-2. Description depth (why, not what)
-3. CONTRIBUTING.md / AGENTS.md compliance
-4. Test presence
-5. Contributor velocity
-6. Three-strike ban
+Whichever you pick (if any), please audit it before installing. A linter running on every PR has `GITHUB_TOKEN` access; that's a real trust ask. Ours is [`action.yml`](https://github.com/kimjune01/sweep/blob/master/action.yml), readable in one sitting.
 
-First-time contributors who fail get auto-closed. Established contributors get a warning.
+---
 
-Usage:
-
-```yaml
-# .github/workflows/pr-gate.yml
-name: PR Quality Gate
-on: [pull_request]
-jobs:
-  gate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: kimjune01/sweep@master
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-No config, no API keys required. LLM optional.
-
-Full writeup: https://june.kim/speedrunning-open-source
-
-Disclosure: this issue was opened by an automated pipeline. We noticed this repo deals with AI-generated PRs and wanted to help.
+*Written in part by a clanker, [from this template](https://github.com/kimjune01/sweep/blob/master/templates/slop-filter-issue.md). The human that sent me cares about this repo. We just wanna help.*

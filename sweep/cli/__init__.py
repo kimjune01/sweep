@@ -44,6 +44,7 @@ from sweep.cli.pr_state import pr_state_app
 from sweep.cli.prospect import prospect_app
 from sweep.cli.qa import qa_app
 from sweep.cli.retro import retro_app
+from sweep.cli.slop_offer import slop_offer_app
 
 
 app = typer.Typer(
@@ -59,6 +60,7 @@ app.add_typer(inbox_app, name="inbox")
 app.add_typer(attest_app, name="attest")
 app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
+app.add_typer(slop_offer_app, name="slop-offer")
 app.add_typer(drip_app, name="drip")
 app.add_typer(dry_app, name="dry")
 app.add_typer(pause_app, name="pause")

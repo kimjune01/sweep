@@ -12,27 +12,38 @@
 #       lingering.
 set -euo pipefail
 
-DRY_RUN=false
+# Default is DRY (queue to inbox). --live posts to GitHub.
+# Global flag ~/.sweep/control/dry forces dry regardless of --live.
+LIVE=false
+DRY_RUN=true
 WITHDRAW_AGE_DAYS=2
+INBOX="$HOME/.sweep/inbox/slop_offers_pending.jsonl"
+WITHDRAW_INBOX="$HOME/.sweep/inbox/slop_withdrawals_pending.jsonl"
 
 # Parse flags
 while [ "${1:-}" != "" ]; do
   case "$1" in
-    --dry-run) DRY_RUN=true; shift ;;
+    --live) LIVE=true; DRY_RUN=false; shift ;;
+    --dry-run) LIVE=false; DRY_RUN=true; shift ;;
     --withdraw-stale)
       shift
       # Parse remaining flags for withdraw mode
       while [ "${1:-}" != "" ]; do
         case "$1" in
-          --dry-run) DRY_RUN=true; shift ;;
+          --live) LIVE=true; DRY_RUN=false; shift ;;
+          --dry-run) LIVE=false; DRY_RUN=true; shift ;;
           --age) WITHDRAW_AGE_DAYS="$2"; shift 2 ;;
           *) echo "Unknown flag: $1"; exit 2 ;;
         esac
       done
+      # Belt-and-suspenders: global control/dry forces dry regardless of --live.
+      if [ -f "$HOME/.sweep/control/dry" ]; then
+        LIVE=false; DRY_RUN=true
+      fi
       # Withdrawal mode — scan all our open issues and close silent ones
-      WITHDRAW_COMMENT="Closing — looks like this offer didn't catch interest. No action needed; just clearing your queue. If the AI-PR pressure changes and this becomes useful, feel free to reopen.
+      WITHDRAW_COMMENT="Closing this. Looks like the offer didn't catch interest. No action needed; just clearing your queue. If the AI-PR pressure changes and this becomes useful, feel free to reopen.
 
-— withdrawn after ${WITHDRAW_AGE_DAYS}d of silent treatment by [kimjune01/sweep](https://github.com/kimjune01/sweep)"
+Withdrawn after ${WITHDRAW_AGE_DAYS}d of silent treatment by [kimjune01/sweep](https://github.com/kimjune01/sweep)."
 
       CUTOFF_TS=$(date -u -v-${WITHDRAW_AGE_DAYS}d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
         || date -u -d "${WITHDRAW_AGE_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)
@@ -65,7 +76,13 @@ for i in data:
 ' | while IFS=$'\t' read -r repo num url; do
         [ -z "$repo" ] && continue
         if [ "$DRY_RUN" = true ]; then
-          echo "  DRY-RUN: would withdraw $repo#$num  $url"
+          # Queue withdrawal candidate for human review instead of acting.
+          TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          mkdir -p "$(dirname "$WITHDRAW_INBOX")"
+          BODY_JSON=$(printf '%s' "$WITHDRAW_COMMENT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+          printf '{"ts":"%s","repo":"%s","issue":%s,"url":"%s","reason":"silent %sd","body":%s}\n' \
+            "$TS" "$repo" "$num" "$url" "$WITHDRAW_AGE_DAYS" "$BODY_JSON" >> "$WITHDRAW_INBOX"
+          echo "  QUEUED: $repo#$num  $url"
         else
           if gh issue comment "$num" --repo "$repo" --body "$WITHDRAW_COMMENT" >/dev/null 2>&1 \
              && gh issue close "$num" --repo "$repo" --reason "not planned" >/dev/null 2>&1; then
@@ -98,12 +115,60 @@ if [ -f "$BANLIST" ] && grep -qxF "$REPO" "$BANLIST"; then
   exit 0
 fi
 
-# Skip repos with issues disabled
-HAS_ISSUES=$(gh repo view "$REPO" --json hasIssuesEnabled --jq '.hasIssuesEnabled' 2>/dev/null || echo "false")
+# Per-org lifetime cap. Hard limit on how many slop-filter offers we
+# will ever queue or send to a single org. The principle: don't
+# contribute to the problem we are helping solve. If a maintainer has
+# multiple repos and our first offer landed well, lift the cap manually
+# by editing this number or pruning the candidates/inbox files.
+ORG=$(echo "$REPO" | cut -d'/' -f1)
+PER_ORG_LIFETIME_CAP=1
+# grep exits 1 on zero matches; under `set -euo pipefail` that propagates
+# through the pipe and aborts the script. The `|| true` absorbs the
+# grep exit, and wc gives the count regardless.
+QUEUED_COUNT=$( { grep "\"repo\": *\"$ORG/" "$INBOX" 2>/dev/null || true; } | wc -l | tr -d ' ')
+SENT_COUNT=$( { grep "\"action\": *\"slop_filter_offered\".*\"repo\": *\"$ORG/" "$CANDIDATES" 2>/dev/null || true; } | wc -l | tr -d ' ')
+ORG_TOTAL=$(( ${QUEUED_COUNT:-0} + ${SENT_COUNT:-0} ))
+if [ "$ORG_TOTAL" -ge "$PER_ORG_LIFETIME_CAP" ]; then
+  echo "SKIP: $REPO  org $ORG at cap ($ORG_TOTAL queued/sent, cap=$PER_ORG_LIFETIME_CAP). Don't be the noise."
+  exit 0
+fi
+
+# Pull repo metadata once: issues-enabled + primary language. The
+# language drives vocabulary-matching in the rendered body (a Go
+# maintainer sees `gofmt` instead of `eslint`).
+REPO_META=$(gh repo view "$REPO" --json hasIssuesEnabled,primaryLanguage 2>/dev/null || echo "{}")
+HAS_ISSUES=$(printf '%s' "$REPO_META" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("true" if d.get("hasIssuesEnabled") else "false")')
+PRIMARY_LANG=$(printf '%s' "$REPO_META" | python3 -c 'import json,sys; d=json.load(sys.stdin).get("primaryLanguage") or {}; print(d.get("name",""))')
+
 if [ "$HAS_ISSUES" != "true" ]; then
   echo "SKIP: $REPO has issues disabled"
   exit 0
 fi
+
+# Map primary language to the canonical linter the maintainer
+# almost certainly runs. Falls back to "lint-clean" for languages we
+# haven't mapped or can't detect.
+case "$PRIMARY_LANG" in
+  JavaScript|TypeScript)  LANG_LINTER='`eslint`' ;;
+  Python)                 LANG_LINTER='`ruff`' ;;
+  Go)                     LANG_LINTER='`gofmt`' ;;
+  Rust)                   LANG_LINTER='`clippy`' ;;
+  C++|C)                  LANG_LINTER='`clang-tidy`' ;;
+  Java)                   LANG_LINTER='`checkstyle`' ;;
+  Kotlin)                 LANG_LINTER='`ktlint`' ;;
+  Swift)                  LANG_LINTER='`swiftlint`' ;;
+  Ruby)                   LANG_LINTER='`rubocop`' ;;
+  PHP)                    LANG_LINTER='`phpstan`' ;;
+  C#)                     LANG_LINTER='Roslyn analyzers' ;;
+  Shell)                  LANG_LINTER='`shellcheck`' ;;
+  Haskell)                LANG_LINTER='`hlint`' ;;
+  Elixir)                 LANG_LINTER='`credo`' ;;
+  Scala)                  LANG_LINTER='`scalafix`' ;;
+  Dart)                   LANG_LINTER='`dart analyze`' ;;
+  Lua)                    LANG_LINTER='`luacheck`' ;;
+  HCL)                    LANG_LINTER='`tflint`' ;;
+  *)                      LANG_LINTER='lint' ;;
+esac
 
 # Check which filters they already have (raw curl, no API quota)
 OWNER=$(echo "$REPO" | cut -d'/' -f1)
@@ -175,18 +240,27 @@ fi
 
 export INSTALLED
 
-# Check for existing issue by kimjune01
-EXISTING=$(gh search issues --author kimjune01 --repo "$REPO" "Protect this repo from AI-generated PRs" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+# Check for existing issue by kimjune01.
+# Cover the new title ("Filter PRs by effort..."), the previous title
+# ("Protect this repo from AI-generated PRs"), and the dynamic-per-repo
+# variant ("Protect <name> from AI slop PRs"). Any open match dedupes.
+EXISTING=""
+for Q in "Filter PRs by effort" "Protect this repo from AI-generated PRs" "from AI slop PRs"; do
+  HIT=$(gh search issues --author kimjune01 --repo "$REPO" "$Q" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+  if [ -n "$HIT" ]; then EXISTING="$HIT"; break; fi
+done
 
 if [ -n "$EXISTING" ]; then
   echo "SKIP: issue #$EXISTING already open on $REPO"
   exit 0
 fi
 
-# Extract base body (skip frontmatter)
-BASE_BODY=$(awk 'BEGIN{n=0} /^---$/{n++;next} n>=2{print}' "$TEMPLATE")
+# Extract title and body from template frontmatter.
+TITLE=$(awk '/^title:/{sub(/^title: *"?/,""); sub(/"?$/,""); print; exit}' "$TEMPLATE")
+# Skip the YAML frontmatter (first two `---` lines) but preserve any
+# `---` horizontal rules in the body proper.
+BASE_BODY=$(awk 'BEGIN{n=0} /^---$/{if(n<2){n++;next}} n>=2{print}' "$TEMPLATE")
 REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
-TITLE="Protect $REPO_NAME from AI slop PRs"
 
 # --- Gather repo-specific AI slop evidence ---
 
@@ -256,72 +330,152 @@ print(json.dumps({
     'examples': [f\"#{p['num']} {p['title'][:60]}\" for p in caught[:3]]
 }))" 2>/dev/null || echo '{"total_closed":0,"would_catch":0,"examples":[]}')
 
-# Gate: no evidence, no issue
+# Compute evidence first (no early skip).
 CATCH_COUNT=$(echo "$WOULD_CATCH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('would_catch',0))" 2>/dev/null || echo "0")
 CATCH_PCT=0
 if [ "$TOTAL_PRS" -gt 0 ]; then
   CATCH_PCT=$((CATCH_COUNT * 100 / TOTAL_PRS))
 fi
-if [ "$CATCH_COUNT" -lt 5 ] || [ "$CATCH_PCT" -lt 5 ]; then
-  echo "SKIP: $REPO — $CATCH_COUNT catchable / $TOTAL_PRS total PRs (${CATCH_PCT}%) in 2 weeks (need 5+ and 5%+)"
-  exit 0
+HAS_EVIDENCE=false
+if [ "$CATCH_COUNT" -ge 5 ] && [ "$CATCH_PCT" -ge 5 ]; then
+  HAS_EVIDENCE=true
 fi
 
-# Maintainer-pain gate: the slop must hurt enough that maintainers themselves
-# have mentioned it recently. We're not projecting our solution onto silent
-# repos — we're answering complaints the maintainers actually voiced.
-#
-# Search the repo for issues/PRs in the last 60 days where someone with
-# OWNER/MEMBER/COLLABORATOR authorAssociation mentioned the problem.
+# Maintainer-pain probe: someone with OWNER/MEMBER/COLLABORATOR
+# authorAssociation voiced the problem in the last 60 days.
 PAIN_TS=$(date -u -v-60d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '60 days ago' +%Y-%m-%dT%H:%M:%SZ)
 PAIN_QUERY='"AI slop" OR "AI-generated PR" OR "LLM-generated" OR "low-quality AI" OR "AI spam" OR "ChatGPT PR" OR "Claude PR" OR "Copilot PR"'
 PAIN_HITS=$(gh api graphql -f query="{ search(query: \"repo:$REPO ($PAIN_QUERY) created:>$PAIN_TS\", type: ISSUE, first: 20) { nodes { ... on Issue { number title authorAssociation author { login } } ... on PullRequest { number title authorAssociation author { login } } } } }" \
   --jq '[.data.search.nodes[] | select(.authorAssociation == "OWNER" or .authorAssociation == "MEMBER" or .authorAssociation == "COLLABORATOR") | "#\(.number) by @\(.author.login) (\(.authorAssociation))"]' 2>/dev/null || echo "[]")
 PAIN_COUNT=$(echo "$PAIN_HITS" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+HAS_PAIN=false
+if [ "$PAIN_COUNT" -ge 1 ]; then
+  HAS_PAIN=true
+fi
 
-if [ "$PAIN_COUNT" -lt 1 ]; then
-  echo "SKIP: $REPO — no maintainer mentioned AI-slop pain in last 60 days (have the problem, but haven't spoken up — don't project)"
+# Written-policy probe: does CONTRIBUTING.md / AGENTS.md already express
+# pain about AI PRs but no filter is installed? That's the strongest
+# opportunity signal — the maintainer has codified the policy but hasn't
+# installed enforcement. We are the implementation of their stated wish.
+NO_FILTER_INSTALLED=true
+[ "$HAS_OURS" -gt 0 ] && NO_FILTER_INSTALLED=false
+[ "$HAS_ANTISLOP" -gt 0 ] && NO_FILTER_INSTALLED=false
+[ "$HAS_AGENTSCAN" -gt 0 ] && NO_FILTER_INSTALLED=false
+[ "$HAS_STALE_BOT" -gt 0 ] && NO_FILTER_INSTALLED=false
+
+HAS_POLICY=false
+POLICY_QUOTE=""
+POLICY_FILE=""
+if [ "$NO_FILTER_INSTALLED" = true ]; then
+  for P in CONTRIBUTING.md AGENTS.md docs/CONTRIBUTING.md .github/CONTRIBUTING.md; do
+    DOC=$(curl -fsSL "https://raw.githubusercontent.com/$REPO/HEAD/$P" 2>/dev/null || true)
+    [ -z "$DOC" ] && continue
+    LINE=$( { printf '%s' "$DOC" | grep -iE 'no AI|do not (use|submit).*(AI|LLM|GPT|Claude|Copilot)|AI[- ]generated|LLM[- ]generated|AI[- ]assisted PR|AI[- ]slop' || true; } | head -1 | cut -c1-140)
+    if [ -n "$LINE" ]; then
+      HAS_POLICY=true
+      POLICY_QUOTE="$LINE"
+      POLICY_FILE="$P"
+      break
+    fi
+  done
+fi
+
+# OR gate: evidence OR voiced pain OR written policy. All three absent
+# means we'd be projecting; skip.
+if [ "$HAS_EVIDENCE" != true ] && [ "$HAS_PAIN" != true ] && [ "$HAS_POLICY" != true ]; then
+  echo "SKIP: $REPO — no evidence (${CATCH_COUNT}/${TOTAL_PRS}), no pain mention in 60d, no written policy"
   exit 0
 fi
 
 PAIN_EXAMPLE=$(echo "$PAIN_HITS" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0] if d else '')" 2>/dev/null || echo "")
 
-# Build opener from evidence — lead with the maintainer's own complaint
-# (PAIN_EXAMPLE) when we have one, so the offer reads as a response to a
-# voiced problem rather than a cold pitch.
-EXAMPLES=$(echo "$WOULD_CATCH" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(', '.join(d.get('examples',[])[:2]))" 2>/dev/null || echo "")
-if [ -n "$PAIN_EXAMPLE" ]; then
-  OPENER="Saw $PAIN_EXAMPLE mention AI-slop pressure. $CATCH_COUNT of $TOTAL_PRS PRs in the last 2 weeks would have been auto-closed before review (e.g. $EXAMPLES)."
-else
-  OPENER="$CATCH_COUNT of $TOTAL_PRS PRs in the last 2 weeks would have been auto-closed before review (e.g. $EXAMPLES)."
+# Compose the lead paragraph from whichever signals fired. Three
+# possible openers (policy / pain / evidence), composable. Python
+# handles the prose so the bash glue stays simple.
+EVIDENCE_LIST=$(echo "$WOULD_CATCH" | python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+for ex in d.get('examples', [])[:6]:
+    print(f'- {ex}')
+" 2>/dev/null || echo "")
+if [ -z "$EVIDENCE_LIST" ]; then
+  EVIDENCE_LIST=$(echo "$SLOP_CANDIDATES" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for p in d.get('prs', [])[:6]:
+    print(f\"- #{p['num']} {p['title'][:70]}\")
+" 2>/dev/null || echo "")
 fi
 
-# Filter tool list based on what's already installed
-TOOLS=""
-[ "$HAS_OURS" -eq 0 ] && TOOLS="${TOOLS}
-- [PR Quality Gate](https://github.com/kimjune01/sweep/blob/master/action.yml), judges PR quality not authorship, lets competent bots through, blocks lazy humans"
-[ "$HAS_ANTISLOP" -eq 0 ] && TOOLS="${TOOLS}
-- [anti-slop](https://github.com/peakoss/anti-slop), 34 configurable checks, built from maintaining Coolify (120 slop PRs/month)"
-[ "$HAS_AGENTSCAN" -eq 0 ] && TOOLS="${TOOLS}
-- [agentscan-action](https://github.com/MatteoGabriele/agentscan-action), deep author profile analysis, detects automation patterns from account activity"
+LEAD=$(REPO="$REPO" HAS_EVIDENCE="$HAS_EVIDENCE" HAS_PAIN="$HAS_PAIN" \
+       HAS_POLICY="$HAS_POLICY" POLICY_FILE="$POLICY_FILE" \
+       POLICY_QUOTE="$POLICY_QUOTE" PAIN_EXAMPLE="$PAIN_EXAMPLE" \
+       EVIDENCE_COUNT="$CATCH_COUNT" EVIDENCE_LIST="$EVIDENCE_LIST" \
+       python3 -c '
+import os
+parts = []
+if os.environ["HAS_POLICY"] == "true":
+    f = os.environ["POLICY_FILE"]
+    q = os.environ["POLICY_QUOTE"].strip()
+    parts.append(f"Your `{f}` already names the problem: \"{q}\". Nothing in CI is enforcing it yet.")
+elif os.environ["HAS_PAIN"] == "true":
+    pe = os.environ["PAIN_EXAMPLE"]
+    parts.append(f"Saw {pe} mention AI-slop pressure.")
 
-BODY="${OPENER}
+count = int(os.environ["EVIDENCE_COUNT"] or 0)
+lst = os.environ["EVIDENCE_LIST"].strip()
+if os.environ["HAS_EVIDENCE"] == "true":
+    parts.append(f"Over the last 14 days, **{count} PRs** to this repo would have been flagged by a PR linter for low-effort submissions:\n\n{lst}")
+elif count > 0 and lst:
+    parts.append(f"A few in the last 14 days:\n\n{lst}")
+print("\n\n".join(parts))
+')
 
-Install a GitHub Action:
-${TOOLS}
+BODY=$(BASE_BODY="$BASE_BODY" LEAD="$LEAD" LANG_LINTER="$LANG_LINTER" python3 -c '
+import os
+body = os.environ["BASE_BODY"]
+body = body.replace("{{lead}}", os.environ["LEAD"])
+body = body.replace("{{lang_linter}}", os.environ["LANG_LINTER"])
+print(body)
+')
 
-[Full writeup](https://june.kim/speedrunning-open-source)
+# Quality gate on our own outbound. Symmetric with what we offer
+# maintainers — same class of cheap deterministic checks, applied to
+# our own output. Refuses to queue or post if the body has em-dashes
+# in prose, unrendered slots, a too-long title, etc. The check is the
+# product; if our outbound fails it, we don't ship.
+if ! printf '%s' "$BODY" | ~/.sweep/bin/gate-outbound --title "$TITLE" >&2; then
+  echo "ABORT: $REPO failed outbound quality gate. See above; refusing to ship."
+  exit 2
+fi
 
-This was partially generated by a clanker. The human that sent me cares about your repo. We just wanna help."
-
-if [ "$DRY_RUN" = true ]; then
-  echo "DRY-RUN: $REPO (${CATCH_COUNT}/${TOTAL_PRS} = ${CATCH_PCT}%)"
-  echo "  title: $TITLE"
-  echo "  opener: $OPENER"
+if [ "$LIVE" != true ]; then
+  # Default mode: queue candidate to inbox for human review. Two clamps —
+  # missing --live AND/OR ~/.sweep/control/dry both route here.
+  TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  mkdir -p "$(dirname "$INBOX")"
+  TS="$TS" REPO="$REPO" TITLE="$TITLE" \
+    CATCH_COUNT="$CATCH_COUNT" TOTAL_PRS="$TOTAL_PRS" CATCH_PCT="$CATCH_PCT" \
+    PAIN_EXAMPLE="$PAIN_EXAMPLE" BODY="$BODY" \
+    python3 -c '
+import json, os
+row = {
+  "ts": os.environ["TS"],
+  "repo": os.environ["REPO"],
+  "title": os.environ["TITLE"],
+  "evidence_count": int(os.environ["CATCH_COUNT"]),
+  "total_prs": int(os.environ["TOTAL_PRS"]),
+  "catch_pct": int(os.environ["CATCH_PCT"]),
+  "pain_example": os.environ.get("PAIN_EXAMPLE", ""),
+  "body": os.environ["BODY"],
+}
+print(json.dumps(row))
+' >> "$INBOX"
+  echo "QUEUED: $REPO (${CATCH_COUNT}/${TOTAL_PRS} = ${CATCH_PCT}%) → $INBOX"
   exit 0
 fi
 
-# Open the issue
+# --live: open the issue
 RESULT=$(gh issue create --repo "$REPO" \
   --title "$TITLE" \
   --body "$BODY" 2>&1) || {
