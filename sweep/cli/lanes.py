@@ -1,4 +1,4 @@
-"""`sweep kanban` — kanban swim lanes, no metrics. Just PRs by station."""
+"""`sweep lanes` — swim lanes, no metrics. Just PRs by station."""
 
 from __future__ import annotations
 
@@ -25,13 +25,13 @@ STATIONS = [
 
 
 def register(app: typer.Typer) -> None:
-    app.command("kanban")(kanban)
+    app.command("lanes")(lanes)
 
 
-def render_kanban_lines(height: int = 7) -> list[str]:
-    """Build the kanban swim-lane lines without printing — shared with
-    `sweep floor` so the conveyor section uses the same rendering as the
-    standalone `sweep kanban` command. Returns the full markdown block."""
+def render_lanes(height: int = 7) -> list[str]:
+    """Build the swim-lane lines without printing — shared with
+    `sweep cockpit` so the conveyor section uses the same rendering as the
+    standalone `sweep lanes` command. Returns the full markdown block."""
     cols = STATIONS
 
     items: dict[str, list[str]] = {}
@@ -81,11 +81,31 @@ def render_kanban_lines(height: int = 7) -> list[str]:
     return lines
 
 
-def kanban(
+def lanes(
     height: int = typer.Option(7, "--height", help="Max rows per column before truncating"),
+    as_json: bool = typer.Option(False, "--json", help="Emit structured data for the TUI overlay"),
 ) -> None:
-    """Column view: which PR is in which station. No numerics, truncates tall columns."""
-    print("# sweep kanban — PRs by station")
+    """Column view: which PR is in which station. No numerics, truncates tall columns.
+
+    With ``--json``, emits a list of columns ``[{label, items: [{repo, pr, in_flight}]}]``
+    for the lanes TUI overlay to consume (`sweep tui` → `l`).
+    """
+    if as_json:
+        import json as _json
+        cols = []
+        for actor, label in STATIONS:
+            s = inbox_states(actor)
+            in_flight_ids = {m.get("msg_id") for m in s["in_flight"]}
+            msgs = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
+            items = [{
+                "repo": m.get("repo", "?"),
+                "pr": m.get("pr") or "-",
+                "in_flight": m.get("msg_id") in in_flight_ids,
+            } for m in msgs]
+            cols.append({"label": label, "items": items})
+        print(_json.dumps(cols))
+        return
+    print("# sweep lanes — PRs by station")
     print()
-    for line in render_kanban_lines(height):
+    for line in render_lanes(height):
         print(line)

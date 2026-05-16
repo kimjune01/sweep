@@ -82,6 +82,7 @@ BUCKET_ROUTING: dict[str, tuple[str, str]] = {
     "respondable": ("respondable", "respond"),
     "rebase":      ("drip",        "rebase"),
     "qa":          ("qa",          "reattest"),
+    "investigate": ("investigate",  "diagnose"),
     "ship":        ("drip",        "ship"),
     "wait":        ("retro",       "audit"),
 }

@@ -9,13 +9,66 @@ log carries the receipt" signal.
 from __future__ import annotations
 
 import json
+import subprocess
+from pathlib import Path
 
 import typer
 
 from sweep import observe, retro_params, retro_state
 
 
+# Files whose changes shift pipeline behavior — when retro reads events,
+# it needs the policy boundaries to attribute outcomes correctly. A PR
+# routed to qa before BUCKET_ROUTING changed isn't comparable to one
+# routed after; the classifier rule churn produces the same.
+POLICY_PATHS = (
+    "sweep/activities/pr_state.py",
+    "sweep/activities/qa.py",
+    "sweep/types.py",
+    "sweep/models.py",
+    "sweep/workflows",
+    "skills",
+)
+
+
 retro_app = typer.Typer(help="Retro pager — SOAP one-pagers", no_args_is_help=True)
+
+
+@retro_app.command("policy-changes")
+def retro_policy_changes(
+    since: str = typer.Option(None, "--since", help="ISO date, e.g. 2026-05-01"),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON instead of human-readable"),
+) -> None:
+    """Git commits that touched pipeline policy in the sweep repo.
+
+    Use this when retro-ing: any event before a commit's timestamp ran
+    under the *previous* policy. Comparing "qa actor success rate this
+    week" without aligning against the classifier rule changes that
+    happened mid-week will mix two different systems and average them.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    cmd = ["git", "-C", str(repo_root), "log", "--format=%aI%x09%h%x09%s"]
+    if since:
+        cmd += [f"--since={since}"]
+    cmd += ["--"] + list(POLICY_PATHS)
+    try:
+        out = subprocess.check_output(cmd, text=True)
+    except subprocess.CalledProcessError as e:
+        raise typer.Exit(code=1) from e
+    rows = []
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        ts, sha, *subj = line.split("\t")
+        rows.append({"ts": ts, "sha": sha, "subject": "\t".join(subj)})
+    if json_out:
+        print(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        print("no policy changes in range")
+        return
+    for r in rows:
+        print(f"{r['ts']}  {r['sha']}  {r['subject']}")
 
 
 @retro_app.command("params")

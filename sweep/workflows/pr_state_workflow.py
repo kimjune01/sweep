@@ -62,5 +62,4 @@ class PrStateWorkflow:
                 workflow.logger.error("pr-state failed for %s#%s: %s", repo, pr, e)
 
         # Search attribute lets the UI / queries filter pr-state runs.
-        workflow.upsert_search_attributes({"bucket_counts": [str(counts)]})
         return {"counts": counts, "delivered": delivered}

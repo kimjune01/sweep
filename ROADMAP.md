@@ -27,8 +27,8 @@ The branch `temporal-pipeline` is 87 commits ahead of `master`. Below is what's 
 
 ### Cockpit
 
-- `sweep floor` — single status line + compressed flow + per-station table + human inbox. The gemba view.
-- `sweep kanban` — per-station swim lanes with PR detail.
+- `sweep cockpit` — single status line + compressed flow + per-station table + human inbox. The gemba view.
+- `sweep lanes` — per-station swim lanes with PR detail.
 - Markdown-piped: same source bytes render in terminal, glow, Claude Code, GitHub comments.
 - Inbox surfaces: 💬 respond, ⬆️ force-push, 🤝 manual-merge, 🖋 sign-off, 🌱 retro actionable.
 
@@ -44,8 +44,8 @@ The branch `temporal-pipeline` is 87 commits ahead of `master`. Below is what's 
 - `sweep dry on/off/status` and `sweep pause on/off/status` — CLI toggles. Same files the TUI writes.
 - Dry mode skips external mutations at three sites: `deliver_to_inbox`, `route_classified`, and `prospect_one_pass`'s deposit step — each writes to a `.dry.jsonl` sibling and emits a `dry_skip` event. The drip skill's `gh pr create` honors the same flag.
 - Soft-pause: `prospect_one_pass`, `qa_one_entry`, and `route_classified` no-op at takt entry (counters `paused_skip:*`). In-flight work completes; clears manually.
-- `sweep floor` status line surfaces 🚦 PAUSED and 🌵 DRY when active.
-- `tui/` — Bubble Tea action bar built to `bin/sweep-tui`. One-line horizontal bar with three boxes (dry, pause, floor); polls `~/.sweep/control/` every 5s so external CLI flips show up live; `d`/`p` toggle, `r` manual refresh, `f` shells out to `sweep floor`, `q` quit. File-backed flags persist across launches and the CLI.
+- `sweep cockpit` status line surfaces 🚦 PAUSED and 🌵 DRY when active.
+- `tui/` — Bubble Tea action bar built to `bin/sweep-tui`. One-line horizontal bar with three boxes (dry, pause, floor); polls `~/.sweep/control/` every 5s so external CLI flips show up live; `d`/`p` toggle, `r` manual refresh, `f` shells out to `sweep cockpit`, `q` quit. File-backed flags persist across launches and the CLI.
 - Chewy TUI audit pass (May 2026). Walked `tui/main.go` against the [Chewy TUI](https://june.kim/chewy-tui) palette and pitfalls. Now load-bearing: adaptive light/dark colors via `lipgloss.AdaptiveColor` (legible on Solarized Light *and* xterm dark), defensive trailing-space padding on the 🌵/🚦 emoji so the right edge holds on macOS Terminal.app, and anchor comments at every `tea.NewProgram` option and color declaration mapping the choice back to a named heuristic (alt-screen vs inline, mouse mode ?1006 not ?1000, bracketed paste ?2004, Synchronized Output ?2026 emitted by Bubble Tea's default renderer, NO_COLOR via termenv, Ctrl-C → SIGINT, isatty fallback on `sweep-tui | cat`, `len(s)` vs runewidth). Piped invocation exits 1 with a stderr message; verified.
 
 ### Hardening
@@ -94,7 +94,7 @@ Friction we keep hitting and a newcomer would hit harder. README's quick-start c
 - **Hardlink-vs-symlink convention.** Quick-start mixes both: state-dir uses `ln -s`, skill files and HYPOTHESIS_GRAPH use `ln` (hard). Hardlinks silently detach on `git checkout` of a different version (working tree gets a new inode; the `~/.sweep` side keeps pointing at the old). Pick a rule per file class and document the failure mode. Likely: symlinks for skill files (point at versioned source), hardlinks only for files actively edited on both sides.
 - **`~/.sweep/` directory map.** What lives where, what's ephemeral cache (`cache/`), what's append-only log (`events.jsonl`), what's pager state (`retros/`), what's tamper-evident (`attestations/`). One section in README or a `STATE.md` next to it. Currently a newcomer has to grep.
 - **TUI ↔ CLI relationship.** `sweep-tui` shells out to `sweep` for every action; if `sweep` isn't on PATH the TUI dies with an opaque "executable file not found." Make this explicit in README's TUI section (the install step now fixes the symptom but not the explanation).
-- **First-cycle walkthrough.** README §5 is a command catalog. Newcomer wants narrative: clone → install → `prospect` produces what → triage filters how → drip queues → push → retro folds → repeat. One annotated example PR through the whole loop, with a screenshot of `sweep floor` at each stage.
+- **First-cycle walkthrough.** README §5 is a command catalog. Newcomer wants narrative: clone → install → `prospect` produces what → triage filters how → drip queues → push → retro folds → repeat. One annotated example PR through the whole loop, with a screenshot of `sweep cockpit` at each stage.
 
 ## Later
 
@@ -114,7 +114,7 @@ Friction we keep hitting and a newcomer would hit harder. README's quick-start c
 ## Out of scope
 
 - Renaming things that already work. The board → kanban rename and punch → floor rename are done; no more.
-- A second cockpit view. `sweep floor` + `sweep kanban` are the surfaces. Anything more goes in those two.
+- A second cockpit view. `sweep cockpit` + `sweep lanes` are the surfaces. Anything more goes in those two.
 - Reimplementing observability primitives in another store (Prometheus, Honeycomb, etc.). The events.jsonl + counters.db pair is intentionally local and greppable.
 
 ## How to read this file

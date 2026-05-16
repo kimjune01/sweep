@@ -161,7 +161,7 @@ def pr_view(repo: str, pr: int, *,
         raise ValueError(f"repo must be owner/repo, got {repo!r}")
     args = ["pr", "view", str(pr), "--repo", repo, "--json",
             fields or "state,mergeable,reviewDecision,reviews,statusCheckRollup,"
-                     "isDraft,comments,headRefName,updatedAt,title,url"]
+                     "isDraft,comments,headRefName,updatedAt,title,url,author"]
     result = _cached_json("pr_view", args, ttl)
     return result if isinstance(result, dict) else {}
 
@@ -216,6 +216,67 @@ def api_graphql(query: str, *, ttl: int = 300) -> dict:
     args = ["api", "graphql", "-f", f"query={query}"]
     result = _cached_json("api_graphql", args, ttl)
     return result if isinstance(result, dict) else {}
+
+
+def repo_ai_policy(repo: str, *, ttl: int = 24 * 3600) -> str:
+    """Probe AGENTS.md / CONTRIBUTING for explicit AI-tool policies.
+
+    Returns one of:
+      "hostile"    — file mentions "no AI" / "no LLM" / "AI-generated PRs forbidden"
+      "required"   — file requires AI disclosure (we comply by default)
+      "permissive" — file present, no restrictions
+      "unknown"    — no file found or unreadable
+
+    Cached aggressively (24h default) because policies don't change daily
+    and we don't want to redo it for every issue from the same repo.
+    """
+    if "/" not in repo:
+        return "unknown"
+    # AGENTS.md first (the emerging convention), then CONTRIBUTING.md.
+    for path in ("AGENTS.md", "CONTRIBUTING.md", "CONTRIBUTING.rst"):
+        args = ["api", f"repos/{repo}/contents/{path}",
+                "--jq", ".content", "-H", "Accept: application/vnd.github.raw+json"]
+        try:
+            raw = _cached_json("repo_file", args, ttl) if False else None
+        except Exception:
+            raw = None
+        # _cached_json expects JSON output; fall back to a direct text call.
+        try:
+            text = _gh(["api", f"repos/{repo}/contents/{path}",
+                        "-H", "Accept: application/vnd.github.raw"])
+        except subprocess.CalledProcessError:
+            continue
+        if not text or text.startswith("{"):
+            continue
+        verdict = _classify_ai_policy(text)
+        if verdict != "unknown":
+            return verdict
+    return "unknown"
+
+
+_HOSTILE_PATTERNS = (
+    "no ai-generated", "no ai generated", "no llm", "no ai pr",
+    "ai-generated prs are not", "do not submit ai", "we do not accept ai",
+    "ai-generated contributions are not", "no chatgpt", "no copilot",
+    "ai pull requests will be closed", "ai-authored prs",
+)
+_REQUIRED_PATTERNS = (
+    "disclose ai", "disclose llm", "must disclose", "ai disclosure",
+    "label ai-generated", "tag ai-generated",
+)
+
+
+def _classify_ai_policy(text: str) -> str:
+    """Cheap substring scan. Hostile beats required beats permissive."""
+    t = text.lower()
+    if any(p in t for p in _HOSTILE_PATTERNS):
+        return "hostile"
+    if any(p in t for p in _REQUIRED_PATTERNS):
+        return "required"
+    # Mentions AI policy at all? Treat as permissive (operator complies).
+    if "ai" in t and ("policy" in t or "contribution" in t or "guidelin" in t):
+        return "permissive"
+    return "unknown"
 
 
 # ------------------------------------------------------------ forensics

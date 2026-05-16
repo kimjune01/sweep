@@ -58,22 +58,33 @@ def resolve(nick: str) -> ModelInfo:
 # ---------------------------------------------------------------- roles
 
 Role = Literal[
-    "orchestrate",  # shuffling work, picking entries, classifying
-    "code",         # general coding tasks — write fixes, implement
-    "adversary_1",  # first reviewer in the cascade
-    "adversary_2",  # second reviewer
-    "adversary_3",  # fallback reviewer
-    "test_fixture", # synthetic test traffic
+    "orchestrate",          # shuffling work, picking entries, classifying
+    "code",                 # general coding tasks — write fixes, implement
+    "investigate_primary",  # primary hypothesis generator (the calling agent)
+    "investigate_pushout",  # second hypothesis generator for blind-blind-merge
+    "adversary_1",          # first reviewer in the cascade
+    "adversary_2",          # second reviewer
+    "adversary_3",          # fallback reviewer
+    "test_fixture",         # synthetic test traffic
 ]
 
 # Per-role defaults. Override via env var SWEEP_MODEL_<role>=<nick>.
 ROLE_DEFAULTS: dict[str, str] = {
-    "orchestrate":  "sonnet",
-    "code":         "opus",
-    "adversary_1":  "codex",
-    "adversary_2":  "gemini",
-    "adversary_3":  "opus",
-    "test_fixture": "haiku",
+    "orchestrate":          "sonnet",
+    "code":                 "opus",
+    # Blind-blind-merge at investigate: two hypothesis generators run
+    # blind to each other; the merge step extracts DISAGREEMENTS more
+    # than agreements — consensus is low-entropy (training overlap),
+    # divergence is where the real signal hides. Default secondary is
+    # sonnet (cheap, complementary failure modes to opus). Swap to
+    # codex/gemini via SWEEP_MODEL_INVESTIGATE_PUSHOUT for more
+    # entropy when acceptance rate justifies the cost.
+    "investigate_primary":  "opus",
+    "investigate_pushout":  "sonnet",
+    "adversary_1":          "codex",
+    "adversary_2":          "gemini",
+    "adversary_3":          "opus",
+    "test_fixture":         "haiku",
 }
 
 

@@ -23,6 +23,22 @@ If the target machine doesn't have `codex` CLI installed, Phases 1-6 still work 
 
 The skill reads no machine-specific paths. All file references are relative to the target system passed as the argument.
 
+## Blind-blind pushout at dispatch
+
+Before opening the hypothesis graph, run the same evidence pack through a second frontier model in parallel and merge the two outputs. The maintainer's attention is non-renewable; cheap-to-vary the hypothesis stage matters more than cheap-to-vary the implementation stage. The qa volley (codex + gemini) is a second-pass check at the wrong layer — by then the worktree is already written.
+
+**Pattern** (cribbed from [Blind, Blind, Merge](https://june.kim/blind-blind-merge)):
+
+1. **Primary** — this agent (`SWEEP_MODEL_INVESTIGATE_PRIMARY`, default opus) produces hypothesis A: root cause + proposed fix shape + evidence trajectory.
+2. **Pushout** — dispatch the same evidence pack to a second model (`SWEEP_MODEL_INVESTIGATE_PUSHOUT`, default sonnet — swap to codex/gemini when acceptance rate justifies the cost) for hypothesis B. The second model sees no part of A. Identical one-sentence directive.
+3. **Merge** — a third pass extracts the **disagreements** between A and B. Agreement is low-entropy (training overlap, surface convergence); disagreement is where the actual signal lives. The merge document's prominent section is "Where A and B diverge"; the agreed-upon hypothesis is a footnote.
+
+**What to ship downstream:**
+- If A and B converge on a single root cause and fix shape → proceed at higher confidence.
+- If they diverge → the divergence *is* the hypothesis graph's next node. Don't paper over it with a third-model casting vote; investigate the divergence first. Sometimes one model is wrong; sometimes both are wrong about different things; sometimes the divergence reveals an ambiguity in the issue itself that needs to be resolved with the maintainer before code.
+
+Even running the same model twice in separate sessions yields different results — sampling stochasticity alone produces small but real divergence. Two different models compound that with architectural and training-corpus differences. The disagreements are research finds; log them in the hypothesis graph document as their own nodes with provenance.
+
 ## Theory
 
 - **Hypothesis graph**: [The Hypothesis Graph](https://june.kim/the-hypothesis-graph) — perturb, classify, follow the edge. Kill conditions generate the next hypothesis.

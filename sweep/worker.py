@@ -20,12 +20,18 @@ from sweep.activities.pr_state import (
     gh_search_open_authored,
     route_classified,
 )
+from sweep.activities.drip import drip_cycle
+from sweep.activities.infer import infer_test_cmd
+from sweep.activities.prospect import check_pull_conditions, prospect_one_pass
 from sweep.activities.qa import (
     codex_review,
     gemini_review,
     test_attestation,
 )
+from sweep.activities.worktree import ensure_worktree, mark_acked, mark_started
+from sweep.workflows.drip_actor import DripActor
 from sweep.workflows.pr_state_workflow import PrStateWorkflow
+from sweep.workflows.prospect_puller import ProspectPuller
 from sweep.workflows.qa_actor import QaActor
 
 SWEEP_TASK_QUEUE = "sweep-tq"
@@ -37,10 +43,18 @@ async def _amain() -> None:
     worker = Worker(
         client,
         task_queue=SWEEP_TASK_QUEUE,
-        workflows=[QaActor, PrStateWorkflow],
+        workflows=[QaActor, DripActor, PrStateWorkflow, ProspectPuller],
         activities=[
             # qa
             test_attestation, codex_review, gemini_review,
+            # inference
+            infer_test_cmd,
+            # drip
+            drip_cycle,
+            # prospect puller
+            prospect_one_pass, check_pull_conditions,
+            # worktree + cockpit view-layer markers
+            ensure_worktree, mark_started, mark_acked,
             # pr-state
             gh_search_open_authored, gh_pr_view, classify_one_pr,
             deposit_classified, route_classified, deliver_to_inbox,

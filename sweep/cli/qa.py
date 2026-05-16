@@ -122,6 +122,58 @@ def qa_actor_signal() -> None:
     asyncio.run(run())
 
 
+@qa_actor_app.command("drain")
+def qa_actor_drain() -> None:
+    """Signal QaActor with every unacked message in qa.jsonl.
+
+    Recovery path for two scenarios:
+      • Messages deposited before the actor existed (or signal wire
+        landed); they're records but were never delivered.
+      • Machine move: actor history wiped, file inbox still on disk.
+
+    Idempotent — the actor dedupes by msg_id, so re-running is safe.
+    """
+    import json as _json
+    from sweep.inbox_state import INBOX_DIR, load_msg_id_set
+    from sweep.types import Message as _Msg
+
+    async def run() -> None:
+        path = INBOX_DIR / "qa.jsonl"
+        if not path.exists():
+            print("qa.jsonl missing — nothing to drain")
+            return
+        acked = load_msg_id_set(INBOX_DIR / "_acks.jsonl")
+        client = await Client.connect(TEMPORAL_ADDR)
+        await _ensure_actor(client)
+        handle = client.get_workflow_handle(QA_ACTOR_ID)
+        sent = skipped = 0
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                d = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            mid = d.get("msg_id", "")
+            if not mid or mid in acked:
+                skipped += 1
+                continue
+            msg = _Msg(
+                msg_id=mid,
+                sender=d.get("sender", "drain"),
+                intent=d.get("intent", "reattest"),
+                repo=d.get("repo", ""),
+                pr=d.get("pr"),
+                branch=d.get("branch") or "",
+                payload=d.get("payload", {}),
+                ts=d.get("ts", dt.datetime.now(dt.timezone.utc).isoformat()),
+            )
+            await handle.signal(QaActor.deliver, msg)
+            sent += 1
+        print(f"drained: signaled={sent} skipped={skipped}")
+    asyncio.run(run())
+
+
 @qa_actor_app.command("status")
 def qa_actor_status() -> None:
     """Query QaActor depth + halted."""

@@ -26,6 +26,7 @@ See [Memory Compression](https://june.kim/memory-compression). The pattern is re
 | What you need | How to get it |
 |---|---|
 | All structured events for a repo since date | `sweep retro gather --repo … --since YYYY-MM-DD` |
+| **Pipeline policy commits (split events by version)** | `sweep retro policy-changes --since YYYY-MM-DD` |
 | Existing parameter file for a repo | `sweep retro params --repo …` |
 | PR outcomes (own + prior art) from GitHub | `sweep retro outcomes --repo …` |
 | Append a parameter update | `sweep retro set --repo … --key … --value … --reason …` |
@@ -34,6 +35,12 @@ See [Memory Compression](https://june.kim/memory-compression). The pattern is re
 | Propose an eviction (skill / memory not earning its keep) | `sweep retro evict --target <name> --reason …` |
 | Surface mid-run edits an agent made to a skill spec | `sweep retro mid-run-edits --since YYYY-MM-DD` |
 | List CLI commands agents tried to call but that don't exist | `sweep retro missing-calls --since YYYY-MM-DD` |
+
+### Policy boundaries before aggregation
+
+Before averaging anything across the window, run `sweep retro policy-changes --since <window-start>`. Each row is a commit that touched classifier rules, routing, model defaults, workflow code, or a skill spec — anything that changes what the pipeline *does* with the same input.
+
+Use those timestamps to slice the event stream into eras: events before commit `<ts>` ran under the old policy, events after ran under the new. Mixing them collapses two different systems into one number and you'll prescribe a fix for an average that no run actually saw. When you can't separate cleanly, say so — name the policy change in S, attribute the events to "pre-X" and "post-X" in O, and let A treat them as separate populations.
 
 If a CLI command isn't there yet, that's a gap — don't reimplement the gh / jsonl plumbing here. The deterministic harness rejects malformed inputs with errors you close the loop on.
 

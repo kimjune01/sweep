@@ -16,13 +16,13 @@ Status: see [ROADMAP.md](ROADMAP.md) for what's shipped, what's next, and what's
 
 Two operator views — both emit GitHub-flavored markdown, both render styled in [glow](https://github.com/charmbracelet/glow) / Claude Code / GitHub comments, both pipe cleanly to grep / clipboard / file.
 
-### `sweep floor` — the factory-floor cockpit
+### `sweep cockpit` — the factory-floor cockpit
 
 One screen: status line, compressed pipeline flow, per-station table, human inbox under the table.
 
 > `cpu 0% · mem 46% · 0 agents · 🌱 retro`
 >
-> `Triage ~ Investigate ~ ⌊8⌋ QA ~ ⌊1⌋ Drip ~ ⌊19⌋ In Review ~ Respondable`  _| `sweep kanban`_
+> `Triage ~ Investigate ~ ⌊8⌋ QA ~ ⌊1⌋ Drip ~ ⌊19⌋ In Review ~ Respondable`  _| `sweep lanes`_
 >
 > | station       | queued | in-flight | rate  | var | trend (10m × 12, % of cap) | oldest | status                |
 > | ------------- | -----: | --------: | ----: | :-: | -------------------------- | ------ | --------------------- |
@@ -43,9 +43,9 @@ Read top-to-bottom: status (is the line green?), flow (where's the pressure?), t
 - `🌱` in the status line — at least one retro pager has a non-empty P. `📋 HALTED` when the cap-of-2 fires.
 - Inbox glyphs: 💬 respond, ⬆️ force-push, 🤝 manual-merge, 🖋 sign-off, 🌱 retro actionable.
 
-### `sweep kanban` — the swim-lane drill-down
+### `sweep lanes` — the swim-lane drill-down
 
-Per-station PR detail. The flow line in `floor` points here when you want names instead of numbers.
+Per-station PR detail. The flow line in `cockpit` points here when you want names instead of numbers.
 
 > | triaged (0) | investigate (0) | qa (8) | drip (1) | in review (19) | respondable (1) |
 > | ----------- | --------------- | ------ | -------- | -------------- | --------------- |
@@ -59,11 +59,11 @@ Columns truncate at `--height` rows with a `_… +N more_` indicator. Useful whe
 
 | Question | View |
 |----------|------|
-| "Is anything on fire?" | `floor` |
-| "What do I owe right now?" | `floor` (inbox at the bottom) |
-| "Which PR is in qa?" | `kanban` |
+| "Is anything on fire?" | `cockpit` |
+| "What do I owe right now?" | `cockpit` (inbox at the bottom) |
+| "Which PR is in qa?" | `lanes` |
 | "Pipe this into Claude / paste into PR comment / write to a file" | either (both are markdown) |
-| "Live refresh as the pipeline moves" | `floor -w` (watch mode) |
+| "Live refresh as the pipeline moves" | `cockpit -w` (watch mode) |
 
 Both views are read-only. Actions go through actor-specific commands (`sweep retro discard`, `sweep qa clear`, etc.) once the view tells you what to do.
 
@@ -71,15 +71,17 @@ Both views are read-only. Actions go through actor-specific commands (`sweep ret
 
 A thin horizontal bar with two toggles and a link, for flipping pipeline-wide flags without leaving the cockpit. File-backed at `~/.sweep/control/`, so the CLI (`sweep dry on`, `sweep pause on`) and the TUI write the same state.
 
-> `[ d  dry 🌵 OFF ]   [ p  pause 🚦 OFF ]   [ f  floor ↗ ]`
+> `[ d  dry 🌵 OFF ]   [ p  pause 🚦 OFF ]   [ f  cockpit ↗ ]`
 >
 > `q quit   flags live at ~/.sweep/control/`
 
-- **Dry** — actors run the full forward pass, tests + attestations + observability still fire, but external mutations (inbox writes, `gh pr create`, `git push`) are skipped. Rehearsal mode. `🌵 DRY` shows up in the `sweep floor` status line.
-- **Pause** — forward-pass actors no-op at takt entry; in-flight work completes. Distinct from the retro-cap halt (`📋 RETRO`, automatic backpressure) — pause is operator-initiated. `🚦 PAUSED` shows in `sweep floor`.
-- **Floor** — shells out to `sweep floor` so you can drop into the cockpit without quitting the bar.
+- **Dry** — actors run the full forward pass, tests + attestations + observability still fire, but external mutations (inbox writes, `gh pr create`, `git push`) are skipped. Rehearsal mode. `🌵 DRY` shows up in the `sweep cockpit` status line.
+- **Pause** — forward-pass actors no-op at takt entry; in-flight work completes. Distinct from the retro-cap halt (`📋 RETRO`, automatic backpressure) — pause is operator-initiated. `🚦 PAUSED` shows in `sweep cockpit`.
+- **Cockpit** — shells out to `sweep cockpit` so you can drop into the cockpit without quitting the bar.
 
-Build: `cd tui && go build -o ../bin/sweep-tui .`
+Build: `cd tui && go build -o ../bin/sweep-tui .` (already in [Quick start](#quick-start) step 2).
+
+Run: `sweep tui`.
 
 ## Architecture
 
@@ -158,7 +160,14 @@ uv tool install --editable .
 mkdir -p ~/.sweep/{attestations,inbox,retros}
 ln -s ~/Documents/sweep/bin ~/.sweep/bin
 ln -s ~/Documents/sweep/templates ~/.sweep/templates
+cd tui && go build -o ../bin/sweep-tui . && cd ..
 ```
+
+(No symlink needed — `sweep tui` shells out to `bin/sweep-tui` via the package path.)
+
+Lifecycle: `sweep up` brings up `temporal server start-dev` and `sweep-worker` (idempotent, reaps stale orphans), `sweep down` SIGKILLs them, `sweep status` shows what's up. Logs land in `~/.sweep/logs/`. The pipe is the organism: it persists across SSH disconnect, you tear it down explicitly.
+
+`sweep tui` is the operator bar. It calls `sweep up` on launch and tears down *only what it started* on quit — services that were already running (e.g. from a prior `sweep up`) stay running. One TUI per machine, enforced by a PID file at `~/.sweep/control/tui.pid`. Crash-safe: actor architecture means SIGKILL is fine, Temporal preserves workflow state.
 
 ### 3. Install the skills (terminal mode)
 
@@ -171,7 +180,7 @@ done
 
 ### 4. Run the supervisor (hyper-supervision mode)
 
-In one terminal:
+Easiest: `sweep up` (or just open `sweep-tui`, which calls it). For manual control, in one terminal:
 
 ```bash
 temporal server start-dev
@@ -193,8 +202,8 @@ The worker registers `QaActor`, `PrStateWorkflow`, and all activities against ta
 
 | Group | What it does |
 |-------|--------------|
-| `sweep floor` | Factory-floor cockpit — status line + compressed flow + per-station table + human inbox |
-| `sweep kanban` | Per-station swim lanes with PR detail |
+| `sweep cockpit` | Factory-floor cockpit — status line + compressed flow + per-station table + human inbox |
+| `sweep lanes` | Per-station swim lanes with PR detail |
 | `sweep qa` | QA activities (test / codex / gemini / full) + actor signal/status/clear |
 | `sweep pr-state` | Classifier + dispatcher (classify / run / scan / route / workflow) |
 | `sweep prospect` | Sweep GitHub for actionable issues |
@@ -208,10 +217,10 @@ The worker registers `QaActor`, `PrStateWorkflow`, and all activities against ta
 
 ```bash
 # Watch the factory floor (single status + compressed flow + table + inbox)
-uv run sweep floor
+uv run sweep cockpit
 
 # Drill into swim lanes
-uv run sweep kanban
+uv run sweep lanes
 
 # QA — standalone activities (no Temporal needed)
 uv run sweep qa test    --repo owner/repo --branch fix-x --worktree . --test-cmd 'pytest -x'
@@ -241,13 +250,13 @@ uv run sweep retro status
 
 ### Bonus: markdown-piped rendering
 
-`sweep floor` and `sweep kanban` emit GitHub-flavored markdown. Same bytes render in three places:
+`sweep cockpit` and `sweep lanes` emit GitHub-flavored markdown. Same bytes render in three places:
 
 ```bash
 brew install charmbracelet/tap/glow
-uv run sweep floor | glow -      # styled terminal
-uv run sweep floor | pbcopy      # paste into a GitHub comment, Notion, anywhere
-uv run sweep floor               # plain terminal — still scannable
+uv run sweep cockpit | glow -      # styled terminal
+uv run sweep cockpit | pbcopy      # paste into a GitHub comment, Notion, anywhere
+uv run sweep cockpit               # plain terminal — still scannable
 ```
 
 The dual-rendering property is intentional: no second binary, no curses, no lock-in to any viewport.
@@ -335,7 +344,7 @@ The cap-of-2 is a learning rate matcher: the pipe's improvement rate is bounded 
 
 Each per-PR workflow tags itself with search attributes (`bucket`, `repo`, `pr`, `msg_id`). The Temporal Web UI gives one-hop investigation: click any card → full event history, activity inputs/outputs, retry traces, signal log.
 
-`sweep floor` is the operator's view (status + flow + table + inbox). `sweep kanban` is the swim-lane drill-down.
+`sweep cockpit` is the operator's view (status + flow + table + inbox). `sweep lanes` is the swim-lane drill-down.
 
 ## Pipeline stages
 

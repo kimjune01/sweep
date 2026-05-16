@@ -11,6 +11,8 @@ from sweep.types import QaOneEntryRequest
 
 SWEEP_TASK_QUEUE = "sweep-tq"
 QA_ACTOR_ID = "qa-actor"
+DRIP_ACTOR_ID = "drip-actor"
+PROSPECT_PULLER_ID = "prospect-puller"
 
 
 def new_msg_id() -> str:

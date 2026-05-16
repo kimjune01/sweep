@@ -39,7 +39,12 @@ FLOOR = 100               # Below this, lap is over; next call resets.
 
 @dataclass
 class ProspectRunRequest:
-    budget: int = 20            # max repos to scan per pass
+    # Default 1 = Toyota-style one-piece flow. Each pass scans one
+    # repo, surfaces its issues, hands off to triage, returns. The
+    # ticker fires fast (every few min) instead of slow (every hour),
+    # so total throughput stays similar but arrivals smooth out and
+    # backpressure response is per-repo, not per-batch.
+    budget: int = 1
     floor: int = FLOOR          # star floor (lap reset trigger)
     issue_limit_per_repo: int = 5
     languages: list[str] = field(default_factory=list)  # optional language filter
@@ -151,7 +156,15 @@ async def gh_search_repos_below_stars(stars_ceiling: int, limit: int,
 
 
 def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
-    """Cheap local checks before any per-repo API call."""
+    """Cheap local checks before any per-repo API call.
+
+    The lessons from HYPOTHESIS_GRAPH.md encoded as rejections:
+      • H13 — explicit kill list for GUI/TUI / AI-hostile / known-bad repos
+        (jellyfin-tui cascade, ytmusic-deleter, immich, etc.)
+      • H2a — big repos (>5k stars) gate contributors on standing; if we
+        have no warmth in the org, our PRs die in review. Skip them at
+        prospect time instead of paying triage tokens to discover that.
+    """
     if repo.is_archived:
         return False
     if repo.open_issues <= 0:
@@ -170,7 +183,48 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
     org = org_state.org_of(repo.name_with_owner)
     if org_state.is_org_blocked(org):
         return False
+    # H13 kill list — operator-curated patterns, hot-reloadable.
+    if _on_kill_list(repo.name_with_owner):
+        return False
+    # H2a standing gate — big cold-org repos need standing we don't have.
+    if repo.stars > BIG_REPO_STAR_THRESHOLD and not warm_orgs.is_warm(org):
+        return False
+    # AGENTS.md / CONTRIBUTING AI-policy probe — only "hostile" filters;
+    # "required" / "permissive" / "unknown" all pass. Result is cached
+    # 24h in gh_io so this is one API call per repo per day.
+    if gh_io.repo_ai_policy(repo.name_with_owner) == "hostile":
+        return False
     return True
+
+
+# Standing gate: above this star count + not warm = "they screen
+# contributors before reading code." Inferred from HYPOTHESIS_GRAPH H2a
+# (pallets / tinygrad / Enzyme pattern). Configurable downstream by
+# adjusting warm_orgs's min_merged param to expand the warmth definition.
+# Raised 5k → 10k as standing accumulates and the operator can take on
+# higher-visibility orgs cold without immediately dying in review.
+BIG_REPO_STAR_THRESHOLD = 10000
+
+
+_KILL_LIST_PATH = Path.home() / ".sweep" / "control" / "prospect_kill_list.txt"
+
+
+def _on_kill_list(name_with_owner: str) -> bool:
+    """fnmatch-style patterns, one per line, comments with '#'. Re-read
+    each call — small file, hot-reloadable without restart. Operator
+    edits and the next prospect tick picks it up.
+    """
+    if not _KILL_LIST_PATH.exists():
+        return False
+    import fnmatch
+    name = name_with_owner.lower()
+    for raw in _KILL_LIST_PATH.read_text().splitlines():
+        pat = raw.split("#", 1)[0].strip().lower()
+        if not pat:
+            continue
+        if fnmatch.fnmatch(name, pat):
+            return True
+    return False
 
 
 def _warm_first(repos: list[RepoCandidate]) -> list[RepoCandidate]:
@@ -302,6 +356,36 @@ async def deposit_issue_to_triaged(issue: IssueCandidate) -> str:
         f.write(json.dumps(asdict(msg)) + "\n")
     seen.mark_seen(key)
     return msg.msg_id
+
+
+@activity.defn
+async def check_pull_conditions() -> dict:
+    """Snapshot of every gate ProspectPuller respects. Returns
+    `{can_pull: bool, reason: str, depths: {...}}`. Cheap — pure
+    filesystem reads, no GitHub calls."""
+    from sweep import inbox_state as _inbox
+
+    paused = control_state.is_paused()
+    halted = retro_state.is_halted()
+    states = {a: _inbox.inbox_states(a) for a in ("triaged", "investigate")}
+    depths = {a: len(s["queued"]) for a, s in states.items()}
+    # Caps lifted from cockpit.py; importing the dict directly would
+    # cycle, so we inline. Bump here if cockpit's CAPS change.
+    caps = {"triaged": 10, "investigate": 5}
+
+    if paused:
+        return {"can_pull": False, "reason": "paused", "depths": depths}
+    if halted:
+        return {"can_pull": False, "reason": "retro halted", "depths": depths}
+    if depths["triaged"] >= caps["triaged"]:
+        return {"can_pull": False,
+                "reason": f"triage full ({depths['triaged']}/{caps['triaged']})",
+                "depths": depths}
+    if depths["investigate"] >= caps["investigate"]:
+        return {"can_pull": False,
+                "reason": f"investigate full ({depths['investigate']}/{caps['investigate']})",
+                "depths": depths}
+    return {"can_pull": True, "reason": "ready", "depths": depths}
 
 
 @activity.defn

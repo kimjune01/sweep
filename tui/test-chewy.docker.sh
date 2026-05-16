@@ -10,7 +10,8 @@ docker run --rm \
   -v "$PWD":/work \
   -w /work/tui \
   -e CGO_ENABLED=0 \
-  golang:1.23-alpine \
+  -e GOTOOLCHAIN=auto \
+  golang:alpine \
   sh -c '
     set -eu
     apk add --no-cache util-linux >/dev/null

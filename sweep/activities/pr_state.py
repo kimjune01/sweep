@@ -16,7 +16,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import control_state, gh_io, models, observe, retro_state
+from sweep import control_state, gh_io, llm_io, models, observe, retro_state
 from sweep.io_safe import atomic_write_text
 from sweep.types import (
     BUCKET_ROUTING,
@@ -27,6 +27,42 @@ from sweep.types import (
 
 # pr-state shuffles work — picks bucket, routes intent. Sonnet by default.
 PR_STATE_MODEL = models.default_for("orchestrate")
+
+
+# actor → workflow id mapping. Add new entries here when actors get wired.
+# Routing writes to inbox jsonl AND signals the matching Temporal actor.
+# Missing entry → jsonl-only (legacy behavior, no actor consumes it).
+_ACTOR_WORKFLOW_IDS = {
+    "qa":   "qa-actor",
+    "drip": "drip-actor",
+}
+
+
+async def _signal_actor(actor: str, msg: "Message") -> str | None:
+    """Best-effort signal: tell the Temporal actor it has a new message.
+    Returns the workflow id on success, None if the actor isn't wired or
+    temporal is unreachable. Silent on failure — the jsonl write is the
+    source of truth for the view layer; the signal is the kicker for
+    the actor to pull from its in-memory queue.
+    """
+    wf_id = _ACTOR_WORKFLOW_IDS.get(actor)
+    if not wf_id:
+        return None
+    try:
+        from temporalio.client import Client
+        from sweep.system import TEMPORAL_ADDR
+        from sweep.workflows.drip_actor import DripActor
+        from sweep.workflows.qa_actor import QaActor
+
+        client = await Client.connect(TEMPORAL_ADDR)
+        handle = client.get_workflow_handle(wf_id)
+        # All current actors expose a `deliver` signal taking a Message.
+        # Pick the right workflow class for typed signaling.
+        deliver = {"qa": QaActor.deliver, "drip": DripActor.deliver}[actor]
+        await handle.signal(deliver, msg)
+        return wf_id
+    except Exception:
+        return None
 
 INBOX_DIR = Path.home() / ".sweep" / "inbox"
 CLASSIFIED_INBOX = INBOX_DIR / "classified.jsonl"
@@ -97,13 +133,19 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     now = dt.datetime.now(dt.timezone.utc)
     activity_h = (now - updated).total_seconds() / 3600.0
 
-    # maintainer_question — did a MEMBER/OWNER/COLLABORATOR comment after our
-    # last commit, with a "?" in the body?
+    # maintainer_question — a maintainer asked something AND the PR author
+    # hasn't substantively answered yet. "Substantively" is judged by an
+    # LLM, with the cautious bias: ambiguous replies (acks, "looking into
+    # it", short OKs) stay flagged as still-open. The structural check
+    # alone (latest comment is from a maintainer with "?") was generating
+    # false positives — flagging PRs as respondable even after the author
+    # had replied at length.
     comments = data.get("comments") or []
-    maintainer_question = any(
-        c.get("authorAssociation") in ("MEMBER", "OWNER", "COLLABORATOR")
-        and "?" in (c.get("body") or "")
-        for c in comments
+    maintainer_question = await _open_maintainer_question(
+        comments,
+        author_login=(data.get("author") or {}).get("login", ""),
+        repo=repo,
+        pr=pr,
     )
 
     return PrLiveState(
@@ -122,7 +164,117 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     )
 
 
+async def _open_maintainer_question(
+    comments: list[dict],
+    *,
+    author_login: str,
+    repo: str,
+    pr: int,
+) -> bool:
+    """True iff a maintainer has asked something that the PR author
+    hasn't substantively answered yet.
+
+    Cautious bias: ambiguous author replies (short acks, "looking into it")
+    don't close the question. LLM-judged with a default of True on any
+    parse failure — better to keep a respondable item one cycle too long
+    than to silently drop it.
+    """
+    questions = [
+        c for c in comments
+        if c.get("authorAssociation") in ("MEMBER", "OWNER", "COLLABORATOR")
+        and "?" in (c.get("body") or "")
+    ]
+    if not questions:
+        return False
+    # Latest question; comments come back chronologically from gh.
+    last_q = questions[-1]
+    last_q_ts = last_q.get("createdAt", "")
+    # Author replies after that timestamp.
+    author_replies = [
+        c for c in comments
+        if (c.get("author") or {}).get("login") == author_login
+        and (c.get("createdAt", "") > last_q_ts)
+    ]
+    if not author_replies:
+        return True
+    latest_reply = author_replies[-1].get("body") or ""
+    if not latest_reply.strip():
+        return True
+    return not await _author_addressed(last_q.get("body") or "", latest_reply,
+                                       repo=repo, pr=pr)
+
+
+async def _author_addressed(question: str, reply: str, *,
+                            repo: str, pr: int) -> bool:
+    """Ask the orchestrate model whether the reply substantively addresses
+    the question. Returns False on any ambiguity, error, or unparseable
+    response — that keeps the maintainer_question flag set, which is the
+    cautious side (operator sees the item once more rather than missing it).
+    """
+    system = (
+        "You judge whether a PR author's reply substantively addresses a "
+        "maintainer's question on a GitHub pull request. "
+        "Answer with one word: YES or NO. "
+        "NO covers: short acks ('thanks', 'will do', 'looking into it'), "
+        "promises without action, off-topic replies, and any case where "
+        "you are unsure. YES only when the reply directly answers the "
+        "question, fixes what was asked, or provides the requested "
+        "information."
+    )
+    user = (
+        f"Maintainer question:\n{question.strip()[:2000]}\n\n"
+        f"Author reply:\n{reply.strip()[:2000]}\n\n"
+        "Did the author substantively address the question? YES or NO."
+    )
+    try:
+        result = await llm_io.call(
+            PR_STATE_MODEL,
+            system=system,
+            user=user,
+            repo=repo,
+            pr=pr,
+            max_tokens=4,
+            temperature=0.0,
+        )
+        verdict = (result.response or "").strip().upper()
+        return verdict.startswith("YES")
+    except Exception:
+        return False  # cautious: treat as not addressed
+
+
 # ------------------------------------------------------------ classifier
+
+
+# Check-name patterns the qa actor can plausibly auto-fix. Case-insensitive
+# substring match. Add patterns as the qa actor's repertoire grows; treat
+# unknown patterns as "investigate" — better to surface for a human than
+# have qa loop on something it'll never fix.
+_MECHANICAL_CHECK_PATTERNS = (
+    "changelog",
+    "lint",
+    "format",
+    "rustfmt",
+    "gofmt",
+    "prettier",
+    "black",
+    "ruff",
+    "pre-commit",
+    "commitlint",
+    "spelling",
+    "typo",
+    # Intentionally NOT here: dco, sign-off, license/cla. Those require
+    # the human's actual signature or legal agreement — qa can't fake
+    # one. They flow to respondable via the maintainer-question path or
+    # sit as "investigate" if CI surfaces them without a maintainer
+    # comment.
+)
+
+
+def _is_mechanical_check(check_name: str) -> bool:
+    if not check_name:
+        return False
+    n = check_name.lower()
+    return any(pat in n for pat in _MECHANICAL_CHECK_PATTERNS)
 
 
 def _msg_id(repo: str, pr: int, ts_minute: str) -> str:
@@ -154,10 +306,18 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     elif merge == "CONFLICTING":
         bucket = "rebase"
         reasons.append("merge conflicts")
-    # 4. qa
+    # 4. qa vs investigate — split CI failures by whether the failing
+    # check looks like a mechanical fix the qa actor can drive (lint,
+    # format, changelog) versus a real failure that needs reading code.
+    # Pattern match on the check name. Unknown → investigate (cautious:
+    # qa shouldn't burn cycles guessing at things it can't fix).
     elif ci == "failing":
-        bucket = "qa"
-        reasons.append(f"CI failure: {state.failing_check or 'unspecified'}")
+        if _is_mechanical_check(state.failing_check):
+            bucket = "qa"
+            reasons.append(f"CI failure: {state.failing_check or 'unspecified'}")
+        else:
+            bucket = "investigate"
+            reasons.append(f"CI failure (non-mechanical): {state.failing_check or 'unspecified'}")
     # 5. ship
     elif rd == "APPROVED" and merge == "MERGEABLE" and ci == "green":
         bucket = "ship"
@@ -168,6 +328,24 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
         reasons.append("no action signal")
 
     observe.incr(f"pr_state_bucket:{bucket}")
+    # Log the classification as an event so retro can read the
+    # distribution and pattern-match misclassifications. Counters tell
+    # us "n PRs went to bucket X"; the event stream tells us "this
+    # specific PR went to X with reason Y on these signals" — that's
+    # the level retro needs to spot drift (qa actor looping on the
+    # same check, classifier flipping a PR between buckets, etc.).
+    observe.event(
+        "pr_state_classified",
+        repo=state.repo,
+        pr=state.pr,
+        bucket=bucket,
+        reason="; ".join(reasons),
+        review=rd,
+        ci=ci,
+        mergeable=merge,
+        failing_check=state.failing_check,
+        maintainer_question=state.maintainer_question,
+    )
     return PrStateResult(
         repo=state.repo,
         pr=state.pr,
@@ -280,6 +458,11 @@ async def route_classified() -> dict:
             inbox = INBOX_DIR / f"{actor}.jsonl"
         with open(inbox, "a") as f:
             f.write(json.dumps(asdict(msg)) + "\n")
+        # Best-effort actor signal — qa actor receives messages this way;
+        # buckets without a wired actor just stay in the jsonl view layer.
+        # Skip on dry: the whole point of dry is no external mutations.
+        if not control_state.is_dry():
+            await _signal_actor(actor, msg)
         routed[actor] = routed.get(actor, 0) + 1
 
     return {"read": len(latest), "routed": routed, "skipped_acked": 0}
@@ -328,4 +511,6 @@ async def deliver_to_inbox(result: PrStateResult) -> str:
     # Append-only — read all lines later, dedupe by msg_id.
     with open(inbox, "a") as f:
         f.write(line)
+    # Best-effort actor signal; silent when actor isn't wired (drip, retro).
+    await _signal_actor(actor, msg)
     return str(inbox)

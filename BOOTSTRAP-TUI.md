@@ -6,14 +6,14 @@ Paste this into a fresh Claude Code session at `~/Documents/sweep` on branch `te
 
 ## Context
 
-`sweep floor` is the markdown-piped cockpit. It renders styled in a TTY (via `glow`), pipes raw for scripting, refreshes via `--watch`. Read-only — no operator controls beyond what the actors expose via their own subcommands (`sweep retro discard`, `sweep qa actor clear`, etc.).
+`sweep cockpit` is the markdown-piped cockpit. It renders styled in a TTY (via `glow`), pipes raw for scripting, refreshes via `--watch`. Read-only — no operator controls beyond what the actors expose via their own subcommands (`sweep retro discard`, `sweep qa actor clear`, etc.).
 
 What's missing: a live operator surface for two pipeline-wide controls.
 
 - **Dry mode** — actors run the full forward pass but skip *external mutations*. No `gh pr create`, no `git push`, no `gh issue close`, no review comments. Everything observable still fires (events, counters, attestations, retros), so the operator can see what *would have* happened. The line rehearses without touching the world.
 - **Soft-pause** — forward-pass actors stop dequeuing new work at takt entry, but in-flight work completes normally. Distinct from the retro cap halt (`📋 RETRO`, which is automatic backpressure); soft-pause is operator-initiated and clears manually. Drip queue freezes; qa cascade in flight finishes.
 
-These need to be toggleable without context-switching to a separate terminal. The natural surface is a TUI that wraps `sweep floor` with two keybindings.
+These need to be toggleable without context-switching to a separate terminal. The natural surface is a TUI that wraps `sweep cockpit` with two keybindings.
 
 ## Scope
 
@@ -34,7 +34,7 @@ Two halves: substrate (Python, no new deps) + TUI (Go, Bubble Tea).
 
    Atomic writes via `io_safe.atomic_write_text`. File presence = on. Empty file is fine; truthy content not required. Same pattern as `retro_state` — the file IS the state.
 
-2. **CLI** — `sweep dry on/off/status` and `sweep pause on/off/status`. Live with `sweep floor` and `sweep kanban` at the top level (not nested under a parent). Mirror `sweep retro` shape.
+2. **CLI** — `sweep dry on/off/status` and `sweep pause on/off/status`. Live with `sweep cockpit` and `sweep lanes` at the top level (not nested under a parent). Mirror `sweep retro` shape.
 
 3. **Actor wiring**.
    - `prospect_one_pass`: check `is_paused()`; if true, no-op return (same shape as the retro halt path; emits `halted_skip:prospect` analogue → `paused_skip:prospect`).
@@ -45,7 +45,7 @@ Two halves: substrate (Python, no new deps) + TUI (Go, Bubble Tea).
 
    Wire it at the point where mutation hits the wire, not at takt entry. Tests still run, attestations still write, observability still records — only the *external write* is skipped.
 
-4. **Surface in `sweep floor`'s status line**.
+4. **Surface in `sweep cockpit`'s status line**.
 
    ```
    `cpu 0% · mem 47% · 0 agents · 🚦 PAUSED · 🌵 DRY`
@@ -58,7 +58,7 @@ Two halves: substrate (Python, no new deps) + TUI (Go, Bubble Tea).
 `tui/` directory at repo root with a small Go module using Bubble Tea + Lip Gloss + Bubbles.
 
 1. **Build**: `cd tui && go build -o ../bin/sweep-tui` (or `go install ./tui` once the module is set up).
-2. **Behavior**: launch with `sweep-tui`. The TUI renders the output of `sweep floor --plain` (subprocess every 5s by default — same takt as `--watch`). Keybindings:
+2. **Behavior**: launch with `sweep-tui`. The TUI renders the output of `sweep cockpit --plain` (subprocess every 5s by default — same takt as `--watch`). Keybindings:
    - `d` — toggle dry mode (writes `~/.sweep/control/dry`).
    - `p` — toggle pause (writes `~/.sweep/control/paused`).
    - `r` — refresh now (skip the 5s timer).
@@ -68,16 +68,16 @@ Two halves: substrate (Python, no new deps) + TUI (Go, Bubble Tea).
    ```
    d dry [🌵 ON]   p pause [—]   r refresh   q quit
    ```
-5. **Resilience**: if `sweep floor --plain` fails (worker down, gh auth expired), render the stderr in red and keep the previous good frame on screen.
+5. **Resilience**: if `sweep cockpit --plain` fails (worker down, gh auth expired), render the stderr in red and keep the previous good frame on screen.
 
 The TUI is the salesperson; the Python substrate is the factory. Neither ships alone: the factory without a storefront is a personal tool nobody discovers; the storefront without a factory is a demo. They are one product across two languages, bridged by flag files at `~/.sweep/control/` — TUI writes them, Python actors read them, same files the CLI subcommands write so all three surfaces are interchangeable.
 
 ## Acceptance
 
-- `sweep dry on; sweep floor` shows 🌵 DRY in the status line.
+- `sweep dry on; sweep cockpit` shows 🌵 DRY in the status line.
 - `sweep dry on; uv run sweep qa full ... --worktree /tmp/fixture` runs cascade, writes attestation rows, emits events, and skips the would-be `git push` / `gh pr create` (verified via `sweep observe events --kind dry_skip`).
 - `sweep pause on; uv run sweep prospect run` returns immediately with a `paused_skip:prospect` counter incremented; in-flight qa from before the pause completes.
-- `sweep-tui` launches, renders the same content as `sweep floor`, responds to `d`/`p`/`r`/`q`. Hold both flags on, quit, re-launch — the flags persist (file-backed).
+- `sweep-tui` launches, renders the same content as `sweep cockpit`, responds to `d`/`p`/`r`/`q`. Hold both flags on, quit, re-launch — the flags persist (file-backed).
 - `scripts/e2e-haiku.py` and `scripts/e2e-fixture.py` still pass.
 
 ## Style
@@ -93,12 +93,12 @@ The TUI is the salesperson; the Python substrate is the factory. Neither ships a
 - Token-free dry mode (skip LLM calls). Separate flag, separate ticket.
 - Resume signal that aborts the current takt's wait. The actor's next takt is fine.
 - Cross-machine flag sync. Files are local; multi-machine deployments add their own coordination.
-- Replacing `sweep floor` with the TUI. The CLI is still the primary surface; the TUI is the operator's live control room.
+- Replacing `sweep cockpit` with the TUI. The CLI is still the primary surface; the TUI is the operator's live control room.
 
 ## Done = green
 
 When the substrate + TUI both land:
-- `sweep dry on/off/status` and `sweep pause on/off/status` work, with status flags rendering in `sweep floor`.
+- `sweep dry on/off/status` and `sweep pause on/off/status` work, with status flags rendering in `sweep cockpit`.
 - Actor wiring verifiable via the `dry_skip` and `paused_skip:*` events / counters.
 - `sweep-tui` is a launchable binary that lets you flip both flags without leaving the screen.
 - `git log --oneline temporal-pipeline ^master | grep -i -E 'control|dry|pause|tui'` shows a clean per-step commit cluster.

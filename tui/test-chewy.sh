@@ -56,7 +56,7 @@ assert "TERM=xterm-256color emits SGR" many "$verdict"
 # the bar still renders.
 out=$(TERM=xterm run_pty "$BIN render")
 case "$out" in
-  *"dry"*"pause"*"floor"*) v=yes ;;
+  *"LIVE"*"RUNNING"*"cockpit"*) v=yes ;;
   *) v=no ;;
 esac
 assert "TERM=xterm renders bar content" yes "$v"
@@ -83,22 +83,23 @@ echo
 echo "== Bar content sanity =="
 out=$(run_pty "$BIN render")
 case "$out" in
-  *"dry"*"pause"*"floor"*) v=yes ;;
+  *"LIVE"*"RUNNING"*"cockpit"*) v=yes ;;
   *) v=no ;;
 esac
-assert "bar contains dry, pause, floor labels" yes "$v"
+assert "bar contains dry, pause, and view-cycle labels" yes "$v"
+
+# Default render is OFF state: 💧 LIVE (not 🌵) and 🟢 RUNNING (not 🚦).
+case "$out" in
+  *"💧"*) v=yes ;;
+  *) v=no ;;
+esac
+assert "live water-drop glyph present (dry off)" yes "$v"
 
 case "$out" in
-  *"🌵"*) v=yes ;;
+  *"🟢"*) v=yes ;;
   *) v=no ;;
 esac
-assert "cactus glyph present" yes "$v"
-
-case "$out" in
-  *"🚦"*) v=yes ;;
-  *) v=no ;;
-esac
-assert "stoplight glyph present" yes "$v"
+assert "green-circle glyph present (pause off)" yes "$v"
 
 echo
 echo "== Data integrity: snapshot reflects filesystem =="
@@ -112,13 +113,13 @@ dry_was=no; [ -e "$CONTROL/dry" ] && dry_was=yes
 rm -f "$CONTROL/dry"
 
 out=$(run_pty "$BIN render")
-case "$out" in *"🌵 OFF"*) v=yes ;; *) v=no ;; esac
-assert "no dry file → 🌵 OFF" yes "$v"
+case "$out" in *"💧 LIVE"*) v=yes ;; *) v=no ;; esac
+assert "no dry file → 💧 LIVE" yes "$v"
 
 : > "$CONTROL/dry"
 out=$(run_pty "$BIN render")
-case "$out" in *"🌵  ON"*) v=yes ;; *) v=no ;; esac
-assert "dry file present → 🌵  ON" yes "$v"
+case "$out" in *"🌵 DRY"*) v=yes ;; *) v=no ;; esac
+assert "dry file present → 🌵 DRY" yes "$v"
 
 rm -f "$CONTROL/dry"
 [ "$dry_was" = yes ] && : > "$CONTROL/dry"

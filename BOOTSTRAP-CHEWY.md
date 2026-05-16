@@ -54,7 +54,7 @@ Audit `tui/main.go` against each item in the Chewy TUI palette and pitfalls. For
 
 The bootstrap is scoped to sweep-tui, but if the audit surfaces issues in adjacent code that block proper TUI behavior, fix those too. Examples of acceptable scope creep:
 
-- `sweep floor --plain` formatting if it's the thing the operator pipes into when piping past the TUI.
+- `sweep cockpit --plain` formatting if it's the thing the operator pipes into when piping past the TUI.
 - `sweep dry status` / `sweep pause status` output format if it conflicts with the TUI's read of the same flag files.
 - The `control_state.py` atomic-write pattern if a race condition surfaces during TUI ↔ CLI flag flipping.
 
@@ -75,7 +75,7 @@ Don't bundle unrelated cleanup. If you find prose typos in `README.md` or `ROADM
 - The Wish front door (`ssh sweep@factory` drops you into the TUI). Roadmap'd separately under "Wish front door for remote control."
 - Per-PR kanban selection. Roadmap'd separately under "TUI kanban item selection."
 - Replacing the Bubble Tea framework with anything else. Charm is authoritative.
-- The `sweep floor` cockpit's render shape. That's a separate surface; it pipes markdown, not TUI escape codes.
+- The `sweep cockpit` cockpit's render shape. That's a separate surface; it pipes markdown, not TUI escape codes.
 
 ## Style
 

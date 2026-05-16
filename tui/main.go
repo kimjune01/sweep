@@ -5,9 +5,9 @@
 // same files; this TUI is the live keyboard surface for operators who
 // want to flip flags without leaving their cockpit.
 //
-// Deliberately thin: no embedded `sweep floor` view. Polls the flag
+// Deliberately thin: no embedded `sweep cockpit` view. Polls the flag
 // dir every 5s so external CLI flips become visible without keypress.
-// Per-item kanban actions are roadmapped — see ROADMAP.md.
+// Per-item lanes actions are roadmapped — see ROADMAP.md.
 package main
 
 import (
@@ -16,18 +16,107 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// sweepGlamourStyle picks dark/light from the terminal background,
+// then quiets the loudest glamour defaults — no blue-block H1, no
+// red code spans, no chunky highlights. The cockpit is a snapshot,
+// not a tutorial; we want it scannable, not advertising itself.
+// Table separators upgrade to Unicode `│ ─ ┼`. Outer rounded corners
+// come from the viewBox wrapper, since glamour disables outer table
+// borders explicitly.
+func sweepGlamourStyle() ansi.StyleConfig {
+	cfg := styles.DarkStyleConfig
+	if !lipgloss.HasDarkBackground() {
+		cfg = styles.LightStyleConfig
+	}
+
+	col := "│"
+	row := "─"
+	mid := "┼"
+	cfg.Table.ColumnSeparator = &col
+	cfg.Table.RowSeparator = &row
+	cfg.Table.CenterSeparator = &mid
+
+	// H1 → bold text in default foreground; no blue background block.
+	cfg.H1.BackgroundColor = nil
+	cfg.H1.Color = nil
+	cfg.H1.Bold = boolPtr(true)
+	// Code spans → neutral; cockpit wraps the flow/status lines in
+	// backticks to preserve monospace, not to flag "this is code."
+	cfg.Code.BackgroundColor = nil
+	cfg.Code.Color = nil
+	cfg.CodeBlock.Chroma = nil // no syntax highlighting for cockpit blocks
+	// Emphasis is fine; strong-emphasis (queue capped) stays bold.
+	return cfg
+}
+
+func boolPtr(b bool) *bool       { return &b }
+func stringPtr(s string) *string { return &s }
+
+// tableHeaderStyle paints the table header row (the line directly
+// above the ─┼─ separator) in a distinct accent. Glamour's StyleTable
+// only lets us pick the separator glyphs, not differentiate rows —
+// so we post-process the rendered output.
+var tableHeaderStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "173"}). // dull orange — rust on light, peach on dark
+	Bold(true)
+
+// ansiCSI matches CSI escape sequences (`\x1b[...m` and friends) so we
+// can strip glamour's per-cell color reset codes before re-styling the
+// whole header line — otherwise our wrap gets cancelled at every
+// internal reset.
+var ansiCSI = regexp.MustCompile(`\x1b\[[\d;?]*[A-Za-z]`)
+
+func colorizeTableHeader(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := 1; i < len(lines); i++ {
+		t := strings.TrimSpace(lines[i])
+		if t == "" {
+			continue
+		}
+		// Separator line: contains ─ and ┼ and nothing else of substance.
+		if strings.ContainsRune(t, '─') && strings.ContainsRune(t, '┼') {
+			clean := ansiCSI.ReplaceAllString(lines[i-1], "")
+			lines[i-1] = tableHeaderStyle.Render(clean)
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// pulseGlyph styled in the on-color so the dot reads as "fresh" not noise.
+var pulseGlyph = lipgloss.NewStyle().Foreground(onColor).Bold(true).Render(" ·")
+
+// injectPulse finds the first non-empty line in body and appends the
+// pulse glyph to it. The first non-empty line is the H1 ("coding
+// factory — cockpit"), since glamour leaves a blank first line for
+// padding. Works for any view: inbox shows "# inbox — empty", lanes
+// shows "# sweep lanes — PRs by station".
+func injectPulse(body string) string {
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines[i] = strings.TrimRight(line, " ") + pulseGlyph
+		break
+	}
+	return strings.Join(lines, "\n")
+}
 
 const (
 	dryFlag      = "dry"
 	pauseFlag    = "paused"
-	floorCmd     = "sweep"
-	floorArg     = "floor"
 	refreshEvery = 5 * time.Second
 )
 
@@ -87,20 +176,29 @@ func setFlag(name string, on bool) error {
 // needed here. The 256-color codes downsample cleanly to the nearest
 // 16-color slot on TERM=xterm.
 var (
-	dimColor = lipgloss.AdaptiveColor{Light: "240", Dark: "8"}  // off-state border + hints
-	onColor  = lipgloss.AdaptiveColor{Light: "166", Dark: "11"} // on-state border + label (orange on light, yellow on dark)
-	keyColor = lipgloss.AdaptiveColor{Light: "27", Dark: "6"}   // keybinding glyph
+	dimColor    = lipgloss.AdaptiveColor{Light: "240", Dark: "8"}  // hints (legible text)
+	borderColor = lipgloss.AdaptiveColor{Light: "250", Dark: "237"} // off-state border (softer than text — frames, not chrome)
+	onColor     = lipgloss.AdaptiveColor{Light: "166", Dark: "11"} // on-state border + label (orange on light, yellow on dark)
+	keyColor    = lipgloss.AdaptiveColor{Light: "27", Dark: "6"}   // keybinding glyph
 
 	itemBox = lipgloss.NewStyle().
 		Padding(0, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(dimColor)
+		BorderForeground(borderColor)
 	itemBoxOn = itemBox.Copy().
 			BorderForeground(onColor).
 			Foreground(onColor).
 			Bold(true)
 	keyStyle  = lipgloss.NewStyle().Foreground(keyColor).Bold(true)
 	hintStyle = lipgloss.NewStyle().Foreground(dimColor)
+
+	// viewBox wraps the snapshot body in the same rounded ASCII frame
+	// as the buttons — same border color, same corner glyphs, so the
+	// whole TUI reads as one composition rather than bar + raw text.
+	viewBox = lipgloss.NewStyle().
+		Padding(0, 1).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor)
 )
 
 // --------------- model
@@ -111,14 +209,68 @@ var (
 // visible: `tickMsg` fires every refreshEvery, re-stats both flags, and
 // triggers a re-render only if the values changed (cheap, no flicker).
 
-type model struct {
-	dryOn   bool
-	paused  bool
-	status  string // last message under the bar (action feedback or floor-launch failure)
+// Views cycle under one `t` key — hacker ergonomic, single-keystroke
+// rotation. Add new views by appending here; the cycle picks them up.
+// Each entry names the sweep subcommand args used to render it.
+var views = []struct {
+	emoji string
+	label string
+	args  []string
+}{
+	{"🏭", "cockpit", []string{"cockpit", "--plain"}},
+	{"📥", "inbox", []string{"inbox"}},
+	{"🛣", "lanes", []string{"lanes"}},
+	{"🗑", "waste", []string{"waste"}},
 }
+
+type model struct {
+	dryOn        bool
+	paused       bool
+	status       string    // last message under the bar (action feedback or fetch failure)
+	viewIdx      int       // current entry in `views`
+	viewBody     string    // last fetched output for the current view
+	width        int       // terminal width, fed by tea.WindowSizeMsg; 80 fallback
+	pulseExpires time.Time // until this moment, append a ` ·` to the view's H1 line
+}
+
+const pulseDuration = 400 * time.Millisecond
 
 type tickMsg time.Time
 type statusMsg string
+type viewMsg string
+type pulseMsg struct{}
+
+// fetchView shells out asynchronously so the 5s tick doesn't block
+// the event loop. Markdown is rendered in-process via glamour (the
+// same library glow wraps), so no subprocess pipe and we get
+// programmatic control over the style.
+func fetchView(idx, width int) tea.Cmd {
+	return func() tea.Msg {
+		args := views[idx].args
+		raw, err := exec.Command("sweep", args...).Output()
+		if err != nil {
+			return viewMsg(fmt.Sprintf("%s error: %v", views[idx].label, err))
+		}
+		if width < 40 {
+			width = 80
+		}
+		// "auto" picks light/dark from terminal background detection.
+		// WordWrap=width keeps long lines inside the column without
+		// truncating; glamour handles tables, headings, code spans.
+		r, err := glamour.NewTermRenderer(
+			glamour.WithStyles(sweepGlamourStyle()),
+			glamour.WithWordWrap(width),
+		)
+		if err != nil {
+			return viewMsg(string(raw))
+		}
+		styled, err := r.Render(string(raw))
+		if err != nil {
+			return viewMsg(string(raw))
+		}
+		return viewMsg(colorizeTableHeader(styled))
+	}
+}
 
 func tick() tea.Cmd {
 	return tea.Tick(refreshEvery, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -143,11 +295,13 @@ func snapshot() (model, string) {
 	return m, strings.Join(anomalies, "; ")
 }
 
-func (m model) Init() tea.Cmd { return tick() }
+func (m model) Init() tea.Cmd { return tea.Batch(tick(), fetchView(m.viewIdx, m.width)) }
 
 // refresh re-snapshots and folds an optional status override in. If the
 // snapshot itself flagged an anomaly, that wins over the override —
 // data-integrity messages are more important than transient feedback.
+// Preserves the last cockpit render across refreshes so the screen
+// doesn't flash blank between async fetches.
 func refresh(prev model, override string) model {
 	s, anomaly := snapshot()
 	switch {
@@ -158,6 +312,10 @@ func refresh(prev model, override string) model {
 	default:
 		s.status = prev.status
 	}
+	s.viewIdx = prev.viewIdx
+	s.viewBody = prev.viewBody
+	s.width = prev.width
+	s.pulseExpires = prev.pulseExpires
 	return s
 }
 
@@ -187,28 +345,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return refresh(m, ""), nil
-		case "f":
-			// Shell out to `sweep floor` with the alt screen released
-			// so glow's pager owns the terminal. ExecProcess restores
-			// our screen on return. The subprocess inherits CWD; floor
-			// reads only from ~/.sweep/ so CWD doesn't matter.
-			//
-			// The inflight tea.Tick survives the suspend — Bubble Tea
-			// queues the tickMsg until the program resumes, so the
-			// poll cadence continues unbroken after floor exits.
-			return m, tea.ExecProcess(exec.Command(floorCmd, floorArg), func(err error) tea.Msg {
-				if err != nil {
-					return statusMsg(fmt.Sprintf("sweep floor exited: %v", err))
-				}
-				return statusMsg("")
-			})
+		case "t":
+			// Cycle to next view. Triggers an immediate fetch so the
+			// new view shows up on the next tick at worst, sooner if
+			// the subprocess returns in under a frame.
+			m.viewIdx = (m.viewIdx + 1) % len(views)
+			m.viewBody = ""
+			return m, fetchView(m.viewIdx, m.width)
 		}
 
+	case tea.WindowSizeMsg:
+		// Width feeds glow's --width on the next fetch; re-fetch
+		// immediately so the body redraws at the new width.
+		m.width = msg.Width
+		return m, fetchView(m.viewIdx, m.width)
+
 	case tickMsg:
-		return refresh(m, m.status), tick()
+		return refresh(m, m.status), tea.Batch(tick(), fetchView(m.viewIdx, m.width))
+
+	case viewMsg:
+		m.viewBody = string(msg)
+		m.pulseExpires = time.Now().Add(pulseDuration)
+		// Schedule a re-render right after the pulse expires so the
+		// dot disappears on its own.
+		return m, tea.Tick(pulseDuration, func(time.Time) tea.Msg { return pulseMsg{} })
+
+	case pulseMsg:
+		return m, nil // pulse window already encoded in pulseExpires; this just forces a redraw
 
 	case statusMsg:
-		// Re-snapshot on subprocess return: 5s of `sweep floor` is
+		// Re-snapshot on subprocess return: 5s of `sweep cockpit` is
 		// enough time for the operator (or anything else) to flip a
 		// flag, and the bar should reflect that immediately.
 		return refresh(m, string(msg)), nil
@@ -217,11 +383,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	dryLabel := fmt.Sprintf("%s dry %s",
-		keyStyle.Render("d"), flagBadge(m.dryOn, "🌵"))
-	pauseLabel := fmt.Sprintf("%s pause %s",
-		keyStyle.Render("p"), flagBadge(m.paused, "🚦"))
-	floorLabel := fmt.Sprintf("%s floor ↗", keyStyle.Render("f"))
+	dryLabel := fmt.Sprintf("%s %s", keyStyle.Render("d"), modeBadge(m.dryOn, "🌵 DRY", "💧 LIVE"))
+	pauseLabel := fmt.Sprintf("%s %s", keyStyle.Render("p"), modeBadge(m.paused, "🚦 PAUSED", "🟢 RUNNING"))
+	v := views[m.viewIdx]
+	viewLabel := fmt.Sprintf("%s %s %s", keyStyle.Render("t"), v.emoji, v.label)
 
 	bar := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -229,15 +394,27 @@ func (m model) View() string {
 		"  ",
 		boxFor(m.paused, pauseLabel),
 		"  ",
-		itemBox.Render(floorLabel),
+		itemBox.Render(viewLabel),
 	)
 
-	hint := hintStyle.Render(fmt.Sprintf("%s refresh   %s quit   flags live at %s",
-		keyStyle.Render("r"), keyStyle.Render("q"), controlDirPath))
+	hint := hintStyle.Render(fmt.Sprintf("%s cycle view   %s refresh   %s quit   flags live at %s",
+		keyStyle.Render("t"), keyStyle.Render("r"), keyStyle.Render("q"), controlDirPath))
 
 	out := bar + "\n" + hint
 	if m.status != "" {
 		out += "\n" + hintStyle.Render(m.status)
+	}
+	if m.viewBody != "" {
+		// Trim the trailing newline glamour appends so the bottom border
+		// hugs the content instead of leaving an empty interior row.
+		body := strings.TrimRight(m.viewBody, "\n")
+		// Pulse: while the refresh window is open, append a subtle dot
+		// to the first non-empty line so the operator's eye registers
+		// that the snapshot just updated.
+		if time.Now().Before(m.pulseExpires) {
+			body = injectPulse(body)
+		}
+		out += "\n\n" + viewBox.Render(body)
 	}
 	return out + "\n"
 }
@@ -254,15 +431,15 @@ func boxFor(on bool, label string) string {
 	return itemBox.Render(label)
 }
 
-// Chewy TUI "emoji width": macOS Terminal.app and some tmux setups
-// measure 🌵/🚦 as 1 cell instead of 2. Trailing space pads defensively
-// so the right edge of the box doesn't shift when the flag flips. The
-// glyph stays in both states; the OFF form pads to match cell-count.
-func flagBadge(on bool, glyph string) string {
+// modeBadge picks the on/off label literally so each branch ships its
+// own emoji + word. Both literals are visually inspected for the same
+// cell width — emoji renderers disagree about width, so changing one
+// side without checking the other can shift the box edge on flip.
+func modeBadge(on bool, onLabel, offLabel string) string {
 	if on {
-		return fmt.Sprintf("%s  ON", glyph)
+		return onLabel
 	}
-	return fmt.Sprintf("%s OFF", glyph)
+	return offLabel
 }
 
 // renderOnce prints View() once and exits. Used by the test harness to
@@ -312,6 +489,37 @@ func main() {
 		renderOnce()
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "--lanes" {
+		lm, err := loadLanes()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "sweep-tui --lanes:", err)
+			os.Exit(1)
+		}
+		p := tea.NewProgram(lm, tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "sweep-tui --lanes:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	// Self-heal: if the previous TUI hard-crashed (SIGKILL, panic in
+	// goroutine, power loss) it left orphans. Reap them before taking
+	// the lock so the new session starts from a clean slate.
+	reapPreviousOwned()
+	// One TUI per machine. Two operator surfaces flipping the same
+	// flags is the path to "wait, why is dry off now?" surprises.
+	if err := acquireSessionLock(); err != nil {
+		fmt.Fprintln(os.Stderr, "sweep-tui:", err)
+		os.Exit(1)
+	}
+	defer releaseSessionLock()
+	// Bring the pipe up via the canonical `sweep up`. The TUI tears
+	// down only what it started: services that were already running
+	// (e.g. someone ran `sweep up` from SSH first) stay running on
+	// TUI quit. Run `sweep down` to tear those down explicitly.
+	lifecycleAnomalies, owned := bringUp()
+	persistOwned(owned)
+	defer tearDownOwned(owned)
 	// tea.NewProgram options, mapped to Chewy TUI heuristics:
 	//
 	//   • NO tea.WithAltScreen() — "alt screen vs inline": this is a
@@ -338,7 +546,20 @@ func main() {
 	//     and we print the error to stderr and exit 1 below.
 	m, anomaly := snapshot()
 	m.status = anomaly
-	p := tea.NewProgram(m)
+	if len(lifecycleAnomalies) > 0 {
+		joined := strings.Join(lifecycleAnomalies, "; ")
+		if m.status == "" {
+			m.status = joined
+		} else {
+			m.status = m.status + "; " + joined
+		}
+	}
+	// Alt-screen (DEC mode ?1049): clears the screen on entry, restores
+	// prior scrollback on quit. Earlier the bar was a one-line inline
+	// thing where keeping scrollback mattered; now it also embeds a
+	// full cockpit/inbox/lanes view, so an alt-screen "dedicated room"
+	// reads better and quitting still hands the terminal back clean.
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "sweep-tui:", err)
 		os.Exit(1)

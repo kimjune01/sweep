@@ -7,8 +7,8 @@ Each subgroup lives in its own module:
   cli/inbox.py     — inbox inspector
   cli/attest.py    — attestation log + gh-cache stats
   cli/observe.py   — counters, events, cursor for retro
-  cli/floor.py     — factory-floor cockpit (status + flow + table)
-  cli/kanban.py    — kanban swim lanes (per-station PR detail)
+  cli/cockpit.py   — factory-floor cockpit (status + flow + table)
+  cli/lanes.py     — swim lanes (per-station PR detail)
   cli/drip.py      — drip queue list + enqueue
   cli/missing.py   — `sweep missing` wishlist (unknown-call log)
 
@@ -24,13 +24,16 @@ import click
 import typer
 
 from sweep import missing_calls, models as _models
-from sweep.cli import floor as _floor
-from sweep.cli import kanban as _kanban
+from sweep.cli import cockpit as _cockpit
+from sweep.cli import lanes as _lanes
 from sweep.cli import missing as _missing
+from sweep.cli import tui as _tui
+from sweep.cli import waste as _waste
 from sweep.cli import wish as _wish
 from sweep.cli import pr as _pr
 from sweep.cli.attest import attest_app
 from sweep.cli.control import dry_app, pause_app
+from sweep.cli.lifecycle import down_app, status_app, up_app
 from sweep.cli.drip import drip_app
 from sweep.cli.inbox import inbox_app
 from sweep.cli.observe import observe_app
@@ -55,10 +58,15 @@ app.add_typer(retro_app, name="retro")
 app.add_typer(drip_app, name="drip")
 app.add_typer(dry_app, name="dry")
 app.add_typer(pause_app, name="pause")
-_floor.register(app)
-_kanban.register(app)
+app.add_typer(up_app, name="up")
+app.add_typer(down_app, name="down")
+app.add_typer(status_app, name="status")
+_cockpit.register(app)
+_lanes.register(app)
 _pr.register(app)
 _missing.register(app)
+_tui.register(app)
+_waste.register(app)
 _wish.register(app)
 
 

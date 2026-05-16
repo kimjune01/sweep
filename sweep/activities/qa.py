@@ -95,7 +95,22 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     log: list[str] = []
 
     def _run(args: list[str]) -> subprocess.CompletedProcess:
-        return subprocess.run(args, cwd=worktree, capture_output=True, text=True)
+        if not args or not args[0]:
+            # Empty/blank command — caller misconfigured. Halt-worthy
+            # because qa shouldn't guess at empty inputs.
+            raise ApplicationError(
+                "test_cmd resolved to empty argv", non_retryable=True,
+            )
+        try:
+            return subprocess.run(args, cwd=worktree, capture_output=True, text=True)
+        except FileNotFoundError as e:
+            # Toolchain missing on this machine (cargo, go, npm, etc.).
+            # Don't halt the whole actor — just skip this PR with a
+            # marker the workflow recognizes and moves past.
+            raise ApplicationError(
+                f"skip: toolchain not installed ({args[0]!r}); {e}",
+                non_retryable=True,
+            )
 
     # Restore tracked files to their indexed state before swapping branches.
     # A dirty worktree (modified tracked files from an aborted prior run)

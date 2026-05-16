@@ -1,5 +1,5 @@
-"""`sweep floor` — factory floor cockpit. Single status line + compressed
-flow + per-station table. Pairs with `sweep kanban` (swim-lane detail)."""
+"""`sweep cockpit` — factory floor cockpit. Single status line + compressed
+flow + per-station table. Pairs with `sweep lanes` (swim-lane detail)."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ from sweep.system import system_status
 # Humans have deeper queues; LLM actors stay shallow.
 CAPS: dict[str, dict[str, int | None]] = {
     "triaged":     {"queued": 10, "in_flight": 3},  # LLM, fan-out friendly
-    "investigate": {"queued": 5, "in_flight": 3},   # LLM, root-causing
-    "qa":          {"queued": 3, "in_flight": 2},   # LLM, gates
+    "investigate": {"queued": 5, "in_flight": 5},   # LLM, root-causing
+    "qa":          {"queued": 5, "in_flight": 5},   # LLM, gates
     "drip":        {"queued": 5, "in_flight": 1},   # LLM, one push at a time
     "respondable": {"queued": 8, "in_flight": 2},   # you — real backlog signal
     "retro":       {"queued": None, "in_flight": None},  # in-review — geometry, not backlog
@@ -40,27 +40,15 @@ FLOW_NAMES: dict[str, str] = {
 }
 FLOW_ORDER = ("triaged", "investigate", "qa", "drip", "retro", "respondable")
 
-# Per-intent glyphs for the respondable list under the table. The intent
-# names the action the human is being asked to take; the glyph is the
-# visual category so the list scans by shape. Unknown intents fall back
-# to `·` so the bullet column stays aligned.
-RESPONDABLE_GLYPHS: dict[str, str] = {
-    "respond":      "💬",   # maintainer engaged — write a comment
-    "force-push":   "⬆️",   # rebase / squash / signed-commit required
-    "manual-merge": "🤝",   # maintainer wants you to hit the button
-    "sign-off":     "🖋",   # DCO / CLA — your name, not a bot's
-}
-
-
 def register(app: typer.Typer) -> None:
-    """Attach the floor command to a top-level Typer app."""
-    app.command("floor")(floor)
+    """Attach the cockpit command to a top-level Typer app."""
+    app.command("cockpit")(cockpit)
 
 
-def floor(
+def cockpit(
     include_wait: bool = typer.Option(False, "--include-wait", help="Also show retro/wait stations"),
-    spark_minutes: int = typer.Option(10, help="Sparkline bucket size in minutes"),
-    spark_buckets: int = typer.Option(12, help="Number of sparkline buckets (default 12 × 10min = 2h)"),
+    spark_minutes: int = typer.Option(20, help="Sparkline bucket size in minutes"),
+    spark_buckets: int = typer.Option(12, help="Number of sparkline buckets (default 12 × 20min = 4h)"),
     rich_mode: bool = typer.Option(False, "--rich", help="Render Rich panels instead of markdown"),
     plain: bool = typer.Option(False, "--plain", help="Force plain markdown (default: styled via glow when stdout is a TTY)"),
     watch: bool = typer.Option(False, "--watch", "-w", help="Refresh continuously as a live dashboard"),
@@ -69,8 +57,8 @@ def floor(
     """Factory-floor cockpit — single status line, compressed pipeline flow,
     per-station table. The operator's "what's the line doing right now" view.
 
-    Pairs with `sweep kanban` (per-station swim lanes with PR detail). Floor
-    is the gemba view; kanban is the work-in-progress board.
+    Pairs with `sweep lanes` (per-station swim lanes with PR detail). Cockpit
+    is the gemba view; lanes is the work-in-progress board.
 
     Defaults to styled output via glow when stdout is a TTY (you ran the
     command yourself). Pipes / redirects get raw markdown so scripts can
@@ -141,6 +129,44 @@ def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
     _render_markdown(rows, flow_states, spark_minutes, spark_buckets)
 
 
+def _prospect_status() -> str | None:
+    """Demand-driven prospect: report puller's current state. One of:
+      'ready'         — slack present, pulling continuously
+      'firing'        — mid-pass
+      'blocked: <reason>' — waiting on triage/investigate cap, pause,
+                            or retro halt
+    Returns None on any error so cockpit stays renderable even when
+    temporal / the puller is unavailable."""
+    import asyncio
+
+    async def fetch() -> str | None:
+        try:
+            from temporalio.client import Client
+            from sweep.cli._common import PROSPECT_PULLER_ID
+            from sweep.system import TEMPORAL_ADDR
+
+            c = await Client.connect(TEMPORAL_ADDR)
+            state = await c.get_workflow_handle(PROSPECT_PULLER_ID).query("state")
+            return state.get("last_state") or None
+        except Exception:
+            return None
+
+    try:
+        return asyncio.run(fetch())
+    except Exception:
+        return None
+
+
+def _window_label(spark_minutes: int, spark_buckets: int) -> str:
+    """Compact window label: '4hrs' beats '20m × 12, % of cap'. Reader
+    doesn't care about bucket arithmetic; they care about depth."""
+    total_min = spark_minutes * spark_buckets
+    if total_min % 60 == 0:
+        hours = total_min // 60
+        return f"{hours}hr" if hours == 1 else f"{hours}hrs"
+    return f"{total_min}min"
+
+
 def _build_rows(states, actionable, spark_minutes, spark_buckets):
     rows = []
     for actor in actionable:
@@ -204,9 +230,10 @@ def _render_flow(flow_states: dict[str, dict[str, list[dict]]]) -> str:
         # drawn, so a queued count reads as sitting in an open bucket.
         # Differentiates inboxes (containers caught from above) from WIP
         # (parens, sideways-opening, things in motion through hands).
-        prefix = f"⌊{queued}⌋ " if queued > 0 else ""
+        # Always shown (including ⌊0⌋) so columns read as a row of
+        # consistent chips, not an irregular gap of names.
         suffix = f"({in_flight})" if in_flight > 0 else ""
-        parts.append(f"{prefix}{name}{suffix}")
+        parts.append(f"⌊{queued}⌋ {name}{suffix}")
     return " ~ ".join(parts)
 
 
@@ -214,13 +241,20 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     sys = system_status()
     cpu = sys.get("cpu", 0.0)
     mem = sys.get("mem", 0.0)
-    running = sys.get("running", [])
 
-    print("# coding factory — floor")
+    print("# coding factory — cockpit")
     print()
 
-    runline = f"{len(running)} agents" if running else "0 agents"
-    parts = [f"cpu {cpu:.0f}%", f"mem {mem:.0f}%", runline]
+    # Status line: only signals the operator can act on. Actor count is
+    # implementation detail (it's always "the actors that should be
+    # running"); cockpit isn't a process monitor. Use `sweep status` for
+    # that.
+    parts = [f"cpu {cpu:.0f}%", f"mem {mem:.0f}%"]
+    # Prospect puller state — answers "is new work flowing, or blocked?"
+    # Best-effort query; silent if temporal/puller unavailable.
+    pstate = _prospect_status()
+    if pstate:
+        parts.append(f"⏱ prospect: {pstate}")
     # Operator flags render only when active — quiet state stays quiet.
     # 🚦 (traffic light) for pause; 🌵 (cactus, "rehearsing in the
     # desert") for dry. Both can coexist.
@@ -247,59 +281,24 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     print(f"`{' · '.join(parts)}`")
     print()
 
-    print(f"`{_render_flow(flow_states)}`  _| `sweep kanban`_")
+    print(f"`{_render_flow(flow_states)}`")
     print()
 
-    print(f"| station | queued | in-flight | rate | var | trend ({spark_minutes}m × {spark_buckets}, % of cap) | oldest | status |")
+    print(f"| Station | Queued | In-flight | Rate | Var | Trend ( {_window_label(spark_minutes, spark_buckets)} ) | Oldest | Status |")
     print( "|---|---:|---:|---:|:-:|---|---|---|")
     for actor, queued, in_flight, rate_str, var_glyph, spark, oldest, status in rows:
         print(
-            f"| → {actor} | {queued} | {in_flight} | {rate_str} | `{var_glyph}` "
+            f"| {FLOW_NAMES.get(actor, actor)} | {queued} | {in_flight} | {rate_str} | `{var_glyph}` "
             f"| `{spark}` | {oldest} | {status} |"
         )
 
-    _render_inbox(flow_states.get("respondable"))
-
-
-def _render_inbox(s: dict[str, list[dict]] | None) -> None:
-    """The human inbox under the table. Two sources, one list:
-
-      🌱 actionable retro pagers — read, fold into commits, discard
-      💬/⬆️/🤝/🖋 respondable PRs — maintainer needs a human response
-
-    Retros come first because they're the rarer, stronger signal: an
-    actionable retro is a prescription that closes the pipeline's
-    backward pass. Respondable PRs are the routine work. Section is
-    hidden entirely when both are empty."""
-    lines: list[str] = []
-
-    # Actionable retros first — file:// link so the operator opens the
-    # SOAP one-pager in one click rather than running a separate command.
-    for r in retro_state.list_retros():
-        if not retro_state.has_prescription(r):
-            continue
-        lines.append(f"- 🌱 [retro {r.name}]({r.path.as_uri()})")
-
-    # Respondable PRs.
-    if s:
-        msgs = sorted(s.get("queued", []) + s.get("in_flight", []),
-                      key=lambda m: m.get("ts", ""))
-        for m in msgs:
-            repo = m.get("repo", "?")
-            pr = m.get("pr") or "-"
-            intent = m.get("intent", "")
-            payload = m.get("payload") or {}
-            reason = payload.get("reason", "")
-            url = f"https://github.com/{repo}/pull/{pr}"
-            glyph = RESPONDABLE_GLYPHS.get(intent, "·")
-            suffix = f" — {reason}" if reason else ""
-            lines.append(f"- {glyph} [{repo}#{pr}]({url}){suffix}")
-
-    if not lines:
-        return
-    print()
-    for line in lines:
-        print(line)
+    # Inbox: emoji-only status under the table. Cockpit summarizes;
+    # `sweep inbox` carries the detail. Hidden when empty.
+    from sweep.cli.inbox import operator_inbox_lines
+    n = len(operator_inbox_lines())
+    if n:
+        print()
+        print(f"📥 {n}  _| `sweep inbox`_")
 
 
 # ---------------------------------------------------------- rich render
@@ -344,7 +343,7 @@ def _render_rich(rows) -> None:
         panels.append(Panel(body, title=f"[bold]{actor}[/]", border_style=border, width=22, padding=(0, 1)))
 
     console.print()
-    console.print(Text("                       coding factory — kanban", style="bold dim"))
+    console.print(Text("                       coding factory — lanes", style="bold dim"))
     console.print()
     console.print(Columns([source] + panels, equal=False, padding=(0, 1)))
     console.print()

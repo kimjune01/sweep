@@ -1,6 +1,6 @@
 """`sweep pr <repo>#<pr>` — per-PR drill-down view.
 
-Same visual register as `sweep floor` and `sweep kanban`: one screen of
+Same visual register as `sweep cockpit` and `sweep lanes`: one screen of
 markdown, truncated sections, trailing `| <command>` pointers to the
 full detail. Read-only.
 
