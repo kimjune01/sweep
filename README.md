@@ -20,21 +20,7 @@ Two operator views — both emit GitHub-flavored markdown, both render styled in
 
 One screen: status line, compressed pipeline flow, per-station table, human inbox under the table.
 
-> `cpu 0% · mem 46% · 0 agents · 🌱 retro`
->
-> `Triage ~ Investigate ~ ⌊8⌋ QA ~ ⌊1⌋ Drip ~ ⌊19⌋ In Review ~ Respondable`  _| `sweep lanes`_
->
-> | station       | queued | in-flight | rate  | var | trend (10m × 12, % of cap) | oldest | status                |
-> | ------------- | -----: | --------: | ----: | :-: | -------------------------- | ------ | --------------------- |
-> | → triaged     |      0 |         0 | 0.0/h |  ·  |                            |   —    | idle                  |
-> | → investigate |      0 |         0 | 0.0/h |  ·  |                            |   —    | idle                  |
-> | → qa          |      8 |         0 | 0.0/h |  ·  |                            |  10h   | **queue capped** (8/3) |
-> | → drip        |      1 |         0 | 0.0/h |  ·  |                            |  10h   | queued                |
-> | → respondable |      1 |         0 | 0.5/h |  ●  |  ▁                         |   0s   | queued                |
->
-> - 🌱 [retro 2026-05-15-1319](file:///Users/you/.sweep/retros/2026-05-15-1319.md)
-> - 💬 [mgree/ffs#146](https://github.com/mgree/ffs/pull/146) — maintainer asked: opt-in?
-> - ⬆️ [sharkdp/bat#3741](https://github.com/sharkdp/bat/pull/3741) — rebase onto main
+![sweep cockpit screenshot](docs/cockpit.png)
 
 Read top-to-bottom: status (is the line green?), flow (where's the pressure?), table (per-station numbers), inbox (what *you* owe — every other station belongs to an LLM actor). Each row tells you more than the one above; scan as far as you need.
 
@@ -194,7 +180,7 @@ cd ~/Documents/sweep
 uv run sweep-worker
 ```
 
-The worker registers `QaActor`, `PrStateWorkflow`, and all activities against task queue `sweep-tq` and waits for signals.
+The worker registers `QaActor`, `SkillActor` (drip/triage/investigate), `PrStateWorkflow`, `ProspectPuller`, `UsagePoller`, `NotificationPoller`, and all their activities against task queue `sweep-tq` and waits for signals.
 
 ### 5. Drive the pipeline
 
@@ -213,6 +199,7 @@ The worker registers `QaActor`, `PrStateWorkflow`, and all activities against ta
 | `sweep retro` | SOAP one-pager pager — list / status / show / discard / record |
 | `sweep dry` | Toggle dry mode (rehearse without external mutations) — on / off / status |
 | `sweep pause` | Toggle soft-pause (no new dequeues; in-flight completes) — on / off / status |
+| `sweep andon` | List + clear halted-actor markers (`list` / `clear <actor>`) |
 | `sweep models` | Model registry, role defaults, adversary cascade |
 
 ```bash
@@ -270,7 +257,9 @@ gh search ──► pr-state ──┬─► QaActor       ──► codex/gemin
                          └─► retro            ► audit / SOAP one-pagers
 ```
 
-`pr-state` runs as a recurring workflow (cron-scheduled), classifies every open authored PR into a bucket, and signals the matching actor with a `Message`. The actor's signal handler dedupes on `msg_id` (idempotent receivers), the workflow processes one message at a time (WIP=1 — the activity signature accepts only one repo + one branch), and posts an ack when done.
+`pr-state` runs in two shapes. **Steady state**: a `NotificationPoller` workflow polls GitHub's `/notifications` endpoint every 60s and only touches PRs whose state actually changed — ~20× cheaper than rescanning every open authored PR on a cadence. GitHub's unread bit is the cross-restart watermark; threads are mark-read only after the downstream actor delivery succeeds, so a wedged pipe re-fetches on recovery. **Manual escape hatch**: `sweep pr-state run` (or the standalone `PrStateWorkflow`) does a full classify pass — useful after responding to a maintainer (your own comment doesn't trigger a notification, so the steady-state poller won't pick up the reclassification until the *next* external event).
+
+Either path classifies each open authored PR into a bucket and signals the matching actor with a `Message`. The actor's signal handler dedupes on `msg_id` (idempotent receivers), the workflow processes one message at a time (WIP=1 — the activity signature accepts only one repo + one branch), and posts an ack when done.
 
 ### Receipts and attestations
 
@@ -308,6 +297,8 @@ async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
 ```
 
 Failed assertion → `ApplicationError(non_retryable=True)` → Temporal records the stack trace in workflow history → the actor's signal-handling loop catches it and flips `self.halted = True`. The workflow keeps existing and buffering signals, but stops processing until you send a `clear_andon` signal (after fixing the root cause).
+
+When an actor halts it also writes a marker to `~/.sweep/control/andon/<actor>.json` — `sweep cockpit` shows a loud 🚨 banner at the top while any marker exists, and the operator clears it with `sweep andon clear <actor>` (or lists them with `sweep andon list`). Same loud treatment for `🚦 paused`; DRY stays a chip.
 
 The andon path runs on **every** invocation — there's no dev/prod split for assertions. Pulling the cord is just a test that runs in production. The test scaffolding uses Haiku (variance ~15%) to exercise the assertion paths ~14× more often than Opus would, so by the time you flip to Opus the gate logic is battle-tested.
 
@@ -405,7 +396,7 @@ jobs:
   quality-gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: kimjune01/sweep@master
+      - uses: kimjune01/sweep@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # required, ~$0.001/PR
