@@ -62,3 +62,23 @@ If gemini is stubbed (no subscription), the composer records `gemini_first/last 
 ## Standalone use
 
 The CLI is the interface. Any process that calls `sweep qa full` (or composes `sweep qa test` + the codex/gemini steps) substitutes for this skill. Manual reviewers, external CI signals, alternative reviewer pairs all plug into the same composer.
+
+## Output contract (machine-readable, REQUIRED)
+
+After all narration, the **last printed line** must be a single JSON object matching this schema:
+
+```json
+{
+  "verdict":       "pass | fail | needs_human",
+  "issues_found":  [],
+  "reason":        "short string, ≤200 chars",
+  "rejected":      false,
+  "reject_reason": null
+}
+```
+
+`verdict=pass` means both adversaries converged on "ship it" and the test attestation is intact. `fail` means at least one substantive bug found that blocks. `needs_human` means non-substantive concerns that need operator judgment (maintainer-style mismatch, ambiguous bug). `issues_found` is an array of short strings; empty when verdict=pass.
+
+Set `rejected=true` with a `reject_reason` when QA cannot run (missing worktree, unrunnable tests, broken branch — distinct from "tests failed," which is `verdict=fail`). Rejected jobs route to `~/.sweep/inbox/rejected.jsonl` for operator review.
+
+Print the JSON as the literal last line, no trailing prose, no markdown fence.

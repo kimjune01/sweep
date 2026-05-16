@@ -110,10 +110,34 @@ That writes to `~/.sweep/inbox/investigate.jsonl` and signals InvestigateActor. 
 
 ## Exit
 
-Return a one-line summary to stdout:
+Return a one-line summary to stdout for the human reader:
 
 ```
 <decision> <repo>#<issue> score=<n> reason=<tag>
 ```
 
 That's the whole skill. Score, decide, emit, enqueue if investigate, exit. The hypothesis graph belongs to /investigate; the worktree belongs to /investigate; the PR push belongs to /drip. Triage's only job is the structured per-issue decision.
+
+## Output contract (machine-readable, REQUIRED)
+
+After all narration, the **last printed line** must be a single JSON object matching this schema. The downstream wrapper (`sweep.skill_result.shim`) parses this to drive observability and routing — without it, the wrapper falls back to brittle stdout-tail heuristics or marks your run as `triage_no_attestation`.
+
+```json
+{
+  "decision":      "drop | surface | investigate | defer",
+  "score":         0,
+  "reason":        "short string, ≤200 chars",
+  "rejected":      false,
+  "reject_reason": null
+}
+```
+
+Set `"rejected": true` with a `reject_reason` when you cannot fulfill the job (missing repo context, malformed issue ref, ambiguous target). A rejected job is routed to `~/.sweep/inbox/rejected.jsonl` for operator review instead of being ack'd as decided. Rejection is distinct from `decision: "drop"` — drop means "I evaluated and chose to skip"; rejection means "I couldn't evaluate at all."
+
+Print the JSON as the literal last line (no trailing prose, no markdown fence). Example:
+
+```
+… (narration above) …
+investigate kimjune01/sweep#42 score=8 reason=clear-repro
+{"decision":"investigate","score":8,"reason":"clear repro, single-file fix shape","rejected":false,"reject_reason":null}
+```

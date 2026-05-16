@@ -164,35 +164,35 @@ async def triage_cycle(msg: Message) -> dict:
                 "decision": cached.get("decision")}
     ref = f"{msg.repo}#{msg.pr}"
     result = await _run_skill(["/triage", ref], label="triage", timeout_s=180)
-    # Shim Sonnet over the skill's stdout to get a schema-guaranteed
-    # decision dict. Subscription-friendly. Falls back to reading the
-    # attestation file (and then to triage_no_attestation) so we keep
-    # backward compat with skill invocations that pre-date the shim.
+    # Artifact-first: the attestation file is /triage's durable
+    # contract. Read it; if present, that's the canonical decision.
+    # Stdout-based shim is a degraded-mode fallback for the case
+    # where the skill ran but failed to write the file.
     from sweep import skill_result
+    fresh = _read_triage_attestation(msg.repo, msg.pr)
+    if fresh is not None:
+        observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
+                      decision=fresh.get("decision", "unknown"),
+                      reason=str(fresh.get("reason", ""))[:200],
+                      score=fresh.get("score", 0))
+        return result
+    # Attestation missing — degraded mode. Try the shim on stdout
+    # to salvage the decision, then routing the rejection if the
+    # skill explicitly declined.
     parsed = skill_result.shim("triage", result.get("stdout_tail", ""))
     if skill_result.is_rejected(parsed):
-        # Skill declined the job. Route the original msg to the
-        # rejected inbox for operator review; do NOT emit a normal
-        # triage_decision (that would mark this item as decided).
         skill_result.record_rejection("triage", msg.__dict__, parsed)
         return result
     if parsed:
         observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
                       decision=parsed.get("decision", "unknown"),
-                      reason=str(parsed.get("reason", ""))[:200],
+                      reason="shim-fallback: " + str(parsed.get("reason", ""))[:180],
                       score=int(parsed.get("score") or 0))
         return result
-    # Shim couldn't parse stdout. Fall back to the attestation file
-    # the skill writes as a side-effect.
-    fresh = _read_triage_attestation(msg.repo, msg.pr)
-    if fresh is not None:
-        observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
-                      decision=fresh.get("decision", "unknown"),
-                      reason="attestation-fallback: " + str(fresh.get("reason", "")),
-                      score=fresh.get("score", 0))
-    else:
-        observe.event("triage_no_attestation", repo=msg.repo,
-                      issue=msg.pr, rc=result.get("rc", 0))
+    # Neither artifact nor shim. Surface the failure mode explicitly
+    # so it's visible to leakdog rather than silently lost.
+    observe.event("triage_no_attestation", repo=msg.repo,
+                  issue=msg.pr, rc=result.get("rc", 0))
     return result
 
 
@@ -250,13 +250,32 @@ async def investigate_cycle(msg: Message) -> dict:
     ref = f"{msg.repo}#{msg.pr}"
     from sweep import budget as _budget, observe, skill_result
     _budget.record_subprocess_estimate("investigate")
+
+    # Note the artifact's mtime BEFORE running so we can detect a
+    # fresh write vs an old file. Artifact path convention:
+    # `repo-hypotheses/<owner>__<repo>__<issue>.md` (per-issue).
+    artifact = _investigate_artifact_path(msg.repo, msg.pr)
+    before_mtime = artifact.stat().st_mtime if artifact.exists() else 0.0
+
     result = await _run_skill(["/investigate", ref], label="investigate",
                               timeout_s=1800)
-    # Shim first: ask Sonnet to extract the structured outcome from
-    # the skill's stdout. Falls back to the original stdout-tail
-    # heuristics when the shim can't parse (so we still get partial
-    # signal during the rollout window when skills haven't been
-    # taught to emit JSON yet).
+
+    # Artifact-first: /investigate's canonical contract is the
+    # hypothesis graph file. If it was freshly written (mtime
+    # advanced or file appeared), that's the durable record — count
+    # produced_pr=true and emit. Stdout shim is fallback only.
+    after_mtime = artifact.stat().st_mtime if artifact.exists() else 0.0
+    artifact_written = after_mtime > before_mtime
+    if artifact_written:
+        observe.event(
+            "investigate_done", repo=msg.repo, issue=msg.pr,
+            rc=result.get("rc", 0), produced_pr=True, no_fix=False,
+            summary=f"artifact: {artifact.name}",
+            artifact_path=str(artifact),
+        )
+        return result
+
+    # Artifact missing — degraded mode. Try the shim on stdout.
     parsed = skill_result.shim("investigate", result.get("stdout_tail", ""))
     if skill_result.is_rejected(parsed):
         skill_result.record_rejection("investigate", msg.__dict__, parsed)
@@ -267,10 +286,10 @@ async def investigate_cycle(msg: Message) -> dict:
             rc=result.get("rc", 0),
             produced_pr=bool(parsed.get("produced_pr")),
             no_fix=bool(parsed.get("no_fix")),
-            summary=str(parsed.get("summary", ""))[:200],
+            summary="shim-fallback: " + str(parsed.get("summary", ""))[:180],
         )
         return result
-    # Heuristic fallback (pre-shim behavior).
+    # Last-ditch heuristic so the funnel still shows *something*.
     tail = (result.get("stdout_tail") or "").lower()
     produced_pr = ("pull/" in tail or "opened pr" in tail
                    or "pushed branch" in tail or "drip-ready" in tail)
@@ -279,6 +298,13 @@ async def investigate_cycle(msg: Message) -> dict:
     observe.event(
         "investigate_done", repo=msg.repo, issue=msg.pr,
         rc=result.get("rc", 0), produced_pr=produced_pr, no_fix=no_fix,
-        summary="(heuristic-fallback, shim parse failed)",
+        summary="(heuristic-fallback, no artifact and no shim parse)",
     )
     return result
+
+
+def _investigate_artifact_path(repo: str, issue: int):
+    """Per-issue hypothesis graph: repo-hypotheses/<owner>__<repo>__<issue>.md"""
+    from pathlib import Path
+    slug = repo.replace("/", "__")
+    return Path("/Users/junekim/Documents/sweep/repo-hypotheses") / f"{slug}__{issue}.md"

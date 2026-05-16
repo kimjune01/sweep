@@ -97,3 +97,22 @@ Five rounds max. [Won't converge to zero findings](https://june.kim/does-iterati
 - Heartbeat loop. (`sweep drip watch` or `/loop 15m /drip`.)
 - Status enum, queue schema. (Harness owns it.)
 - Decide `max_open` or `max_open_per_org`. (Retro params, surfaced by the CLI.)
+
+## Output contract (machine-readable, REQUIRED)
+
+After all narration, the **last printed line** must be a single JSON object matching this schema:
+
+```json
+{
+  "pushed":        false,
+  "pr_url":        "https://github.com/owner/repo/pull/N or null",
+  "outcome":       "pushed | rebased | checked | noop | failed",
+  "reason":        "short string, ≤200 chars",
+  "rejected":      false,
+  "reject_reason": null
+}
+```
+
+`pushed=true` iff a commit or PR actually hit the remote on this run. `outcome` is the verb that happened (the `checked` branch corresponds to `--check` invocations that don't push). Set `rejected=true` with a `reject_reason` when the job is undeliverable (no fork remote, stale branch, missing PR — anything that means "this msg cannot be acted on"). Rejected jobs route to `~/.sweep/inbox/rejected.jsonl` for operator review.
+
+Print the JSON as the literal last line, no trailing prose, no markdown fence.

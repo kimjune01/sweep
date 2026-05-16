@@ -249,7 +249,50 @@ def render_leakdog(hours: int = 24) -> list[str]:
         lines += ["", "**Rejected jobs (operator review):**", ""]
         for skill, n in rejected:
             lines.append(f"- `{skill}` × {n}")
+
+    # Shim compliance — what fraction of skill outputs landed clean
+    # vs needed Sonnet normalization vs fell through to heuristics.
+    # The shim absorbs non-compliance; this row exposes it so the
+    # producer pressure isn't invisible (the TDD-vs-shim trade).
+    compliance = _shim_compliance()
+    if compliance:
+        lines += ["", "**Shim compliance (skill JSON output):**", ""]
+        for row in compliance:
+            lines.append(row)
     return lines
+
+
+def _shim_compliance() -> list[str]:
+    """Read shim_clean_fast / shim_normalized / shim_fallback counters
+    by skill, format as `skill clean% normalized% fallback% (N total)`
+    rows. Returns [] when no shim activity yet."""
+    from sweep import observe
+    counters = observe.counters_all()
+    by_skill: dict[str, dict[str, int]] = {}
+    for k, v in counters.items():
+        for prefix, bucket in (
+            ("shim_clean_fast:", "clean"),
+            ("shim_normalized:", "normalized"),
+            ("shim_fallback:",   "fallback"),
+        ):
+            if k.startswith(prefix):
+                skill = k[len(prefix):]
+                by_skill.setdefault(skill, {"clean": 0, "normalized": 0, "fallback": 0})
+                by_skill[skill][bucket] = v
+                break
+    rows: list[str] = []
+    for skill in sorted(by_skill):
+        d = by_skill[skill]
+        total = d["clean"] + d["normalized"] + d["fallback"]
+        if not total:
+            continue
+        pct = lambda x: f"{100 * x // total:3d}%"
+        rows.append(
+            f"- `{skill}` — clean {pct(d['clean'])} · "
+            f"normalized {pct(d['normalized'])} · "
+            f"fallback {pct(d['fallback'])} (n={total})"
+        )
+    return rows
 
 
 def _rejected_summary(hours: int) -> list[tuple[str, int]]:

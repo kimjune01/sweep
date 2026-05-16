@@ -113,22 +113,71 @@ DEFAULT_SHIM_MODEL = "sonnet"
 # to heuristics — better than blocking the activity for 2 minutes.
 SHIM_TIMEOUT_S = 30
 
+# Hard size cap on shim input. Anything larger gets skipped — the
+# wrapper falls back to artifact-on-disk (the canonical contract for
+# every skill). The shim exists to salvage *small* skill output where
+# parsing free-form might still produce a decision; it is NOT a tool
+# for digesting long /investigate transcripts. 4KB ≈ ~1000 tokens,
+# well within Sonnet subscription cost without burning a window.
+SHIM_MAX_INPUT_CHARS = 4000
+
 
 def shim(skill_name: str, raw_stdout: str, *,
          model: str = DEFAULT_SHIM_MODEL) -> dict[str, Any]:
     """Extract the schema for `skill_name` from `raw_stdout`. Returns
     `{}` on any failure — callers should treat the empty dict as
-    "shim couldn't help, use heuristics" rather than as a decision."""
+    "shim couldn't help, use heuristics" rather than as a decision.
+
+    Also: if `raw_stdout` already contains a clean schema-shaped JSON
+    as the last line, parse it directly without calling Sonnet (the
+    fast path; what the spec asks skills to produce). Counters
+    `shim_clean_fast`, `shim_normalized`, `shim_fallback` track which
+    path fired per skill — leakdog reads them so non-compliance is
+    visible, not hidden by the shim's absorption."""
+    from sweep import observe
     schema = SCHEMAS.get(skill_name)
     if not schema or not raw_stdout.strip():
+        observe.incr(f"shim_fallback:{skill_name}")
         return {}
+
+    # Fast path: did the skill emit a clean JSON last line per spec?
+    # If so, parse it directly — no Sonnet call needed, no size limit.
+    last = raw_stdout.strip().splitlines()[-1].strip()
+    if last.startswith("{") and last.endswith("}"):
+        parsed = _parse_json(last)
+        if parsed and _matches_schema(parsed, schema):
+            observe.incr(f"shim_clean_fast:{skill_name}")
+            return parsed
+
+    # Size cap: refuse to send long transcripts to Sonnet — the
+    # wrapper has a canonical artifact-on-disk fallback that's both
+    # cheaper and more reliable. Only small free-form output gets
+    # the normalization pass.
+    if len(raw_stdout) > SHIM_MAX_INPUT_CHARS:
+        observe.incr(f"shim_skipped_too_large:{skill_name}")
+        return {}
+
+    # Normalization path: send to Sonnet for extraction.
     system = _build_prompt(skill_name, schema)
     try:
         out = llm_cli.call(system, raw_stdout,
                            model=model, timeout_s=SHIM_TIMEOUT_S)
     except Exception:
+        observe.incr(f"shim_fallback:{skill_name}")
         return {}
-    return _parse_json(out)
+    parsed = _parse_json(out)
+    if parsed and _matches_schema(parsed, schema):
+        observe.incr(f"shim_normalized:{skill_name}")
+        return parsed
+    observe.incr(f"shim_fallback:{skill_name}")
+    return parsed  # may still be partial; caller decides whether to use
+
+
+def _matches_schema(parsed: dict, schema: dict) -> bool:
+    """Loose check: every schema key present (value type isn't enforced
+    here — the wrapper handles type coercion). Used as the "this was
+    actually clean" signal vs the "we got garbage" signal."""
+    return all(k in parsed for k in schema)
 
 
 def _build_prompt(skill_name: str, schema: dict[str, str]) -> str:
