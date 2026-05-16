@@ -42,7 +42,7 @@ def _refresh() -> dict:
             f"author:{user}",
             state="open",
             limit=200,
-            fields="repository,number,title,updatedAt",
+            fields="repository,number,title,updatedAt,createdAt",
             ttl=300,
         )
     except subprocess.CalledProcessError:
@@ -59,6 +59,7 @@ def _refresh() -> dict:
             "pr": pr.get("number"),
             "title": pr.get("title", ""),
             "updated_at": pr.get("updatedAt", ""),
+            "created_at": pr.get("createdAt", ""),
         })
 
     result = {

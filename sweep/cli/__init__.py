@@ -26,11 +26,14 @@ import typer
 from sweep import missing_calls, models as _models
 from sweep.cli import cockpit as _cockpit
 from sweep.cli import lanes as _lanes
+from sweep.cli import claim as _claim
+from sweep.cli import investigate as _investigate
 from sweep.cli import missing as _missing
 from sweep.cli import tui as _tui
 from sweep.cli import waste as _waste
 from sweep.cli import wish as _wish
 from sweep.cli import pr as _pr
+from sweep.cli.andon import andon_app
 from sweep.cli.attest import attest_app
 from sweep.cli.control import dry_app, pause_app
 from sweep.cli.lifecycle import down_app, status_app, up_app
@@ -48,6 +51,7 @@ app = typer.Typer(
     no_args_is_help=True,
     pretty_exceptions_enable=False,
 )
+app.add_typer(andon_app, name="andon")
 app.add_typer(qa_app, name="qa")
 app.add_typer(pr_state_app, name="pr-state")
 app.add_typer(prospect_app, name="prospect")
@@ -64,6 +68,8 @@ app.add_typer(status_app, name="status")
 _cockpit.register(app)
 _lanes.register(app)
 _pr.register(app)
+_claim.register(app)
+_investigate.register(app)
 _missing.register(app)
 _tui.register(app)
 _waste.register(app)

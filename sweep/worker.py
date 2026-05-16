@@ -20,19 +20,41 @@ from sweep.activities.pr_state import (
     gh_search_open_authored,
     route_classified,
 )
-from sweep.activities.drip import drip_cycle
+from sweep.activities.claim import claim_issue
 from sweep.activities.infer import infer_test_cmd
-from sweep.activities.prospect import check_pull_conditions, prospect_one_pass
+from sweep.activities.prospect import (
+    auto_evict_stale_repos,
+    check_pull_conditions,
+    loosen_floor,
+    prospect_one_pass,
+    prospect_recency_window,
+    reset_floor,
+    should_triage_issue,
+)
+from sweep.activities.notifications import (
+    mark_thread_read,
+    poll_github_notifications,
+)
+from sweep.activities.skill_runner import drip_cycle, investigate_cycle, triage_cycle
+from sweep.activities.usage_probe import probe_claude_usage
 from sweep.activities.qa import (
     codex_review,
     gemini_review,
     test_attestation,
 )
-from sweep.activities.worktree import ensure_worktree, mark_acked, mark_started
-from sweep.workflows.drip_actor import DripActor
+from sweep.activities.worktree import (
+    clear_andon_marker,
+    ensure_worktree,
+    mark_acked,
+    mark_started,
+    record_andon,
+)
+from sweep.workflows.notification_poller import NotificationPoller
 from sweep.workflows.pr_state_workflow import PrStateWorkflow
 from sweep.workflows.prospect_puller import ProspectPuller
 from sweep.workflows.qa_actor import QaActor
+from sweep.workflows.skill_actor import SkillActor
+from sweep.workflows.usage_poller import UsagePoller
 
 SWEEP_TASK_QUEUE = "sweep-tq"
 
@@ -43,21 +65,28 @@ async def _amain() -> None:
     worker = Worker(
         client,
         task_queue=SWEEP_TASK_QUEUE,
-        workflows=[QaActor, DripActor, PrStateWorkflow, ProspectPuller],
+        workflows=[QaActor, SkillActor, PrStateWorkflow, ProspectPuller, UsagePoller, NotificationPoller],
         activities=[
             # qa
             test_attestation, codex_review, gemini_review,
-            # inference
-            infer_test_cmd,
-            # drip
-            drip_cycle,
-            # prospect puller
-            prospect_one_pass, check_pull_conditions,
+            # inference + first-mover claim
+            infer_test_cmd, claim_issue,
+            # skill-shelling actors (drip + triage + investigate via SkillActor)
+            drip_cycle, triage_cycle, investigate_cycle,
+            # usage probe
+            probe_claude_usage,
+            # prospect puller (recency-first three-tier funnel)
+            prospect_recency_window, should_triage_issue, check_pull_conditions,
+            loosen_floor, reset_floor, auto_evict_stale_repos,
+            prospect_one_pass,  # legacy star-cursor path, kept as escape hatch
             # worktree + cockpit view-layer markers
             ensure_worktree, mark_started, mark_acked,
+            record_andon, clear_andon_marker,
             # pr-state
             gh_search_open_authored, gh_pr_view, classify_one_pr,
             deposit_classified, route_classified, deliver_to_inbox,
+            # notifications (push-shaped pr-state freshness)
+            poll_github_notifications, mark_thread_read,
         ],
     )
     logging.info("worker up on task queue=%s", SWEEP_TASK_QUEUE)

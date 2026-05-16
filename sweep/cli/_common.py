@@ -12,7 +12,11 @@ from sweep.types import QaOneEntryRequest
 SWEEP_TASK_QUEUE = "sweep-tq"
 QA_ACTOR_ID = "qa-actor"
 DRIP_ACTOR_ID = "drip-actor"
+TRIAGE_ACTOR_ID = "triage-actor"
+INVESTIGATE_ACTOR_ID = "investigate-actor"
 PROSPECT_PULLER_ID = "prospect-puller"
+USAGE_POLLER_ID = "usage-poller"
+NOTIFICATION_POLLER_ID = "notification-poller"
 
 
 def new_msg_id() -> str:

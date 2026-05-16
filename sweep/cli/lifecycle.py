@@ -75,14 +75,17 @@ def _reap_orphans(pattern: str, keep: int | None = None) -> None:
 
 def _spawn(argv: list[str], log_file: Path) -> int:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    fh = open(log_file, "ab")
-    proc = subprocess.Popen(
-        argv,
-        stdout=fh,
-        stderr=fh,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    # `with open(...)` closes the parent's fd after Popen inherits it —
+    # the child holds its own dup. Leaving the parent fd open leaks one
+    # fd per spawn across the lifetime of the `sweep up` invocation.
+    with open(log_file, "ab") as fh:
+        proc = subprocess.Popen(
+            argv,
+            stdout=fh,
+            stderr=fh,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
     return proc.pid
 
 
@@ -103,12 +106,16 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     """
     from temporalio.client import Client
     from sweep.cli._common import (
-        DRIP_ACTOR_ID, PROSPECT_PULLER_ID, QA_ACTOR_ID, SWEEP_TASK_QUEUE,
+        DRIP_ACTOR_ID, INVESTIGATE_ACTOR_ID, NOTIFICATION_POLLER_ID,
+        PROSPECT_PULLER_ID, QA_ACTOR_ID, SWEEP_TASK_QUEUE,
+        TRIAGE_ACTOR_ID, USAGE_POLLER_ID,
     )
     from sweep.system import TEMPORAL_ADDR
-    from sweep.workflows.drip_actor import DripActor
+    from sweep.workflows.notification_poller import NotificationPoller
     from sweep.workflows.prospect_puller import ProspectPuller
     from sweep.workflows.qa_actor import QaActor
+    from sweep.workflows.skill_actor import SkillActor
+    from sweep.workflows.usage_poller import UsagePoller
 
     deadline = time.monotonic() + timeout_s
     client = None
@@ -125,14 +132,22 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
 
     started: list[str] = []
     anomalies: list[str] = []
+    # (workflow_id, run-method, *args-to-run). SkillActor instances
+    # share a class and differ only by id + activity_name passed to run.
     actors = [
-        (QA_ACTOR_ID, QaActor.run),
-        (DRIP_ACTOR_ID, DripActor.run),
-        (PROSPECT_PULLER_ID, ProspectPuller.run),
+        (QA_ACTOR_ID,           QaActor.run,        ()),
+        (DRIP_ACTOR_ID,         SkillActor.run,     ("drip_cycle",)),
+        (TRIAGE_ACTOR_ID,       SkillActor.run,     ("triage_cycle",)),
+        (INVESTIGATE_ACTOR_ID,  SkillActor.run,     ("investigate_cycle",)),
+        (PROSPECT_PULLER_ID,    ProspectPuller.run, ()),
+        (USAGE_POLLER_ID,       UsagePoller.run,    ()),
+        (NOTIFICATION_POLLER_ID, NotificationPoller.run, ()),
     ]
-    for wf_id, run in actors:
+    for wf_id, run, run_args in actors:
         try:
-            await client.start_workflow(run, id=wf_id, task_queue=SWEEP_TASK_QUEUE)
+            await client.start_workflow(
+                run, args=list(run_args), id=wf_id, task_queue=SWEEP_TASK_QUEUE,
+            )
             started.append(wf_id)
         except Exception as e:
             if "already started" in str(e).lower() or "AlreadyStartedError" in type(e).__name__:
@@ -148,9 +163,15 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "qa", QaActor.deliver, QA_ACTOR_ID)
     if drained:
         anomalies.append(f"{QA_ACTOR_ID}: drained {drained} pending")
-    drained = await _drain_inbox(client, "drip", DripActor.deliver, DRIP_ACTOR_ID)
+    drained = await _drain_inbox(client, "drip", SkillActor.deliver, DRIP_ACTOR_ID)
     if drained:
         anomalies.append(f"{DRIP_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "triaged", SkillActor.deliver, TRIAGE_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{TRIAGE_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "investigate", SkillActor.deliver, INVESTIGATE_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{INVESTIGATE_ACTOR_ID}: drained {drained} pending")
     return started, anomalies
 
 
@@ -191,8 +212,11 @@ async def _drain_inbox(client, actor: str, deliver_method, wf_id: str) -> int:
         try:
             await handle.signal(deliver_method, msg)
             sent += 1
-        except Exception:
-            pass
+        except Exception as e:
+            from sweep import observe
+            observe.event("drain_signal_failed", actor=actor, wf_id=wf_id,
+                          msg_id=mid, error_type=type(e).__name__,
+                          error=str(e)[:300])
     return sent
 
 

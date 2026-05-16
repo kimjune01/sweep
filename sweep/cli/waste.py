@@ -147,6 +147,50 @@ def waste(
     for station, depth in depths.items():
         print(f"| {station} | {depth} |")
     print()
+    print("## Drowning depth (complexity ladder)")
+    print()
+    # Join prospect_deposited events (complexity per issue) with
+    # qa_converged outcomes (pass/fail per msg_id). Tells you which
+    # complexity tier the pipeline still handles cleanly and which
+    # tier it starts losing — the ceiling = where acceptance drops.
+    deposited = [e for e in events if e.get("kind") == "prospect_deposited"]
+    converged = {e.get("msg_id"): e for e in events if e.get("kind") == "qa_converged"}
+    depth_stats: dict[str, dict[str, int]] = {
+        d: {"deposited": 0, "passed": 0, "failed": 0}
+        for d in ("shallow", "medium", "deep", "unknown")
+    }
+    for e in deposited:
+        c = e.get("complexity", "unknown") or "unknown"
+        if c not in depth_stats:
+            c = "unknown"
+        depth_stats[c]["deposited"] += 1
+        # qa_converged carries verdict; match by some-id-form. The
+        # actor inbox msg_id transforms (prospect-... → router-... →
+        # qa-actor's seen set), so this join is best-effort by repo+pr.
+    for e in converged.values():
+        # qa_converged events carry repo/pr; find the matching
+        # deposit by repo+pr to attribute the outcome.
+        for dep in deposited:
+            if (dep.get("repo") == e.get("repo")
+                    and dep.get("issue") == e.get("pr")):
+                c = dep.get("complexity", "unknown") or "unknown"
+                if c not in depth_stats:
+                    c = "unknown"
+                if e.get("verdict") == "pass":
+                    depth_stats[c]["passed"] += 1
+                else:
+                    depth_stats[c]["failed"] += 1
+                break
+    print("| Depth | Deposited | Passed | Failed | Pass rate |")
+    print("|---|---:|---:|---:|---:|")
+    for depth in ("shallow", "medium", "deep", "unknown"):
+        s = depth_stats[depth]
+        total = s["passed"] + s["failed"]
+        rate = _pct(s["passed"], total) if total else "—"
+        print(f"| {depth} | {s['deposited']} | {s['passed']} | {s['failed']} | {rate} |")
+    print()
+    print("_Drowning depth = the row where pass rate falls off. Shallow/medium should be high. Deep is the frontier — falling pass rate there names the capability ceiling._")
+    print()
     print("## Top counters")
     print()
     counters = observe.counters_all()

@@ -6,6 +6,7 @@ with multiple repos or branches.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shlex
 import subprocess
@@ -94,7 +95,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     worktree = req.worktree
     log: list[str] = []
 
-    def _run(args: list[str]) -> subprocess.CompletedProcess:
+    async def _run(args: list[str]) -> subprocess.CompletedProcess:
         if not args or not args[0]:
             # Empty/blank command — caller misconfigured. Halt-worthy
             # because qa shouldn't guess at empty inputs.
@@ -102,7 +103,12 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
                 "test_cmd resolved to empty argv", non_retryable=True,
             )
         try:
-            return subprocess.run(args, cwd=worktree, capture_output=True, text=True)
+            # to_thread keeps the worker's asyncio loop free during
+            # long test-suite runs; otherwise polling stalls and
+            # Temporal sees the worker as gone.
+            return await asyncio.to_thread(
+                subprocess.run, args, cwd=worktree, capture_output=True, text=True,
+            )
         except FileNotFoundError as e:
             # Toolchain missing on this machine (cargo, go, npm, etc.).
             # Don't halt the whole actor — just skip this PR with a
@@ -118,18 +124,18 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     # conflict — caught by master_co below, but the blame would be wrong.
     # `git checkout HEAD -- .` is the in-place restore; bare `git checkout
     # HEAD` only confirms the current commit and leaves modifications.
-    head_co = _run(["git", "checkout", "--quiet", "HEAD", "--", "."])
+    head_co = await _run(["git", "checkout", "--quiet", "HEAD", "--", "."])
     if head_co.returncode != 0:
         raise ApplicationError(
             f"git checkout HEAD -- . failed (rc={head_co.returncode}): "
             f"{(head_co.stderr or '')[:300]}",
             non_retryable=True,
         )
-    default = _run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).stdout.strip()
+    default = (await _run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).stdout.strip()
     default = default.split("/", 1)[1] if "/" in default else "main"
 
     _heartbeat({"stage": "checkout_master"})
-    master_co = _run(["git", "checkout", "--quiet", default])
+    master_co = await _run(["git", "checkout", "--quiet", default])
     if master_co.returncode != 0:
         raise ApplicationError(
             f"git checkout {default} failed (rc={master_co.returncode}): "
@@ -137,7 +143,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
             non_retryable=True,
         )
     _heartbeat({"stage": "test_on_master"})
-    master_run = _run(shlex.split(req.test_cmd))
+    master_run = await _run(shlex.split(req.test_cmd))
     log.append(f"master ({default}) exit={master_run.returncode}")
     if master_run.returncode == 0:
         raise ApplicationError(
@@ -146,7 +152,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
         )
 
     _heartbeat({"stage": "checkout_fix"})
-    fix_co = _run(["git", "checkout", "--quiet", req.branch])
+    fix_co = await _run(["git", "checkout", "--quiet", req.branch])
     if fix_co.returncode != 0:
         raise ApplicationError(
             f"git checkout {req.branch} failed (rc={fix_co.returncode}): "
@@ -154,7 +160,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
             non_retryable=True,
         )
     _heartbeat({"stage": "test_on_fix"})
-    fix_run = _run(shlex.split(req.test_cmd))
+    fix_run = await _run(shlex.split(req.test_cmd))
     log.append(f"fix ({req.branch}) exit={fix_run.returncode}")
     if fix_run.returncode != 0:
         raise ApplicationError(
@@ -172,7 +178,10 @@ _REVIEW_SYSTEM = (
     "You are a structural code reviewer. Read the diff and decide whether "
     "the change is sound. Reply with a single verdict line of the form "
     "`verdict: pass`, `verdict: fail`, or `verdict: revise`, followed by a "
-    "one-paragraph reason. Keep the reason under 120 words."
+    "one-paragraph reason. Keep the reason under 120 words. "
+    "If the diff is unreadable, off-topic, or you cannot evaluate it, "
+    "output nothing. Empty is a legal answer; do not fabricate a verdict "
+    "you don't believe."
 )
 
 
@@ -197,26 +206,67 @@ def _parse_verdict(response: str) -> str:
 
 @activity.defn
 async def codex_review(req: QaOneEntryRequest, diff: str) -> GateAttestation:
-    """Send diff to adversary_1 (codex by default; haiku under test). Captures
-    the raw response as the gate receipt."""
+    """Adversary_1 review. Codex by default; when the codex CLI isn't
+    on PATH (subscription lapsed, machine moved, etc.), falls back to
+    claude --print so qa stays on subscription channels and doesn't
+    silently bill opus tokens through the API."""
     if not req.msg_id:
         raise ApplicationError("msg_id required", non_retryable=True)
 
-    model = models.default_for("adversary_1")
-    result = await llm_io.call(
-        model,
-        system=_REVIEW_SYSTEM,
-        user=_user_prompt(req, diff),
-        msg_id=req.msg_id,
-        repo=req.repo,
-        pr=req.issue,
-        max_tokens=400,
-        temperature=0.0,
-    )
-    att = _capture(req.msg_id, "codex", result.response, worktree=req.worktree)
-    att.verdict = _parse_verdict(result.response)
-    att.provenance = f"{model.nick}{'-cached' if result.cached else ''}"
+    import shutil
+    response_text: str
+    provenance: str
+    if shutil.which("codex"):
+        model = models.default_for("adversary_1")
+        result = await llm_io.call(
+            model,
+            system=_REVIEW_SYSTEM,
+            user=_user_prompt(req, diff),
+            msg_id=req.msg_id,
+            repo=req.repo,
+            pr=req.issue,
+            max_tokens=400,
+            temperature=0.0,
+        )
+        response_text = result.response
+        provenance = f"{model.nick}{'-cached' if result.cached else ''}"
+    else:
+        # Subscription fallback — shell to claude. Same prompt, same
+        # parsing. Less structural-reasoning specialty than codex, but
+        # keeps the line running on subscription instead of API spend.
+        response_text = await _claude_cli_review(_REVIEW_SYSTEM, _user_prompt(req, diff))
+        provenance = "claude-cli-fallback"
+    att = _capture(req.msg_id, "codex", response_text, worktree=req.worktree)
+    att.verdict = _parse_verdict(response_text)
+    att.provenance = provenance
     return att
+
+
+async def _claude_cli_review(system: str, user: str) -> str:
+    """Shell out to claude --print for one review pass. The combined
+    prompt embeds the system instructions in the message because the
+    CLI's --print mode is single-message. Returns the response text;
+    raises ApplicationError on failure so the actor's andon catches it.
+    Subprocess runs on a thread to keep the worker's asyncio loop free.
+    """
+    combined = f"{system}\n\n---\n\n{user}"
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run, ["claude", "--print", combined],
+            capture_output=True, text=True, timeout=180,
+        )
+    except FileNotFoundError as e:
+        raise ApplicationError(f"claude CLI fallback: not on PATH ({e})",
+                               non_retryable=True)
+    except subprocess.TimeoutExpired:
+        raise ApplicationError("claude CLI fallback: exceeded 180s",
+                               non_retryable=True)
+    if result.returncode != 0:
+        raise ApplicationError(
+            f"claude CLI fallback: rc={result.returncode} {(result.stderr or '')[:300]}",
+            non_retryable=True,
+        )
+    return result.stdout or ""
 
 
 @activity.defn

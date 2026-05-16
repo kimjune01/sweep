@@ -65,3 +65,27 @@ def observe_advance(
         raise typer.Exit(2)
     rows = observe.events_since_cursor(advance=True)
     print(f"advanced past {len(rows)} events; new offset = {observe.cursor_get()}")
+
+
+@observe_app.command("event")
+def observe_event(
+    kind: str = typer.Argument(..., help="Event kind, e.g. triage_decision"),
+    fields: list[str] = typer.Argument(None, help="key=value pairs; values parsed as JSON when possible"),
+) -> None:
+    """Append one structured event to events.jsonl. Skills (or any
+    process) emit decisions this way so retro can join across stages.
+
+    Example: sweep observe event triage_decision repo=foo/bar pr=12 \\
+                 decision=drop reason=stale_label
+    """
+    payload: dict = {}
+    for raw in fields or []:
+        if "=" not in raw:
+            raise typer.BadParameter(f"expected key=value, got {raw!r}")
+        k, v = raw.split("=", 1)
+        try:
+            payload[k] = json.loads(v)
+        except json.JSONDecodeError:
+            payload[k] = v
+    observe.event(kind, **payload)
+    print(f"ok: {kind}")

@@ -31,6 +31,29 @@ If `sweep drip check` returns "blocked: <reason>," **read the reason and act on 
 
 The CLI gives you the diff and 5 recently merged PRs from the repo. Your job: write a title and body that match. Match title format, body length, level of detail. Don't write a description; **inhabit the repo's voice**. The chameleon rule.
 
+### The receipt (deeper the reason, more explicit the receipt)
+
+The body's *content* follows a fixed shape — receipt format. Voice/tone still matches the repo's, but the structure shows the work:
+
+```
+<terse one-liner conclusion>
+
+- <reason why thing X doesn't work, natural language>
+- <reason why thing Y doesn't work, different angle>
+- <finally what worked, and why>
+
+[HG](https://github.com/kimjune01/sweep/blob/master/repo-hypotheses/<owner>__<repo>__<issue>.md)
+```
+
+Three rules for the bullets:
+- **Each bullet is one sentence**, in natural prose. Not a table, not "Hypothesis: ... Falsifier: ..." headers (that's bot prose; see wild#1924 retro).
+- **Lead with what didn't work** — the maintainer sees that you searched the space, not just landed on an answer. Two dead ends and one survivor is the calibration: it tells them how much was tried.
+- **Each bullet names a concrete thing**: a function, a flag, an observed behavior. "X doesn't work because Y" beats "we considered an alternative."
+
+The `[HG]` link points at the full investigation trace in this repo's `repo-hypotheses/` directory. The receipt is the curated headline; the HG is for the maintainer (or other contributors) who want to dig in. Most won't click; the existence of the link is the credibility signal.
+
+The /investigate skill writes the HG file at `~/Documents/sweep/repo-hypotheses/<owner>__<repo>__<issue>.md` before handing off to /drip. If the file is missing, omit the `[HG]` link rather than fake it.
+
 ### Codex lineup (hard block; LLM-shaped)
 
 After tone matching, shuffle the candidate description into 5 recently-merged PR descriptions from different contributors and ask `/codex`:

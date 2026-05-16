@@ -4,9 +4,13 @@ The OTP-shaped contract lives in these types: every activity input/output is
 structured, every msg_id is required, every gate attestation is typed. The
 type signatures are the WIP=1 and idempotence enforcement we used to scribble
 in skill prose.
-"""
 
-from __future__ import annotations
+Intentionally no `from __future__ import annotations`: temporal's payload
+converter resolves dataclass field type hints at activity-result decode
+time via `get_type_hints`, and stringified forward refs to module-level
+aliases like `Bucket = Literal[...]` don't survive that resolution inside
+the workflow sandbox.
+"""
 
 from dataclasses import dataclass, field
 from typing import Literal

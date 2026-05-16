@@ -8,15 +8,13 @@ policy change.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import llm_io, models, retro_params
-
-
-INFER_MODEL = models.default_for("orchestrate")
+from sweep import llm_cli, retro_params
 
 # Files that strongly signal the test convention. We read them (truncated)
 # into the LLM prompt. Order doesn't matter; the LLM looks at all of them.
@@ -87,8 +85,10 @@ async def infer_test_cmd(worktree: str, repo: str) -> str:
         "You read a repository's manifest and CI files and answer with "
         "the single shell command a maintainer would run locally to "
         "execute the test suite. One line, no backticks, no prose, no "
-        "explanation, no leading $. If the repo doesn't have tests or "
-        "the convention is unclear, output the literal string NONE."
+        "explanation, no leading $. If the repo doesn't have tests, "
+        "the convention is unclear, or the inputs are unreadable, "
+        "output nothing. Empty is a legal answer; do not guess at a "
+        "command you don't have evidence for."
     )
     user = (
         f"Repository: {repo}\n\n"
@@ -96,14 +96,11 @@ async def infer_test_cmd(worktree: str, repo: str) -> str:
         "Canonical local test command:"
     )
     try:
-        result = await llm_io.call(
-            INFER_MODEL, system=system, user=user,
-            repo=repo, max_tokens=40, temperature=0.0,
-        )
+        out = await asyncio.to_thread(llm_cli.call, system, user, timeout_s=120)
     except Exception as e:
         raise ApplicationError(f"infer_test_cmd LLM call failed: {e}",
                                non_retryable=True)
-    cmd = (result.response or "").strip().splitlines()[0].strip() if result.response else ""
+    cmd = out.strip().splitlines()[0].strip() if out else ""
     # Strip common LLM artifacts.
     for prefix in ("$ ", "> ", "`"):
         if cmd.startswith(prefix):

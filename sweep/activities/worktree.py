@@ -12,6 +12,7 @@ ApplicationError so the actor's andon cord catches them.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 from pathlib import Path
@@ -65,22 +66,45 @@ async def mark_acked(msg_id: str) -> None:
         f.write(json.dumps({"msg_id": msg_id}) + "\n")
 
 
+# Andon markers — one file per halted actor. Cockpit lists this dir to
+# decide whether to flash the 🚨 banner. File contents are the receipt
+# (what halted, why, when). Deleted on clear_andon signal.
+ANDON_DIR = Path.home() / ".sweep" / "control" / "andon"
+
+
 @activity.defn
-async def ensure_worktree(repo: str, branch: str) -> str:
-    """Return an absolute path to a working tree with `branch` checked out.
+async def record_andon(actor: str, msg_id: str, reason: str) -> None:
+    """Write a marker file when an actor halts. Cockpit reads the dir to
+    show a red banner. One file per actor (replaces any prior marker for
+    the same actor, since the actor only halts once at a time)."""
+    import datetime as _dt
+    import json
+    ANDON_DIR.mkdir(parents=True, exist_ok=True)
+    path = ANDON_DIR / f"{actor}.json"
+    payload = {
+        "actor": actor,
+        "msg_id": msg_id,
+        "reason": reason[:500],
+        "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+    }
+    path.write_text(json.dumps(payload))
 
-    Clones if missing. Fetches origin. Checks out `branch`. If the branch
-    isn't on the upstream remote (PR from a fork), tries the GitHub
-    pull/<pr>/head ref form via `gh pr checkout` if `branch` looks like
-    a PR ref. Reset is hard so a previous test_attestation's edits don't
-    persist between runs.
-    """
-    if "/" not in repo:
-        raise ApplicationError(f"repo must be owner/repo, got {repo!r}",
-                               non_retryable=True)
-    if not branch:
-        raise ApplicationError("branch required", non_retryable=True)
 
+@activity.defn
+async def clear_andon_marker(actor: str) -> None:
+    """Remove the marker file when an actor's andon is cleared. No-op if
+    the file doesn't exist (clearing an unhalted actor is fine)."""
+    path = ANDON_DIR / f"{actor}.json"
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _ensure_worktree_blocking(repo: str, branch: str) -> str:
+    """Synchronous body of ensure_worktree. Six git/gh subprocesses end-
+    to-end (up to ~minute on cold clone, 5–15s warm) — run via
+    asyncio.to_thread so the worker's event loop doesn't stall on git I/O."""
     WORKTREE_ROOT.mkdir(parents=True, exist_ok=True)
     path = _safe_dir(repo)
 
@@ -110,10 +134,6 @@ async def ensure_worktree(repo: str, branch: str) -> str:
         # using the PR-state-supplied branch name as the slug to look up.
         gh_co = _run(["gh", "pr", "checkout", branch], cwd=path)
         if gh_co.returncode != 0:
-            # Skip rather than halt: the PR likely came from a fork whose
-            # branch we can't resolve from name alone (gh needs a PR
-            # number for that), or has been deleted. Don't halt the qa
-            # line — move on to the next message.
             raise ApplicationError(
                 f"skip: cannot check out {repo}@{branch}: "
                 f"{(co.stderr or '')[:150]} / {(gh_co.stderr or '')[:150]}",
@@ -123,3 +143,20 @@ async def ensure_worktree(repo: str, branch: str) -> str:
     # Pull latest commits on the checked-out branch (no-op if PR ref).
     _run(["git", "pull", "--ff-only", "--quiet"], cwd=path)
     return str(path)
+
+
+@activity.defn
+async def ensure_worktree(repo: str, branch: str) -> str:
+    """Return an absolute path to a working tree with `branch` checked out.
+
+    Clones if missing. Fetches origin. Checks out `branch`. If the branch
+    isn't on the upstream remote (PR from a fork), tries the GitHub
+    pull/<pr>/head ref form via `gh pr checkout`. Reset is hard so a
+    previous test_attestation's edits don't persist between runs.
+    """
+    if "/" not in repo:
+        raise ApplicationError(f"repo must be owner/repo, got {repo!r}",
+                               non_retryable=True)
+    if not branch:
+        raise ApplicationError("branch required", non_retryable=True)
+    return await asyncio.to_thread(_ensure_worktree_blocking, repo, branch)

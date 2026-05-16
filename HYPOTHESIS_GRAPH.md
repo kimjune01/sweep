@@ -587,3 +587,43 @@ Falsifiers:
 How to apply: tag scientist-class repos in repos.jsonl with `reception: scientist`; weight their merges/closures more heavily as H17b evidence than the engineer baseline.
 
 
+
+## H18: Early claim earns standing and eases merge
+
+**Prediction:** Posting a brief "looking at this — fix shape is X, will open PR" comment on a freshly-filed issue, after /investigate's pushout converges, raises the merge rate and shortens time-to-merge for the resulting PR. Mechanism: the maintainer reads the claim while the bug context is still warm in their head, sees a coherent fix shape before competing PRs appear, and forms a "this contributor is on it" prior that survives into the actual review. Compounds with H2c (warm-org) — claim builds incremental warmth even on cold-org first contact.
+
+**Trigger:** post-investigate phase, gated per-repo by retro_param `claim_after_investigate=true|false` (default false). Operator opts in per repo from CONTRIBUTING signals: communities that welcome "I'll take this" comments (gitea-style) opt in; communities that prefer "just open the PR" (kernel-style) stay opt-out.
+
+**Operationalization:** every claim emits `issue_claimed` event with repo/issue/body_preview. Match against subsequent `qa_converged` and outcomes.py merged/closed records by repo+issue. Compute:
+- claim → merge rate vs no-claim → merge rate (same operator, same repo when possible)
+- claim → time-to-merge median vs no-claim → time-to-merge median
+- claim → comment count on PR (proxy for friction) vs no-claim baseline
+
+**Asymmetric risk:** claim-then-ghost is worse than no-claim — the maintainer remembers the unfilled promise. The default-false retro_param + post-investigate (not post-prospect, not post-triage) gating is the conservative bound: claim only after the fix shape is grounded.
+
+**Falsifiers:**
+- claim → merge rate statistically indistinguishable from no-claim rate over n≥20 PRs each → H18 falsified, claim is pure cost.
+- claim PRs accumulate more "please don't claim before opening PR" comments than they save in race-prevention → community norm dominates, narrow H18 to specific cultural niches.
+- time-to-merge actually *lengthens* under claim (maintainer waits for promised PR instead of merging a competing one quickly) → H18 inverted, claim creates obligation that delays.
+
+**Cost:** one gh issue comment per claimed issue (~1 line of maintainer-attention spend). Versus the wasted maintainer-attention of a closed-unmerged PR (the headliner waste), claim is cheap if it lifts acceptance even marginally.
+
+**Compounds with:** recency-first prospect (gets us to the issue first); blind-blind investigate pushout (raises hypothesis confidence before we claim). The whole chain is "first to see → most certain → most credible" with the comment as the receipt at the certainty boundary.
+
+## H19: Sole-Claude review approximates dual-family review (forced ablation)
+
+**Prediction:** With codex subscription temporarily unavailable (~2026-05-15 through ~2026-05-17), qa's adversary_1 falls back to claude-via-CLI instead of codex-via-API. If sole-Claude review catches comparable bugs to codex-then-gemini in the surrounding windows, the dual-family design was redundant for the bug class qa actually sees. If catch rate drops measurably, dual-family carries real signal even at our problem scale.
+
+**Operationalization:** During the outage window, qa logs `provenance: "claude-cli-fallback"` instead of `provenance: "codex"`. Match against subsequent `qa_converged` outcomes by msg_id:
+- bug-catch rate before/during/after outage
+- false-positive rate (qa passed → maintainer closed with bugs)
+- false-negative rate (qa failed → maintainer merged on follow-up)
+
+**Falsifiers:**
+- ≥30% drop in bug-catch rate during outage vs surrounding windows → dual-family was load-bearing, prioritize getting codex back / wire an alternative second family.
+- Indistinguishable rates → dual-family was theater for this problem class; consider keeping the CLI fallback as default and treating codex as elective.
+- Higher catch rate during outage → claude-only is somehow stronger (unexpected); investigate prompt or context-window differences.
+
+**Cost framing:** the outage is free experiment — it would otherwise require deliberately disabling codex for a controlled period, with the same "what does the pipeline lose" question and no way to recover gracefully. Use the window.
+
+**Compounds with:** the pushout design (`project_sweep_investigate_pushout.md`). If H19 holds (sole-Claude is sufficient), the pushout default secondary stays at sonnet rather than upgrading to codex — saves cost without losing signal. If H19 fails, the pushout MUST cross families.

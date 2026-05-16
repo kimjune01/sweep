@@ -47,7 +47,13 @@ with workflow.unsafe.imports_passed_through():
         gemini_review,
         test_attestation,
     )
-    from sweep.activities.worktree import ensure_worktree, mark_acked, mark_started
+    from sweep.activities.worktree import (
+        clear_andon_marker,
+        ensure_worktree,
+        mark_acked,
+        mark_started,
+        record_andon,
+    )
     from sweep.types import Message, QaOneEntryRequest, QaOneEntryResult
 
 
@@ -71,6 +77,10 @@ class QaActor:
     @workflow.signal
     async def clear_andon(self) -> None:
         self.halted = False
+        await workflow.execute_activity(
+            clear_andon_marker, args=["qa"],
+            start_to_close_timeout=timedelta(seconds=5),
+        )
 
     @workflow.query
     def depth(self) -> int:
@@ -218,6 +228,12 @@ class QaActor:
                     workflow.logger.error(
                         "andon: msg_id=%s type=%s reason=%s",
                         msg.msg_id, type(e).__name__, str(e)[:300],
+                    )
+                    await workflow.execute_activity(
+                        record_andon,
+                        args=["qa", msg.msg_id,
+                              f"{type(e).__name__}: {str(e)[:400]}"],
+                        start_to_close_timeout=timedelta(seconds=5),
                     )
             # Ack at the view layer whether or not the run passed —
             # the message has been processed; staying "in flight"

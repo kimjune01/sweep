@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import asyncio
 import json
 import subprocess
 from dataclasses import asdict
@@ -16,7 +17,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import control_state, gh_io, llm_io, models, observe, retro_state
+from sweep import control_state, gh_io, llm_cli, observe, retro_state
 from sweep.io_safe import atomic_write_text
 from sweep.types import (
     BUCKET_ROUTING,
@@ -25,43 +26,49 @@ from sweep.types import (
     PrStateResult,
 )
 
-# pr-state shuffles work — picks bucket, routes intent. Sonnet by default.
-PR_STATE_MODEL = models.default_for("orchestrate")
-
-
 # actor → workflow id mapping. Add new entries here when actors get wired.
 # Routing writes to inbox jsonl AND signals the matching Temporal actor.
 # Missing entry → jsonl-only (legacy behavior, no actor consumes it).
+# Routing table: actor name (matches inbox file basename and pr-state
+# bucket) → temporal workflow id. SkillActor instances share a single
+# workflow class — they're distinguished only by id. QaActor is its
+# own class (concurrent dispatcher, different shape).
 _ACTOR_WORKFLOW_IDS = {
-    "qa":   "qa-actor",
-    "drip": "drip-actor",
+    "qa":      "qa-actor",
+    "drip":    "drip-actor",
+    "triaged": "triage-actor",
 }
 
 
 async def _signal_actor(actor: str, msg: "Message") -> str | None:
     """Best-effort signal: tell the Temporal actor it has a new message.
     Returns the workflow id on success, None if the actor isn't wired or
-    temporal is unreachable. Silent on failure — the jsonl write is the
-    source of truth for the view layer; the signal is the kicker for
-    the actor to pull from its in-memory queue.
+    temporal is unreachable. Returns None rather than raising so the jsonl
+    write (the source of truth) stays atomic with the deposit; visibility
+    comes via `signal_failed` events so silent stalls don't hide.
     """
     wf_id = _ACTOR_WORKFLOW_IDS.get(actor)
     if not wf_id:
+        observe.event("signal_failed", actor=actor, msg_id=msg.msg_id,
+                      reason="unwired_actor")
         return None
     try:
         from temporalio.client import Client
         from sweep.system import TEMPORAL_ADDR
-        from sweep.workflows.drip_actor import DripActor
         from sweep.workflows.qa_actor import QaActor
+        from sweep.workflows.skill_actor import SkillActor
 
         client = await Client.connect(TEMPORAL_ADDR)
         handle = client.get_workflow_handle(wf_id)
-        # All current actors expose a `deliver` signal taking a Message.
-        # Pick the right workflow class for typed signaling.
-        deliver = {"qa": QaActor.deliver, "drip": DripActor.deliver}[actor]
+        # QaActor and SkillActor both expose a `deliver` signal taking
+        # a Message. Pick the right class for typed signaling.
+        deliver = QaActor.deliver if actor == "qa" else SkillActor.deliver
         await handle.signal(deliver, msg)
         return wf_id
-    except Exception:
+    except Exception as e:
+        observe.event("signal_failed", actor=actor, msg_id=msg.msg_id,
+                      wf_id=wf_id, error_type=type(e).__name__,
+                      error=str(e)[:300])
         return None
 
 INBOX_DIR = Path.home() / ".sweep" / "inbox"
@@ -75,10 +82,12 @@ CLASSIFIED_INBOX = INBOX_DIR / "classified.jsonl"
 async def gh_search_open_authored(limit: int = 50) -> list[dict]:
     """List my open PRs across GitHub. Returns minimal fields; callers fetch
     detail per PR via gh_pr_view."""
-    user = subprocess.run(
+    proc = await asyncio.to_thread(
+        subprocess.run,
         ["gh", "api", "user", "--jq", ".login"],
         capture_output=True, text=True, check=True,
-    ).stdout.strip()
+    )
+    user = proc.stdout.strip()
     return gh_io.search_prs(
         f"author:{user}",
         state="open",
@@ -110,7 +119,9 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     # (not exposed via `gh pr view --json`).
     try:
         data["_inline_comments"] = gh_io.pr_inline_comments(repo, pr)
-    except Exception:
+    except Exception as e:
+        observe.event("inline_comments_failed", repo=repo, pr=pr,
+                      error_type=type(e).__name__, error=str(e)[:200])
         data["_inline_comments"] = []
 
     # CI derivation
@@ -219,7 +230,9 @@ async def _author_addressed(question: str, reply: str, *,
         "promises without action, off-topic replies, and any case where "
         "you are unsure. YES only when the reply directly answers the "
         "question, fixes what was asked, or provides the requested "
-        "information."
+        "information. "
+        "If the inputs are malformed or you cannot evaluate, output "
+        "nothing. Empty is a legal answer; do not guess."
     )
     user = (
         f"Maintainer question:\n{question.strip()[:2000]}\n\n"
@@ -227,18 +240,12 @@ async def _author_addressed(question: str, reply: str, *,
         "Did the author substantively address the question? YES or NO."
     )
     try:
-        result = await llm_io.call(
-            PR_STATE_MODEL,
-            system=system,
-            user=user,
-            repo=repo,
-            pr=pr,
-            max_tokens=4,
-            temperature=0.0,
-        )
-        verdict = (result.response or "").strip().upper()
-        return verdict.startswith("YES")
-    except Exception:
+        out = await asyncio.to_thread(llm_cli.call, system, user, timeout_s=60)
+        return out.strip().upper().startswith("YES")
+    except Exception as e:
+        observe.event("llm_judge_failed", site="author_addressed",
+                      repo=repo, pr=pr,
+                      error_type=type(e).__name__, error=str(e)[:300])
         return False  # cautious: treat as not addressed
 
 
@@ -277,9 +284,13 @@ def _is_mechanical_check(check_name: str) -> bool:
     return any(pat in n for pat in _MECHANICAL_CHECK_PATTERNS)
 
 
-def _msg_id(repo: str, pr: int, ts_minute: str) -> str:
+def _msg_id(repo: str, pr: int, bucket: str) -> str:
+    """Deterministic id from (repo, pr, bucket). Stable across retries —
+    earlier call-time-minute formulation produced different ids on
+    Temporal-driven retries, defeating actor inbox dedup."""
     slug = repo.replace("/", "-")
-    return f"prstate-{ts_minute}-{slug}-{pr}"
+    digest = hashlib.sha256(f"{repo}-{pr}-{bucket}".encode()).hexdigest()[:8]
+    return f"prstate-{slug}-{pr}-{bucket}-{digest}"
 
 
 @activity.defn
@@ -477,10 +488,9 @@ async def deliver_to_inbox(result: PrStateResult) -> str:
     """
     actor, intent = BUCKET_ROUTING[result.bucket]
     ts = dt.datetime.now(dt.timezone.utc)
-    ts_minute = ts.strftime("%Y-%m-%dT%H:%MZ")
 
     msg = Message(
-        msg_id=_msg_id(result.repo, result.pr, ts_minute),
+        msg_id=_msg_id(result.repo, result.pr, result.bucket),
         sender="pr-state",
         intent=intent,
         repo=result.repo,

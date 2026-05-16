@@ -155,6 +155,37 @@ def search_prs(query: str, *, state: str | None = None, limit: int = 30,
     return _cached_json("search_prs", args, ttl)
 
 
+def search_issues(*, labels: list[str] | None = None,
+                  state: str = "open",
+                  no_assignee: bool = True,
+                  archived: bool | None = False,
+                  created_after: str | None = None,
+                  owner: str | None = None,
+                  sort: str = "updated", order: str = "desc",
+                  limit: int = 100, ttl: int = 1800) -> list[dict]:
+    """`gh search issues` wrapper, JSON-shaped. gh refuses inline
+    qualifiers like `label:bug` in the positional query — those have
+    to be passed as flags (--label bug). Build the arg list flag-form."""
+    args = ["search", "issues"]
+    if labels:
+        args += ["--label", ",".join(labels)]
+    if state:
+        args += ["--state", state]
+    if no_assignee:
+        args += ["--no-assignee"]
+    if archived is not None:
+        args += ["--archived", "true" if archived else "false"]
+    if created_after:
+        args += ["--created", f">={created_after}"]
+    if owner:
+        args += ["--owner", owner]
+    args += ["--sort", sort, "--order", order,
+             "--limit", str(limit),
+             "--json", "repository,number,title,labels,url,updatedAt,createdAt,state,body,author,commentsCount,assignees"]
+    result = _cached_json("search_issues", args, ttl)
+    return result if isinstance(result, list) else []
+
+
 def pr_view(repo: str, pr: int, *,
              fields: str | None = None, ttl: int = 60) -> dict:
     if "/" not in repo:
@@ -233,14 +264,11 @@ def repo_ai_policy(repo: str, *, ttl: int = 24 * 3600) -> str:
     if "/" not in repo:
         return "unknown"
     # AGENTS.md first (the emerging convention), then CONTRIBUTING.md.
+    # NOTE: this path is uncached — _cached_json only serializes JSON
+    # bodies, and these endpoints return raw markdown. The docstring's
+    # 24h cache claim refers to the intended behavior; making it real
+    # requires a _cached_text variant (TODO). Today every call hits gh.
     for path in ("AGENTS.md", "CONTRIBUTING.md", "CONTRIBUTING.rst"):
-        args = ["api", f"repos/{repo}/contents/{path}",
-                "--jq", ".content", "-H", "Accept: application/vnd.github.raw+json"]
-        try:
-            raw = _cached_json("repo_file", args, ttl) if False else None
-        except Exception:
-            raw = None
-        # _cached_json expects JSON output; fall back to a direct text call.
         try:
             text = _gh(["api", f"repos/{repo}/contents/{path}",
                         "-H", "Accept: application/vnd.github.raw"])

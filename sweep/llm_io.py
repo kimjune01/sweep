@@ -28,6 +28,7 @@ async def call(
     pr: int | None = None,
     max_tokens: int = 1024,
     temperature: float = 0.0,
+    cache_system: bool = False,
 ) -> attestations.CallResult:
     """Make one LLM call (cache-first), record it, return the response.
 
@@ -58,11 +59,22 @@ async def call(
         client = AsyncAnthropic()
         t0 = time.time()
         try:
+            # Anthropic prompt cache: when `cache_system=True`, mark
+            # the system prompt as ephemeral so the API caches the
+            # prefix for ~5min. Subsequent calls with the same system
+            # within the window pay ~10% of the input-token cost.
+            # Worth it for hot paths (prospect's should_triage_issue
+            # ticks every few minutes with a stable system).
+            sys_arg: object = (
+                [{"type": "text", "text": system,
+                  "cache_control": {"type": "ephemeral"}}]
+                if cache_system else system
+            )
             resp = await client.messages.create(
                 model=model.model_id,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                system=system,
+                system=sys_arg,
                 messages=[{"role": "user", "content": user}],
             )
         except anthropic.APIError as e:

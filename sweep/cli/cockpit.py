@@ -129,17 +129,93 @@ def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
     _render_markdown(rows, flow_states, spark_minutes, spark_buckets)
 
 
-def _prospect_status() -> str | None:
-    """Demand-driven prospect: report puller's current state. One of:
-      'ready'         — slack present, pulling continuously
-      'firing'        — mid-pass
-      'blocked: <reason>' — waiting on triage/investigate cap, pause,
-                            or retro halt
-    Returns None on any error so cockpit stays renderable even when
-    temporal / the puller is unavailable."""
-    import asyncio
+def _knob_line() -> str:
+    """One-line summary of the knobs that actually change decisions.
 
-    async def fetch() -> str | None:
+    Only operator-tunable surfaces belong here. View-layer thresholds
+    (CAPS in cockpit.py) are NOT knobs — they're display formatting
+    rules. WIP isn't shown for the same reason: it's a code constant
+    in qa_actor.py and SkillActor, not a runtime knob, so surfacing
+    it as one misleads.
+    """
+    from sweep.activities.prospect import (
+        BIG_REPO_STAR_THRESHOLD, _min_complexity,
+    )
+    floor = _min_complexity()
+    stars = BIG_REPO_STAR_THRESHOLD
+    # Depth cap lives in skills/investigate.md prose, not an imported
+    # constant. Hardcode the current value here; bump together when
+    # the cap changes (rare enough to be fine).
+    depth_cap = 15
+    return (
+        f"floor = {floor}    ·    stars ≤ {stars // 1000}k    ·    "
+        f"depth = {depth_cap}"
+    )
+
+
+def _andon_banner() -> str | None:
+    """Read ~/.sweep/control/andon/*.json — one file per halted actor —
+    and return a loud red banner if any exist. None when the dir is empty
+    or missing. The banner names each halted actor and the proximate
+    reason so the operator knows what to clear (`sweep andon clear
+    <actor>`) or fix.
+    """
+    import json as _json
+    from pathlib import Path
+    andon_dir = Path.home() / ".sweep" / "control" / "andon"
+    if not andon_dir.exists():
+        return None
+    files = sorted(andon_dir.glob("*.json"))
+    if not files:
+        return None
+    lines = ["🚨  **ANDON — LINE STOPPED**  🚨", ""]
+    for f in files:
+        try:
+            d = _json.loads(f.read_text())
+        except Exception:
+            continue
+        actor = d.get("actor", f.stem)
+        reason = (d.get("reason") or "")[:200]
+        ts = d.get("ts", "")
+        lines.append(f"- 🔴 **{actor}** — {reason}  _( {ts} )_")
+    lines.append("")
+    lines.append("_Clear with_ `sweep andon clear <actor>` _once fixed._")
+    return "\n".join(lines)
+
+
+def _claude_sub_chip() -> str | None:
+    """Read ~/.sweep/control/claude_usage.json (written by UsagePoller).
+    Returns 'sub 67%/12%' (5h/weekly) or None when no data yet."""
+    import json as _json
+    from pathlib import Path
+    path = Path.home() / ".sweep" / "control" / "claude_usage.json"
+    if not path.exists():
+        return None
+    try:
+        d = _json.loads(path.read_text())
+    except Exception:
+        return None
+    parts = []
+    if "five_hour_pct" in d:
+        parts.append(f"{d['five_hour_pct']}%/5h")
+    if "weekly_pct" in d:
+        parts.append(f"{d['weekly_pct']}%/wk")
+    if not parts:
+        return None
+    return "sub " + " ".join(parts)
+
+
+def _prospect_info() -> dict:
+    """Query the puller for {state, age, empty_streak} as a dict.
+    `state`: 'ready' / 'firing' / 'blocked: <reason>'.
+    `age`: human-compact time since last fire ('4m', '12s', '2h'), or
+           '' if the puller hasn't fired yet.
+    Best-effort — returns empty dict on any error so cockpit stays
+    renderable even when temporal/puller is unavailable."""
+    import asyncio
+    import datetime as dt
+
+    async def fetch() -> dict:
         try:
             from temporalio.client import Client
             from sweep.cli._common import PROSPECT_PULLER_ID
@@ -147,14 +223,43 @@ def _prospect_status() -> str | None:
 
             c = await Client.connect(TEMPORAL_ADDR)
             state = await c.get_workflow_handle(PROSPECT_PULLER_ID).query("state")
-            return state.get("last_state") or None
         except Exception:
-            return None
+            return {}
+        raw = state.get("last_state") or ""
+        streak = int(state.get("empty_streak") or 0)
+        # "firing" and bare "ready" are noise — they just mean "the
+        # puller is doing its job." The interesting cases are: blocked
+        # (name the obstacle) and ready-with-streak (filters rejected
+        # everything). Drop the rest; the (age) chip alone carries the
+        # activity signal.
+        if raw.startswith("blocked"):
+            base = raw
+            if streak > 0:
+                base += f"  (empty ×{streak})"
+        elif streak > 0:
+            base = f"empty ×{streak}"
+        else:
+            base = ""
+        age = ""
+        iso = state.get("last_fire_iso", "")
+        if iso:
+            try:
+                target = dt.datetime.fromisoformat(iso)
+                secs = int((dt.datetime.now(target.tzinfo) - target).total_seconds())
+                if secs < 60:
+                    age = f"{secs}s"
+                elif secs < 3600:
+                    age = f"{secs // 60}m"
+                else:
+                    age = f"{secs // 3600}h"
+            except (ValueError, AttributeError):
+                pass
+        return {"state": base, "age": age}
 
     try:
         return asyncio.run(fetch())
     except Exception:
-        return None
+        return {}
 
 
 def _window_label(spark_minutes: int, spark_buckets: int) -> str:
@@ -242,24 +347,35 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     cpu = sys.get("cpu", 0.0)
     mem = sys.get("mem", 0.0)
 
-    print("# coding factory — cockpit")
+    print("# Sweep: Coding Factory")
     print()
+
+    # Loud banners for line-stopped states. Both andon (involuntary —
+    # something broke) and pause (voluntary — operator stopped the line)
+    # share the same visual weight: the line is not running, regardless
+    # of cause. Silent when neither applies.
+    banner = _andon_banner()
+    if banner:
+        print(banner)
+        print()
+    if control_state.is_paused():
+        print("🚦  **PAUSED — operator stopped the line**  🚦")
+        print()
+        print("_Resume with_ `sweep pause off`.")
+        print()
 
     # Status line: only signals the operator can act on. Actor count is
     # implementation detail (it's always "the actors that should be
     # running"); cockpit isn't a process monitor. Use `sweep status` for
     # that.
     parts = [f"cpu {cpu:.0f}%", f"mem {mem:.0f}%"]
-    # Prospect puller state — answers "is new work flowing, or blocked?"
-    # Best-effort query; silent if temporal/puller unavailable.
-    pstate = _prospect_status()
-    if pstate:
-        parts.append(f"⏱ prospect: {pstate}")
+    sub_chip = _claude_sub_chip()
+    if sub_chip:
+        parts.append(sub_chip)
     # Operator flags render only when active — quiet state stays quiet.
-    # 🚦 (traffic light) for pause; 🌵 (cactus, "rehearsing in the
-    # desert") for dry. Both can coexist.
-    if control_state.is_paused():
-        parts.append("🚦 PAUSED")
+    # Pause is hoisted into the top banner (it stops the line); only
+    # DRY remains a chip here, since rehearsal doesn't stop the line.
+    # 🌵 (cactus, "rehearsing in the desert").
     if control_state.is_dry():
         parts.append("🌵 DRY")
     # Retro state appended only when there's something to flag — halt is
@@ -278,10 +394,16 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
             # carries the slug. Multiplicity is implicit; the operator's job
             # is "go look at retro," not "count retros."
             parts.append("🌱 retro")
-    print(f"`{' · '.join(parts)}`")
+    print(" · ".join(parts))
     print()
 
-    print(f"`{_render_flow(flow_states)}`")
+    # Knobs above the table — pipeline configuration, the state of
+    # the world the operator can change. Reads as "here's how the line
+    # is tuned" right under cpu/mem.
+    pinfo = _prospect_info()
+    age = f" ({pinfo['age']})" if pinfo.get("age") else ""
+    state_chip = f"    ·    {pinfo['state']}" if pinfo.get("state") else ""
+    print(f"🎛   Prospecting{age}:   {_knob_line()}{state_chip}")
     print()
 
     print(f"| Station | Queued | In-flight | Rate | Var | Trend ( {_window_label(spark_minutes, spark_buckets)} ) | Oldest | Status |")
@@ -292,13 +414,17 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
             f"| `{spark}` | {oldest} | {status} |"
         )
 
-    # Inbox: emoji-only status under the table. Cockpit summarizes;
-    # `sweep inbox` carries the detail. Hidden when empty.
+    # Inbox + in-review below the table — "what's queued for human
+    # attention" group. Both hidden when zero.
     from sweep.cli.inbox import operator_inbox_lines
     n = len(operator_inbox_lines())
     if n:
         print()
-        print(f"📥 {n}  _| `sweep inbox`_")
+        print(f"📥   {n}  _| `sweep inbox`_")
+    retro_count = len((flow_states.get("retro") or {}).get("queued", []))
+    if retro_count:
+        print()
+        print(f"👀   {retro_count} in review")
 
 
 # ---------------------------------------------------------- rich render

@@ -1,118 +1,119 @@
 ---
 name: triage
-description: Compress one repo's open issues/PRs into a punch list of investigatable branches. Score the items, kill the unactionable, fan out one /investigate per survivor, hand the branches to /drip. Worktree count returns to zero at stage end (harness asserts).
-argument-hint: <repo> [--limit N] [--concurrency N] [--label LABEL] [--dry-run]
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
+description: Score one issue and decide what to do with it — investigate / drop / surface / defer. Per-issue, not per-repo. Single decision in seconds; no fan-out, no nested investigations. The output feeds the investigate inbox.
+argument-hint: <repo>#<issue>
+allowed-tools: Bash, Read, Write
 ---
 
-# Triage
+# Triage: One Issue, One Decision
 
-You were invoked by the harness on one repo. Compress three repeated episodes into one pass:
+You were invoked on a single issue. Score it, apply the kill list, emit a structured decision, exit. **No spawning sub-agents, no calling /investigate, no scanning the rest of the repo.** Fast is the contract — target ≤30 seconds.
 
-- The hour spent staring at issue lists looking for actionable bugs → seconds of scoring.
-- The investigations into items that were never going to merge → kill list rejects them upfront.
-- The serial slog of N investigations → N parallel agents, shared graph for dedup.
+This skill is the scoring station between prospect (which surfaces candidates) and investigate (which builds the hypothesis graph). The streaming pipeline runs ONE invocation per issue; batching across a repo is a different shape that this skill no longer does.
 
-What's lost: the contingent details of each item (specific labels, prior comment threads, hardware specifics). Kept: which signal applies, which kill reason matches, which graph node to fan into. The loss is what didn't generalize.
+## Input
 
-Run `/review-schema` once per repo before first triage. Without it, your investigations produce PRs that don't match the maintainer's review culture.
+`<repo>#<issue>` — e.g. `pingcap/tidb#68400`. Prospect's deposit already passed cheap filters and the LLM judge; your job is the per-issue context check: maintainer engagement signals, repro quality, kill-list match, scoring against the rubric.
 
-## The CLI is the harness
+## What to fetch
 
-| What you need | How to get it |
-|---|---|
-| Fetch open issues/PRs incrementally since last scan | `sweep triage scan --repo …` |
-| Competing-PR / body-count check on one issue | `sweep triage compete --repo … --issue N` |
-| Retro params for the repo | `sweep retro params --repo …` |
-| Enqueue a branch pointer for drip | `sweep drip enqueue --repo … --branch … --issue N --test-cmd "…" --base SHA` |
-| Resume: state of each item across runs | `sweep triage status --repo …` |
-| Spawn an investigation agent | Agent tool, prompt in *Spawn one agent per survivor* below |
+One `gh` call. Title, body, labels, comments count, recent maintainer comments. Don't crawl history; if it isn't visible in the issue view, it's not relevant to a 30-second decision.
 
-Call the CLI subcommand you need even if it doesn't exist yet. The harness logs the missing reach to `sweep missing`; that's the build queue (see [JIT CLI](https://june.kim/jit-cli)). Don't hand-roll the gh+jsonl glue here.
+```bash
+gh issue view <issue> --repo <repo> --json title,body,labels,state,author,assignees,commentsCount,createdAt,updatedAt,comments
+```
 
-## Score each item (highest signal wins)
+## Score
 
 | Signal | Score | Rationale |
 |--------|-------|-----------|
-| CI failing on your PR | 10 | Blocking, fix before review |
-| Reviewer requested changes | 8 | Someone spent time; respond |
-| Maintainer commented on your item | 7 | Engagement with merge power |
-| LGTM but needs rebase | 6 | Low effort to unblock |
-| Your PR, no activity > 3 days | 4 | Might need a ping |
-| Issue you filed | 3 | Your problem to solve |
-| Maintainer-filed issue | 2+ | They want it. **Penalty if "good first issue"**: fast claimers race you. Unlabeled bugs nobody noticed are better targets. |
-| Unassigned open issue | 2 | Opportunity |
-| Your PR, CI passing, under review | 1 | Wait |
+| Maintainer commented after issue created | 8 | Active engagement |
+| Maintainer-filed (issue author is maintainer) | 7 | They want it fixed |
+| Recent issue (≤ 7 days) | 6 | First-mover position |
+| Clear repro (code fence / stack trace / steps) | 5 | Machine-leverage |
+| Labeled "bug" or equivalent | 4 | Maintainer-confirmed kind |
+| "good first issue" or "help wanted" | 2 | Penalty risk: fast claimers race us |
+| No body / vague | -3 | Nothing to test |
 
-## Kill list (don't even score)
+Multiple signals add. Threshold for INVESTIGATE: ≥ 5.
+
+## Kill list (any one of these → DROP)
 
 | Kill signal | Reason |
 |---|---|
-| Needs hardware you don't own and CI doesn't have | Can't reproduce |
+| Needs hardware you don't own (GPU, embedded, specific OS) | Can't reproduce |
 | Feature request with no maintainer endorsement | Inventing problems |
-| Design proposal / TIP (unless you're core) | Architecture is maintainer's call |
+| Design proposal / RFC | Architecture is maintainer's call |
 | Vague, no repro, no error | Nothing to test |
-| Already fixed on master | Verify and close |
-| Someone else has an open PR | Don't compete; link to theirs |
-| Tracking / milestone issue | Not actionable |
-| Cooldown active (check retro params) | You were warned or banned |
-| Heuristic / perf tuning without device-diverse CI | Can't validate. geohot: "no on all heuristic changes" |
+| Marked closed / fixed on master | Already done |
+| Someone else has an open PR on this issue | Don't compete |
+| Tracking / milestone / meta-issue | Not actionable |
+| Heuristic / perf tuning with no benchmark | Can't validate |
 | Net-addition perf optimization | "We never trade complexity for speed" |
-| Requires off-platform discussion | Pipeline only speaks GitHub |
+| Requires off-platform discussion (Discord, email) | Pipeline only speaks GitHub |
+| Non-English issue body | Operator can't engage |
 
-## Spawn one agent per survivor
+## Decision
 
-Each survivor gets its own worktree. Spawn the agent in parallel. The agent runs `/investigate` to a terminal node, calls `sweep drip enqueue` if CONFIRMED, removes its worktree, returns.
+One of:
+- **investigate** — score ≥ 5, no kill signal. Enqueue to investigate inbox.
+- **drop** — kill signal matched, OR score < 5 with no fixable shape.
+- **surface** — needs human attention before automation can decide (ambiguous policy question, sensitive area, possible duplicate).
+- **defer** — cooldown active per `sweep retro params --repo <repo>`, OR repo recently auto-evicted.
+
+## Write the attestation
+
+Before emitting the decision event, write a per-issue attestation file at `~/.sweep/attestations/triage/<owner>__<repo>__<issue>.md`. This lets future invocations dedup — the harness checks for the file before invoking /triage, so a repeated call returns cached without burning subscription tokens.
+
+Shape:
+
+```markdown
+---
+decision: <investigate|drop|surface|defer>
+score: <int>
+reason: <short tag>
+ts: <iso8601 UTC>
+---
+
+# Triage: <owner>/<repo>#<issue>
+
+**Title:** <issue title>
+
+**Why this decision:** <one to three sentences naming the concrete signals — labels, maintainer comment, repro shape, kill-list match.>
+
+**Considered signals:**
+- <bullet per relevant scoring entry, e.g. "Maintainer commented (Apr 5)">
+- <bullet per kill check evaluated>
+```
+
+Use `mkdir -p` to ensure the directory exists. Write the file before the `sweep observe event` call so the attestation is durable even if the event log write fails.
+
+## Emit the decision
+
+Every decision logs a structured event so retro can join across stages. **Always emit, even on drop**:
+
+```bash
+sweep observe event triage_decision \
+  repo="<repo>" pr=<issue> \
+  decision=<investigate|drop|surface|defer> \
+  reason="<short tag — e.g. 'kill:feature_request', 'score:8', 'cooldown'>" \
+  score=<int>
+```
+
+If decision is `investigate`, enqueue:
+
+```bash
+sweep investigate enqueue --repo <repo> --issue <issue> --reason "<one sentence: why this passes>"
+```
+
+That writes to `~/.sweep/inbox/investigate.jsonl` and signals InvestigateActor. /investigate itself runs in a separate downstream actor — not from here.
+
+## Exit
+
+Return a one-line summary to stdout:
 
 ```
-Agent({
-  subagent_type: "general-purpose",
-  run_in_background: true,
-  prompt: "Run /investigate on <repo>#<issue>. Context: <diff/body/comments/prior-failed-PRs>.
-           Worktree: <path>. Read TRIAGE_GRAPH.md for cross-investigation context.
-           Write your results to TRIAGE_RESULT.T<issue>.md.
-           Test before fix: failing test on master, passing on fix.
-           On CONFIRMED: call `sweep drip enqueue`. On any terminal status
-           (CONFIRMED / KILLED / BLOCKED): remove your worktree before returning."
-})
+<decision> <repo>#<issue> score=<n> reason=<tag>
 ```
 
-**Postcondition: zero `triage-*` worktrees after triage finishes.** The harness asserts at stage end and fails with the list of leaked paths. The assertion is the binding; don't write the cleanup rule into prose hoping it sticks (see [skills lack determinism](https://june.kim/skills-lack-determinism)). If the postcondition fails, the failure names the path that didn't clean up. That's your debug surface.
-
-The agent's context must include the item's diff or body, CI logs, review comments, related nodes in TRIAGE_GRAPH.md, and **prior failed PRs on the same issue**. Three failed PRs means three mapped failure modes; the fourth attempt avoids all three.
-
-## Gemini volley on the kill decisions
-
-After scoring and killing, send the scan table to `/gemini`:
-
-> Review these triage decisions. Any items killed that should be investigated? Any items kept that are a waste of time? Any cross-references missed?
-
-Five rounds max. The volley won't converge to zero findings (see [does iteration mitigate slop slope](https://june.kim/does-iteration-mitigate-slop-slope)). Iterate until the structure is sound, then move on.
-
-## Fast-path for retro-confirmed fixes
-
-If `sweep retro params --repo` returns a `fix_ready` entry for an issue (one-line fix with a confirmed reproducer), skip the investigation. Mark CONFIRMED and call `sweep drip enqueue` directly. The retro already did the compression for you.
-
-## TRIAGE_GRAPH.md
-
-Shared scratch across investigations. Each agent reads it at spawn time to dedup against other agents' findings, then writes its own results to `TRIAGE_RESULT.T<n>.md` (per-item file; no concurrent writes to the shared graph). Phase boundaries merge result files into the shared graph sequentially.
-
-Don't lock down the graph format. The CLI owns the queue; the graph is for the agents to shape as the investigations evolve.
-
-## Rules (judgment, not mechanics)
-
-- **Never merge.** Triage produces branches; the human ships.
-- **Score before investigating.** Don't spend agent time on items scoring 1.
-- **Cross-pollinate.** If agent A finds something that affects agent B's item, write to the graph before B's next perturbation.
-- **Full pipeline per item.** Every candidate passes `/codex` (structural) and `/bug-hunt` (adversarial) before enqueueing. No shortcuts.
-- **Fail fast.** Item at depth 3 with all hypotheses killed → BLOCKED, move on.
-- **Fail on master, pass with fix.** Every PR's load-bearing assertion. The CLI gate (`sweep qa test`) enforces it; if it rejects, re-investigate, don't bypass.
-
-## What this skill does not do
-
-- Read or write `~/.sweep/drip-queue/*.jsonl` directly. (`sweep drip enqueue`.)
-- Parse `TRIAGE_GRAPH.md` state machines for resume. (`sweep triage status`.)
-- Manage worker-pool concurrency by hand. (Spawn N parallel agents; throttle via `sweep pause`.)
-- Track who cleans up which worktree. (Harness postcondition catches leaks.)
-- Define what counts as a terminal status. (Same enum as `/investigate`; the CLI owns it.)
-- Create PRs, push branches, or write PR descriptions. (`/drip`.)
+That's the whole skill. Score, decide, emit, enqueue if investigate, exit. The hypothesis graph belongs to /investigate; the worktree belongs to /investigate; the PR push belongs to /drip. Triage's only job is the structured per-issue decision.

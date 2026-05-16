@@ -14,6 +14,7 @@ cursor; it walks past them.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import subprocess
 import urllib.parse
@@ -39,15 +40,22 @@ FLOOR = 100               # Below this, lap is over; next call resets.
 
 @dataclass
 class ProspectRunRequest:
-    # Default 1 = Toyota-style one-piece flow. Each pass scans one
-    # repo, surfaces its issues, hands off to triage, returns. The
-    # ticker fires fast (every few min) instead of slow (every hour),
-    # so total throughput stays similar but arrivals smooth out and
-    # backpressure response is per-repo, not per-batch.
-    budget: int = 1
-    floor: int = FLOOR          # star floor (lap reset trigger)
-    issue_limit_per_repo: int = 5
-    languages: list[str] = field(default_factory=list)  # optional language filter
+    # Recency-first: issues are the origin. Each pass searches
+    # GitHub for issues created in the last `days` window, dedupes
+    # against the seen set, runs them through the deterministic
+    # filters, then through the LLM `should_triage` judge.
+    days: int = 30
+    # Cap how many issues come back from one search call. The seen
+    # set dedupes across calls so re-querying overlapping windows
+    # is cheap.
+    search_limit: int = 100
+    # Per-tick cap on deposits. The puller is demand-driven —
+    # it stops firing once triage is full anyway, so this isn't a
+    # backpressure mechanism. The real purpose: cap LLM judge calls
+    # per pass so one fire doesn't burn through 100 candidates' worth
+    # of tokens at once. Sized to triage's queue cap so we can
+    # plausibly fill triage in one fire when filters let things through.
+    deposit_limit: int = 10
 
 
 @dataclass
@@ -207,6 +215,30 @@ BIG_REPO_STAR_THRESHOLD = 10000
 
 
 _KILL_LIST_PATH = Path.home() / ".sweep" / "control" / "prospect_kill_list.txt"
+_EVICTED_PATH = Path.home() / ".sweep" / "control" / "prospect_evicted.txt"
+
+# Auto-eviction threshold: this many consecutive losses (closed-unmerged
+# OR open-and-hanging-past-TTL) in one repo → evict. Three is the
+# Toyota stop-the-line discipline: a defect class repeating that many
+# times in one place means the substrate doesn't have leverage there
+# (different conventions, different review culture, unfriendly to our
+# shape). Stop investing tokens.
+EVICTION_LOSS_THRESHOLD = 3
+EVICTION_HANGING_DAYS = 30  # open > N days with no merge = counts as a loss
+
+
+def _on_evicted_list(name_with_owner: str) -> bool:
+    """Auto-eviction list (separate from operator-curated kill list).
+    Written by `auto_evict_stale_repos`. fnmatch like kill list."""
+    if not _EVICTED_PATH.exists():
+        return False
+    import fnmatch
+    name = name_with_owner.lower()
+    for raw in _EVICTED_PATH.read_text().splitlines():
+        pat = raw.split("#", 1)[0].strip().lower()
+        if pat and fnmatch.fnmatch(name, pat):
+            return True
+    return False
 
 
 def _on_kill_list(name_with_owner: str) -> bool:
@@ -305,7 +337,9 @@ def _has_related_pr(repo: str, issue_number: int) -> bool:
     """
     try:
         events = gh_io.issue_events(repo, issue_number)
-    except Exception:
+    except Exception as e:
+        observe.event("issue_events_failed", repo=repo, issue=issue_number,
+                      error_type=type(e).__name__, error=str(e)[:200])
         return False  # don't block on transient gh failures
     for ev in events:
         if ev.get("event") == "cross-referenced":
@@ -316,17 +350,27 @@ def _has_related_pr(repo: str, issue_number: int) -> bool:
 
 
 @activity.defn
-async def deposit_issue_to_triaged(issue: IssueCandidate) -> str:
+async def deposit_issue_to_triaged(issue: IssueCandidate,
+                                    complexity: str = "unknown") -> str:
     """Append one Message to ~/.sweep/inbox/triaged.jsonl and mark seen.
-    Returns the msg_id."""
+    `complexity` ∈ {trivial, shallow, medium, deep, unknown} is the
+    depth label assigned at prospect time; it propagates downstream so
+    every event from triage/investigate/qa/drip can be joined back to
+    the original depth probe. Trivial issues should already have been
+    filtered out before this call — passing trivial here means the
+    operator overrode the filter."""
     key = seen.issue_key(issue.repo, issue.number)
     if seen.has_seen(key):
         return ""  # already delivered in a prior pass
     ts = dt.datetime.now(dt.timezone.utc)
-    ts_minute = ts.strftime("%Y-%m-%dT%H:%MZ")
     slug = issue.repo.replace("/", "-")
+    # Deterministic id: a retry of this activity (transient I/O on the
+    # jsonl write) re-produces the same msg_id, so the actor dedups
+    # cleanly. Earlier formulation embedded a call-time minute, so
+    # retries crossing a minute boundary created phantom duplicates.
+    digest = hashlib.sha256(f"{issue.repo}/{issue.number}".encode()).hexdigest()[:8]
     msg = Message(
-        msg_id=f"prospect-{ts_minute}-{slug}-{issue.number}",
+        msg_id=f"prospect-{slug}-{issue.number}-{digest}",
         sender="prospect",
         intent="investigate",
         repo=issue.repo,
@@ -338,6 +382,7 @@ async def deposit_issue_to_triaged(issue: IssueCandidate) -> str:
             "labels": issue.labels,
             "updated_at": issue.updated_at,
             "kind": "issue",
+            "complexity": complexity,
         },
         ts=ts.isoformat(),
     )
@@ -355,7 +400,596 @@ async def deposit_issue_to_triaged(issue: IssueCandidate) -> str:
     with open(TRIAGED_INBOX, "a") as f:
         f.write(json.dumps(asdict(msg)) + "\n")
     seen.mark_seen(key)
+    observe.event("prospect_deposited", msg_id=msg.msg_id,
+                  repo=issue.repo, issue=issue.number,
+                  complexity=complexity)
+    # Best-effort signal — same gap as the qa path before: writing
+    # jsonl is the view-layer record, but the actor only picks work
+    # off its in-memory queue when signaled. Without this, deposits
+    # pile up in triaged.jsonl while the actor sits idle. `_signal_actor`
+    # emits its own `signal_failed` event on failure; we count strands
+    # at deposit time so cockpit can show the gap.
+    from sweep.activities.pr_state import _signal_actor
+    wf_id = await _signal_actor("triaged", msg)
+    if wf_id is None:
+        observe.event("deposit_stranded", msg_id=msg.msg_id,
+                      repo=issue.repo, issue=issue.number,
+                      reason="signal_failed; jsonl written, actor not kicked")
     return msg.msg_id
+
+
+# Stable system prompt — pulled out of the function so Anthropic's
+# prompt cache can fingerprint it. The same bytes every tick → 5-min
+# ephemeral cache hit at ~10% cost on the input prefix. With prospect
+# ticking on demand-driven cadence, near-every call lands in cache.
+# Keep this tight: every token is paid on cache miss (first call,
+# post-restart, and post-5-min idle).
+_SHOULD_TRIAGE_SYSTEM_TEMPLATE = """\
+Rate a GitHub issue for a machine-driven small-PR pipeline.
+Output: VERDICT COMPLEXITY (two tokens, uppercase, single space).
+
+Target acceptance rate is ~50% — push toward harder problems where
+the substrate has comparative advantage; the goal isn't to ship the
+most PRs but to operate at the capability frontier.
+
+VERDICT:
+ YES — concrete reproducible failure (test/stack/repro) with WHERE
+       hidden; or wide-context coordination, long stack walks,
+       polyglot fix, boilerplate-with-invariants at many sites,
+       codebase pattern matching. Machines beat humans on specific
+       bugs of unknown origin. Minimum complexity: {min_complexity}.
+ NO  — UX/aesthetic, design-space, doc taste, refactor without
+       failure mode, non-English, one-liner/trivial fix, in-team
+       context, ambiguity, any uncertainty, OR complexity below
+       {min_complexity}.
+
+COMPLEXITY (machine-leverage depth):
+ SHALLOW — single-function bug with clear test.
+ MEDIUM  — multi-file, named subsystem invariants, failure
+           surface points at where to look.
+ DEEP    — long stack across subsystems, race + repro, compiler
+           bug with minimal reproducer. Big but structured.
+ UNKNOWN — when VERDICT is NO.
+
+If the input is malformed, off-topic, or you cannot evaluate it,
+output nothing. Empty is a legal answer; do not fabricate a verdict
+you don't believe."""
+
+
+def _min_complexity() -> str:
+    """Current effective difficulty floor. May differ from the target
+    floor when auto-loosened by `loosen_floor` to keep the pipe
+    flowing. ~/.sweep/control/min_complexity is the effective value;
+    ~/.sweep/control/min_complexity_target is the operator's
+    preference. Recovery resets effective → target when utilization
+    is healthy."""
+    path = Path.home() / ".sweep" / "control" / "min_complexity"
+    if path.exists():
+        v = path.read_text().strip().upper()
+        if v in ("SHALLOW", "MEDIUM", "DEEP"):
+            return v
+    return _target_complexity()
+
+
+def _target_complexity() -> str:
+    """Operator's preferred floor. AIMD recovery snaps effective back
+    to this when utilization recovers. Default MEDIUM: the 50%-
+    acceptance principle's starting point."""
+    path = Path.home() / ".sweep" / "control" / "min_complexity_target"
+    if path.exists():
+        v = path.read_text().strip().upper()
+        if v in ("SHALLOW", "MEDIUM", "DEEP"):
+            return v
+    return "MEDIUM"
+
+
+@activity.defn
+async def should_triage_issue(issue_payload: dict) -> dict:
+    """LLM judge: is this issue worth /triage tokens, and at what depth?
+
+    Output: {"yes": bool, "complexity": str, "reason": str}.
+    complexity ∈ {trivial, shallow, medium, deep}. Trivial auto-skips
+    upstream; the others are kept and stamped onto the deposit so we
+    can probe the pipeline's drowning depth from outcomes.
+
+    Cautious default on `yes` — False on any ambiguity. /triage is the
+    next gate and is more expensive; one extra LLM judge here is much
+    cheaper than one wasted /triage cycle.
+    """
+    from sweep import llm_io, models
+
+    system = _SHOULD_TRIAGE_SYSTEM_TEMPLATE.format(min_complexity=_min_complexity())
+    body = (issue_payload.get("body") or "")[:1500]
+    user = (
+        f"Repo: {issue_payload.get('repo', '?')}\n"
+        f"Title: {issue_payload.get('title', '?')}\n"
+        f"Labels: {', '.join(issue_payload.get('labels', [])) or '(none)'}\n"
+        f"Age (hours): {issue_payload.get('age_h', '?')}\n\n"
+        f"Body (truncated):\n{body or '(no body)'}\n\n"
+        "Output: VERDICT COMPLEXITY"
+    )
+    try:
+        result = await llm_io.call(
+            models.default_for("orchestrate"),
+            system=system, user=user,
+            repo=issue_payload.get("repo", ""),
+            pr=issue_payload.get("number"),
+            max_tokens=8, temperature=0.0,
+            cache_system=True,  # hot path; system bytes stable across ticks
+        )
+        tokens = (result.response or "").strip().upper().split()
+        verdict = tokens[0] if tokens else "NO"
+        complexity_raw = tokens[1] if len(tokens) > 1 else "UNKNOWN"
+        complexity = complexity_raw.lower()
+        if complexity not in ("shallow", "medium", "deep"):
+            complexity = "unknown"
+        # Enforce the floor server-side too — the prompt may say YES on
+        # a SHALLOW when MEDIUM is the floor. The retro_param is the
+        # ground truth; the prompt is the LLM's best effort.
+        floor_rank = {"SHALLOW": 1, "MEDIUM": 2, "DEEP": 3}
+        depth_rank = {"shallow": 1, "medium": 2, "deep": 3, "unknown": 0}
+        below_floor = depth_rank[complexity] < floor_rank[_min_complexity()]
+        return {
+            "yes": verdict.startswith("YES") and not below_floor,
+            "complexity": complexity,
+            "reason": " ".join(tokens) or "(empty)",
+        }
+    except Exception as e:
+        observe.event("llm_judge_failed", site="should_triage_issue",
+                      repo=issue_payload.get("repo", ""),
+                      issue=issue_payload.get("number"),
+                      error_type=type(e).__name__, error=str(e)[:300])
+        return {"yes": False, "complexity": "unknown",
+                "reason": f"llm error: {e}"}
+
+
+@activity.defn
+async def prospect_recency_window(req: ProspectRunRequest) -> dict:
+    """Recency-first prospect: issues are the origin, repos are
+    attributes on issues. The competitive logic: freshly-filed
+    actionable issues haven't been seen by other contributors yet.
+    Getting in early means no racing PR, no rebase against an
+    in-progress fix, maintainer eyes still warm on the bug context.
+    First-mover position on the merge race.
+
+    Two-tier funnel (LLM judgment moved to /triage):
+
+      1. Deterministic gates — kill list, star, AI-policy, cheap
+         per-issue patterns. All sub-millisecond per check.
+      2. Deposit survivors to triaged.jsonl. /triage (per-issue) does
+         the LLM judgment as its own decision station, where one-at-a-
+         time queueing keeps cost predictable.
+
+    The seen set is the only cursor: each call asks for the last N
+    days, dedupes against what we've already processed. Repeating an
+    overlapping window costs one gh_search + a set lookup per issue.
+
+    Empty cycles (considered>0 but deposited=0) are expected and not
+    a failure mode — they mean the filters did their job and nothing
+    in the recent window survived. The puller will keep firing as
+    long as triage has slack; the system naturally waits until valid
+    work appears, no retry logic needed.
+    """
+    if retro_state.is_halted():
+        observe.incr("halted_skip:prospect")
+        return {"considered": 0, "deposited": 0, "filtered": {}, "halted": True}
+    if control_state.is_paused():
+        observe.incr("paused_skip:prospect")
+        return {"considered": 0, "deposited": 0, "filtered": {}, "paused": True}
+
+    # Cap deposits at whatever triage can currently hold. Demand-pull
+    # all the way: prospect only surfaces what downstream can absorb,
+    # not a fixed-number-per-tick. Read triage's current depth + cap
+    # at the start of each pass.
+    from sweep import inbox_state as _inbox
+    TRIAGE_CAP = 10  # mirrors cockpit's CAPS["triaged"]["queued"]
+    triage_q = len(_inbox.inbox_states("triaged")["queued"])
+    free_slots = max(0, TRIAGE_CAP - triage_q)
+    effective_cap = min(req.deposit_limit, free_slots)
+    if effective_cap <= 0:
+        return {"considered": 0, "deposited": 0, "filtered": {"triage_full": 1}}
+
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=req.days)
+    try:
+        # Don't pass archived=False — gh CLI returns 0 hits when that
+        # flag is combined with --label/--created. The per-issue
+        # _passes_deterministic_issue check catches archived repos.
+        raw = gh_io.search_issues(
+            labels=["bug", "help-wanted"],
+            state="open", no_assignee=True, archived=None,
+            created_after=cutoff.strftime('%Y-%m-%d'),
+            sort="created", order="desc",
+            limit=req.search_limit,
+        )
+    except subprocess.CalledProcessError as e:
+        raise ApplicationError(
+            f"gh search issues failed: {(e.stderr or '')[:300]}",
+            non_retryable=False,
+        )
+
+    # Always consider new issues from warm orgs (where we have
+    # standing). These get a wider recency window — warmth means
+    # the merge race is less brutal, so older issues there are
+    # still in play. Merge into the candidate set, dedupe by URL.
+    raw = _merge_warm_org_issues(raw, base_cutoff_days=req.days)
+
+    filtered: dict[str, int] = {}
+    survivors: list[tuple[int, "IssueCandidate", str, str]] = []  # (rank, ic, complexity, key)
+    now = dt.datetime.now(dt.timezone.utc)
+    complexity_rank = {"deep": 3, "medium": 2, "shallow": 1, "unknown": 0}
+
+    for it in raw:
+        repo_obj = it.get("repository") or {}
+        repo = repo_obj.get("nameWithOwner") or repo_obj.get("name_with_owner") or ""
+        number = it.get("number")
+        if not repo or not number:
+            filtered["malformed"] = filtered.get("malformed", 0) + 1
+            continue
+        key = seen.issue_key(repo, number)
+        if seen.has_seen(key):
+            filtered["seen"] = filtered.get("seen", 0) + 1
+            continue
+        # Skip if this issue has a related PR (any state).
+        if _has_related_pr(repo, number):
+            filtered["has_pr"] = filtered.get("has_pr", 0) + 1
+            seen.mark_seen(key)
+            continue
+        # Tier 1a: cheap per-issue gates — title patterns, body
+        # length, comment count, leverage signals. Don't seen-mark
+        # on rejection: filter patterns can change (loosened regex,
+        # new leverage signals) and a previously-rejected issue
+        # should re-evaluate against the current rules.
+        cheap_reason = _cheap_issue_skip(it)
+        if cheap_reason:
+            filtered[f"cheap_{cheap_reason}"] = filtered.get(f"cheap_{cheap_reason}", 0) + 1
+            continue
+        # Tier 1b: deterministic gates. Same logic — kill list, star
+        # gate, AI policy can all change; don't seen-mark on rejection.
+        repo_meta = _fetch_repo_meta_cheap(repo)
+        if not _passes_deterministic_issue(repo, repo_meta):
+            filtered["deterministic"] = filtered.get("deterministic", 0) + 1
+            continue
+        # Survivor — no LLM call here. The per-issue LLM judgment
+        # belongs in /triage (TriageActor's job). Prospect's role is
+        # ingest + cheap deterministic filter. Keeping it that way
+        # keeps prospect sub-second per fire and pushes LLM cost into
+        # a queue where it can be one-at-a-time, not burst per fire.
+        labels = [l.get("name", "") for l in it.get("labels") or []]
+        ic = IssueCandidate(
+            repo=repo, number=int(number),
+            title=it.get("title", ""),
+            url=it.get("url", ""),
+            labels=labels,
+            updated_at=it.get("updatedAt", "") or "",
+        )
+        # No complexity tag at this stage — /triage assigns it via its
+        # decision. Default to "unknown" so downstream events can join.
+        survivors.append((0, ic, "unknown", key))
+
+    # No deepest-first sort here either (we don't know depth yet).
+    # Take in search order (recency for global; sort order from gh
+    # for warm-org). /triage will decide and emit complexity.
+
+    deposited = 0
+    deposited_ids: list[str] = []
+    for _, ic, complexity, _key in survivors[:effective_cap]:
+        msg_id = await deposit_issue_to_triaged(ic, complexity=complexity)
+        deposited_ids.append(msg_id)
+        deposited += 1
+    # Any survivors beyond the cap stay unseen so the next pass can
+    # re-evaluate and possibly deposit them when there's slack.
+    for _, _ic, _c, _key in survivors[effective_cap:]:
+        filtered["over_cap"] = filtered.get("over_cap", 0) + 1
+
+    observe.event(
+        "prospect_window",
+        considered=len(raw), deposited=deposited, filtered=filtered,
+        window_days=req.days,
+    )
+    return {
+        "considered": len(raw),
+        "deposited": deposited,
+        "deposited_msg_ids": deposited_ids,
+        "filtered": filtered,
+    }
+
+
+import re
+
+# Title prefixes that signal non-bug work — discussion/RFC/feature
+# requests we don't want to spend LLM tokens evaluating. Anchored at
+# start (with optional brackets/markers) so we don't false-positive on
+# "Fix RFC parser" or similar.
+_NON_BUG_TITLE_RE = re.compile(
+    r"^(\[?\s*)?(rfc|proposal|feature|discussion|question|idea|enhancement)s?\b",
+    re.IGNORECASE,
+)
+
+# Cheap leverage signals — presence of any of these in the body
+# raises the chance this is a machine-friendly bug. Absence of all
+# of them with a short body = probably vague, skip.
+_LEVERAGE_SIGNALS = ("```", "Traceback", "Error:", "Exception", "stack trace",
+                     "expected", "actual", "reproduce", "repro:", "steps to ",
+                     "http://", "https://", "/usr/", "  File \"")
+
+
+def _cheap_issue_skip(item: dict) -> str | None:
+    """Per-issue deterministic skip checks — title patterns, body
+    length, conversation depth, leverage proxies. Each rejection here
+    saves one paid LLM judge call. Returns a short reason tag for the
+    `filtered` dict, or None if the issue should reach the LLM judge.
+    """
+    title = (item.get("title") or "").strip()
+    body = (item.get("body") or "")
+    comments = int(item.get("commentsCount") or 0)
+
+    if _NON_BUG_TITLE_RE.match(title):
+        return "non_bug_title"
+    if len(body) < 100:
+        return "thin_body"
+    if comments > 20:
+        return "saturated_thread"
+    # Leverage proxy: a real bug usually has at least one of stack
+    # trace / error string / repro fence / URL / file path.
+    blower = body.lower()
+    if not any(sig.lower() in blower for sig in _LEVERAGE_SIGNALS):
+        return "no_leverage_signals"
+    return None
+
+
+def _merge_warm_org_issues(global_results: list[dict], *,
+                            base_cutoff_days: int) -> list[dict]:
+    """Add warm-org issues to the candidate set, deduped by URL.
+
+    Warm orgs are where the operator has merge history — the standing
+    gate doesn't apply, the merge race is less brutal, and the
+    maintainer is more likely to engage on a contribution. So we
+    always sweep them, with a wider recency window than the global
+    search. The global search captures the recency-first / first-mover
+    advantage; this captures the standing-leveraged opportunities the
+    global search might miss.
+
+    Per-org searches are cached 30min in gh_io, so this costs N gh
+    calls per cache window where N = warm-org count.
+    """
+    warm_cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
+        days=max(90, base_cutoff_days * 3)
+    )
+    warm_cutoff_iso = warm_cutoff.strftime('%Y-%m-%d')
+    try:
+        warm_state = warm_orgs.state()
+        warm_org_list = list((warm_state.get("orgs") or {}).keys())
+    except Exception:
+        return global_results
+    seen_urls = {(it.get("url") or "") for it in global_results}
+    merged = list(global_results)
+    for org in warm_org_list:
+        if not org:
+            continue
+        try:
+            # No label filter on warm orgs — we have standing here,
+            # any open issue is plausibly engageable. The label gate
+            # was a cheap proxy for "actionable" against the global
+            # firehose; for warm orgs, let the LLM judge sort it out.
+            org_results = gh_io.search_issues(
+                state="open", no_assignee=True, archived=None,
+                created_after=warm_cutoff_iso,
+                owner=org,
+                sort="created", order="desc",
+                limit=30,
+            )
+        except Exception as e:
+            observe.event("warm_org_search_failed", org=org,
+                          error_type=type(e).__name__, error=str(e)[:200])
+            continue
+        for it in org_results:
+            url = it.get("url") or ""
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                merged.append(it)
+    return merged
+
+
+def _fetch_repo_meta_cheap(repo: str) -> dict:
+    """{stars, archived, language, pushed_at} for one repo. Cached
+    via gh_io's sqlite cache."""
+    try:
+        return gh_io._cached_json(
+            "repo_view_lite",
+            ["api", f"repos/{repo}", "--jq",
+             "{stars: .stargazers_count, archived: .archived, "
+             "language: .language, pushed_at: .pushed_at}"],
+            ttl=24 * 3600,
+        )
+    except Exception as e:
+        # Fail closed: archived=True keeps a meta-fetch failure from
+        # silently letting an actually-archived repo pass the filter.
+        observe.event("repo_meta_fetch_failed", repo=repo,
+                      error_type=type(e).__name__, error=str(e)[:200])
+        return {"stars": 0, "archived": True, "language": None, "pushed_at": None}
+
+
+def _passes_deterministic_issue(repo: str, meta: dict) -> bool:
+    """Same lattice as `_passes_lightweight_filter`, applied to a
+    bare-bones repo dict instead of a RepoCandidate.
+
+    Org-JIT differentiated by warmth: cold orgs still strict
+    (1 open PR max, no TTL — don't spam someone we've never
+    engaged). Warm orgs get a `WARM_ORG_PR_TTL_DAYS` TTL: PRs older
+    than that aren't counted toward the block. The maintainer's
+    silence past a week is the signal that they're not actively on
+    it; opening another PR there isn't spam, it's filling a slot
+    they've effectively vacated.
+    """
+    if meta.get("archived"):
+        return False
+    org = org_state.org_of(repo)
+    warm = warm_orgs.is_warm(org)
+    if warm:
+        if _warm_org_blocked(org):
+            return False
+    else:
+        if org_state.is_org_blocked(org):  # cold: cap=1, no TTL
+            return False
+    if _on_kill_list(repo) or _on_evicted_list(repo):
+        return False
+    if meta.get("stars", 0) > BIG_REPO_STAR_THRESHOLD and not warm:
+        return False
+    if gh_io.repo_ai_policy(repo) == "hostile":
+        return False
+    return True
+
+
+WARM_ORG_PR_TTL_DAYS = 7
+
+
+def _warm_org_blocked(org: str) -> bool:
+    """Warm-org block check with a `WARM_ORG_PR_TTL_DAYS` TTL on
+    each PR's `created_at`. A PR older than the TTL doesn't count
+    toward the block — the maintainer has had a week to engage and
+    if they haven't, the slot is effectively vacated. Using created
+    (not updated) means CI churn / our own pushes don't keep an old
+    PR alive in the JIT's view; only the actual age does."""
+    import datetime as _dt
+    prs = org_state.state().get("orgs", {}).get(org, [])
+    if not prs:
+        return False
+    cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=WARM_ORG_PR_TTL_DAYS)
+    fresh = 0
+    for pr in prs:
+        # Prefer created_at; fall back to updated_at for old records
+        # that org_state cached before we added the field.
+        ts = pr.get("created_at") or pr.get("updated_at", "")
+        try:
+            t = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            fresh += 1  # unknown — count as fresh (conservative)
+            continue
+        if t >= cutoff:
+            fresh += 1
+    return fresh >= 1
+
+
+@activity.defn
+async def loosen_floor() -> dict:
+    """Drop min_complexity one rung (DEEP → MEDIUM → SHALLOW). Called
+    by the puller when too many empty fires accumulate — keeps the
+    pipe flowing toward the 20%-utilization floor. Returns the new
+    floor and whether it actually changed.
+
+    Only loosens, never tightens — tightening stays operator-owned so
+    the 50%-acceptance principle isn't auto-overridden by a tight loop
+    that pushes throughput at the cost of merge rate. The operator
+    raises the floor; this activity only ever lowers it.
+    """
+    path = Path.home() / ".sweep" / "control" / "min_complexity"
+    current = _min_complexity()
+    next_rung = {"DEEP": "MEDIUM", "MEDIUM": "SHALLOW", "SHALLOW": "SHALLOW"}
+    new = next_rung[current]
+    if new == current:
+        return {"floor": current, "changed": False}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new + "\n")
+    observe.event("floor_loosened", from_floor=current, to=new,
+                  reason="empty_streak_threshold")
+    return {"floor": new, "changed": True}
+
+
+@activity.defn
+async def auto_evict_stale_repos() -> dict:
+    """Walk recent PR outcomes, group by repo, find repos with
+    EVICTION_LOSS_THRESHOLD consecutive losses (closed-unmerged or
+    open-but-hanging-past-EVICTION_HANGING_DAYS), append to
+    ~/.sweep/control/prospect_evicted.txt. Idempotent — duplicates
+    are deduped on read. Returns {evicted_new, evicted_total}.
+    """
+    import datetime as _dt
+    from sweep import outcomes as _oc
+
+    # 90-day lookback should cover any plausible 3-loss streak.
+    try:
+        oc = _oc.outcomes(days=90)
+    except Exception as e:
+        return {"evicted_new": 0, "evicted_total": 0, "error": str(e)[:200]}
+    merged = oc.get("merged_records", []) or []
+    closed = oc.get("closed_records", []) or []
+
+    # Build per-repo timeline of outcomes (newest first). Three
+    # outcome kinds count as losses for the 3-in-a-row rule:
+    #   • closed     — closed-unmerged in the lookback window
+    #   • hanging    — currently open and created > EVICTION_HANGING_DAYS ago
+    #                  (30 days open = effectively closed; if the maintainer
+    #                   hasn't engaged in a month, they won't)
+    # Merges break a streak: a repo with [merged, closed, closed] is not
+    # evicted because the merge proves engagement was possible recently.
+    timeline: dict[str, list[tuple[str, str]]] = {}  # repo → [(iso, outcome)]
+    for r in merged:
+        repo = r.get("repo") or r.get("repository", {}).get("nameWithOwner", "")
+        if repo:
+            timeline.setdefault(repo, []).append((r.get("ts", ""), "merged"))
+    for r in closed:
+        repo = r.get("repo") or r.get("repository", {}).get("nameWithOwner", "")
+        if repo:
+            timeline.setdefault(repo, []).append((r.get("ts", ""), "closed"))
+    # Hanging open PRs — read from org_state's per-repo records.
+    hanging_cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=EVICTION_HANGING_DAYS)
+    for org, prs in (org_state.state().get("orgs") or {}).items():
+        for pr in prs:
+            repo = pr.get("repo", "")
+            if not repo:
+                continue
+            ts = pr.get("created_at") or pr.get("updated_at", "")
+            try:
+                t = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                continue
+            if t <= hanging_cutoff:
+                timeline.setdefault(repo, []).append((ts, "hanging"))
+
+    new_evictions: list[str] = []
+    LOSS = ("closed", "hanging")
+    for repo, events in timeline.items():
+        events.sort(key=lambda x: x[0], reverse=True)  # newest first
+        last_n = events[:EVICTION_LOSS_THRESHOLD]
+        if (len(last_n) >= EVICTION_LOSS_THRESHOLD
+                and all(o in LOSS for _, o in last_n)):
+            if not _on_evicted_list(repo):
+                new_evictions.append(repo)
+
+    if new_evictions:
+        _EVICTED_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _EVICTED_PATH.open("a") as f:
+            for repo in new_evictions:
+                f.write(f"{repo}  # auto-evicted "
+                        f"{_dt.datetime.now(_dt.timezone.utc).isoformat()} "
+                        f"({EVICTION_LOSS_THRESHOLD} closed-unmerged in a row)\n")
+                observe.event("repo_evicted", repo=repo,
+                              reason=f"{EVICTION_LOSS_THRESHOLD}_closed_in_row")
+
+    total = 0
+    if _EVICTED_PATH.exists():
+        total = sum(1 for ln in _EVICTED_PATH.read_text().splitlines()
+                    if ln.strip() and not ln.strip().startswith("#"))
+    return {"evicted_new": len(new_evictions), "evicted_total": total,
+            "new_repos": new_evictions}
+
+
+@activity.defn
+async def reset_floor() -> dict:
+    """AIMD recovery: snap min_complexity back to min_complexity_target.
+    Called by the puller when triage utilization is high enough that
+    we no longer need the loosened filter to keep work flowing.
+    Idempotent — if current already equals target, no-op."""
+    path = Path.home() / ".sweep" / "control" / "min_complexity"
+    current = _min_complexity()
+    target = _target_complexity()
+    if current == target:
+        return {"floor": current, "changed": False}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(target + "\n")
+    observe.event("floor_reset", from_floor=current, to=target,
+                  reason="utilization_recovered")
+    return {"floor": target, "changed": True}
 
 
 @activity.defn
