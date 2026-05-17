@@ -182,3 +182,37 @@ Like the `🩸` leak chip, silent when fine. Loud only on the "things look fine 
 
 **Compounds with:** [[O3-leakdog-interface-accounting]] (catches the orthogonal failure mode — leakdog finds imbalanced interfaces, heartbeat-chip finds absent-interface activity), [[O6-signal-decode-drop-is-silent]] (the heartbeat chip is the second line of defense if the structural signal-drop event from O6 ever misses a case).
 
+## O8: Production-side LLM verdicts on test runs are 2-sigma; mechanical re-parse at the push gate adds the next 2 sigma
+
+**Prediction:** An LLM reading test runner output and producing a "pass / fail" verdict is approximately 2σ reliable (~95%) — it correctly catches obvious failures but misreads ~5% of cases where the test runner says "ok" for the wrong reason (silent skip: filter mismatch, missing toolchain, platform-disabled, 0-tests-collected). Layering a deterministic re-parse (regex on `running N tests` + grep for the expected test name + parse of `test result:`) at the push gate eliminates that 5% structurally — every gate is an independent multiplier on confidence. Stacked: production verdict + sha-pinned manifest + expected-test-name match + git-pinned head sha + maintainer's ability to re-run and sha256-compare ≈ 4σ structural commitment that the substrate's "tests pass" claim is true.
+
+**Status: CONFIRMED (2026-05-17, /investigate this-session).** Triggered by `wild-linker/wild#1924`. The PR was opened with the substrate's standard hypothesis-graph reasoning artifact (`repo-hypotheses/wild-linker-wild.md`) but ZERO test_attestation events. The maintainer's review comment was a single rhetorical line: *"Have you tested the change before you opened the PR?"* — accurate, because empirically we had not. Reconstructing the failure: the /investigate skill at the time ran tests locally on macOS, where the wild integration test (`elf/x86_64/version-node-not-found/default`) silently skipped because clang+lld weren't installed; the skill saw `0 failures` and called it pass; the substrate had no structural gate to refuse the push.
+
+Reproduced cleanly in this session: ran the actual test in a Linux container (rust:1.94 + clang + lld). First attempt with wrong filter (`version_node_not_found`, underscores) returned `0 passed; 0 failed; 0 ignored; 1100 filtered out; finished in 0.00s` — exact silent-skip pattern. Second attempt with correct filter (`version-node-not-found`) executed 4 tests, 3 ignored (arch-disabled), 1 failed (the very test the PR authored — fix doesn't make it pass). New deterministic verifier correctly returns ok=False for both: `0 tests ran; silent-skip case` and `1 test(s) failed`.
+
+**Mechanism:** the split is production = vibes, verification = mechanical. The LLM produces an attestation artifact; the parser independently re-reads the captured stdout against three rules:
+1. `tests_run > 0` (parsed from `running N tests` summed across binaries)
+2. expected_test_name appears verbatim in stdout
+3. `tests_failed == 0` (parsed from `test result:` summary)
+
+Any rule fails → gate refuses push. The LLM cannot bypass the parser; the parser cannot generate vibes. They're orthogonal layers of independent confidence.
+
+**Structural commitments landed this session:**
+
+- `sweep/attestation_verify.py` — pure-parser verifier, plus `write_attestation_files` for the committable layout (`attestations/<slug>/{manifest.json, after.txt, [before.txt]}`).
+- `qa_one_entry` writes the attestation set into the worktree's `attestations/` dir AND auto-commits it (`git add attestations/ && git commit`). The receipts ship with the fix branch — no invisible "we checked but didn't show."
+- `submit-actor._attestation_gate` runs before delegating push. No verified manifest → `submit_attestation_failed` event, returns without push.
+- `respond-actor` runs the same gate for `publish`/`rebase` intents (defense in depth: engagement-lane PRs that route directly via remit bypass submit; respond is the backstop).
+- `investigate_cycle` now kicks `qa-actor` when `classified.produced_pr` is true (deriving branch from worktree HEAD). The production lane is now investigate → qa → compose → submit → respond, with the attestation gate at submit AND respond.
+
+**Forcing function:** because the gate is structural, any production-lane PR that lacks a verified attestation halts the line at the gate. The substrate doesn't silently degrade — it loudly refuses. This is the andon-cord-as-design: when upstream wiring doesn't yet produce compliant artifacts (e.g. `qa-actor.run` doesn't yet kick `compose` on verdict=pass), the line halts visibly with a named reason. Operator pulled the cord on `2026-05-17` after this discovery; resume requires the punch list (qa→compose kick, container-based test_env for cross-toolchain repos, persistent cache mount per repo) to land.
+
+**Falsifier:** if maintainer sha256 verifications regularly disagree with the manifest's claimed `sha256`, the parser is being bypassed somehow (test re-runs nondeterministic, env drift between substrate and CI, etc.). The right response is not to weaken the gate but to capture the drift source (likely env hash should also be pinned).
+
+**Out of scope today (deliberate, separate workstreams):**
+- Container-based `test_env` per repo (today qa hardcodes `test_env="native"`; wild-class repos need `docker:<image>` + setup_cmd). The substrate-side hook is `infer_test_env(worktree, repo)` returning the env spec, cached in retro_params.
+- Per-repo persistent build cache (cargo target dir, npm node_modules, etc.) mounted into the container so test runs amortize.
+- Codex/gemini review attestations under the same `attestations/<slug>/` umbrella (today they live in `~/.sweep/attestations/<msg_id>/` privately; making them publish-ready is symmetric work).
+
+**Compounds with:** [[O1-activity-owned-observability]] (the attestation file IS the activity-owned receipt, replacing the skill's editorial claim), [[O3-leakdog-interface-accounting]] (`submit_attestation_failed` / `respond_attestation_failed` events surface as a balance row), [[O6-signal-decode-drop-is-silent]] (the same silent-failure class — silent test-skip is to qa what silent signal-drop is to messaging).
+
