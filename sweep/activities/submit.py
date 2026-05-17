@@ -105,47 +105,21 @@ async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
     except Exception as e:
         return False, f"ensure_worktree: {type(e).__name__}: {e}"
     att_root = Path(worktree) / "attestations"
-    if not att_root.exists():
-        return False, f"no attestations/ dir in worktree {worktree}"
-    # New layout: attestations/<org>-<repo>-<issue#>-<n>/manifest.json
-    # Filter to this branch's repo so unrelated attestations don't
-    # contaminate the gate. Pick highest <n> as current. Legacy
-    # nested + slug-only layouts kept for transition compatibility.
-    org_repo_prefix = repo.replace("/", "-") + "-"
-    flat_matches = []
-    legacy = []
-    for entry in att_root.iterdir():
-        if not entry.is_dir():
-            continue
-        if (entry / "manifest.json").exists():
-            # Flat layout dir; check it matches this repo's prefix.
-            if entry.name.startswith(org_repo_prefix):
-                flat_matches.append(entry)
-            else:
-                legacy.append(entry)
-            continue
-        # Nested legacy layout (one level deeper)
-        for sub in entry.iterdir():
-            if sub.is_dir() and (sub / "manifest.json").exists():
-                legacy.append(sub)
-    if flat_matches:
-        # Pick the highest attempt number for this repo. Dir suffix
-        # after the prefix is "<issue#>-<n>"; we sort by (issue, n).
-        def _key(p: Path) -> tuple:
-            tail = p.name[len(org_repo_prefix):]
-            parts = tail.rsplit("-", 1)
-            try:
-                return (int(parts[0]), int(parts[1]))
-            except (ValueError, IndexError):
-                return (0, 0)
-        chosen = max(flat_matches, key=_key)
-    elif len(legacy) == 1:
-        chosen = legacy[0]
-    elif len(legacy) > 1:
-        names = ", ".join(str(p.relative_to(att_root)) for p in legacy)
-        return False, f"ambiguous legacy attestation dirs: {names}"
-    else:
-        return False, f"no manifest.json under {att_root}"
+    org_repo = repo.replace("/", "-")
+    repo_dir = att_root / org_repo
+    if not repo_dir.exists():
+        return False, f"no attestations/{org_repo}/ in worktree"
+    # Per-repo dir holds a flat list of issue-N-manifest.json files.
+    # Pick the highest issue-N for this branch's gate. If there are
+    # multiple (we've attested several issues for this repo), submit
+    # picks the latest by issue number — that's our most recent fix
+    # against this repo, which is what this push should match.
+    manifests = sorted(repo_dir.glob("*-manifest.json"))
+    if not manifests:
+        return False, f"no *-manifest.json under {repo_dir}"
+    chosen_manifest = manifests[-1]
+    name = chosen_manifest.name.removesuffix("-manifest.json")
+    chosen = repo_dir  # gate_push wants the dir + the name
 
     # Pin check: the attestation captures a head_sha at write time.
     # Any code change since then (commits other than the attestation
@@ -154,7 +128,7 @@ async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
     # and current HEAD, excluding attestations/, must be empty.
     try:
         import json as _json
-        manifest = _json.loads((chosen / "manifest.json").read_text())
+        manifest = _json.loads(chosen_manifest.read_text())
         manifest_sha = manifest.get("head_sha", "")
     except Exception as e:
         return False, f"manifest unreadable: {e}"
@@ -177,7 +151,7 @@ async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
                        f"file(s) differ ({changed[0]}{'...' if len(changed)>1 else ''}) — "
                        f"re-run qa to refresh")
 
-    return gate_push(chosen)
+    return gate_push(chosen, name)
 
 
 async def _final_checks(repo: str, pr: int | None) -> tuple[bool, str]:

@@ -126,6 +126,7 @@ def _parsed_facts_dict(stdout: str, expected_test_name: str) -> dict:
 
 def write_attestation_files(
     attestation_dir: Path,
+    name: str,
     *,
     test_cmd: str,
     expected_test_name: str,
@@ -137,18 +138,19 @@ def write_attestation_files(
     before_stdout: str | None = None,
 ) -> dict:
     """Write the committable attestation set into `attestation_dir`.
-    Layout:
-      manifest.json       — machine-readable summary (small, diff-friendly)
-      after.txt           — captured test_cmd stdout on the fix branch
-      before.txt          — captured test_cmd stdout on master (if provided)
+    Files are named `<name>-manifest.json`, `<name>-after.txt`, and
+    `<name>-before.txt` (when before is captured). Convention: `name`
+    is `"issue-<n>"`, so a repo's dir reads as a flat list of all
+    the issues we've attested against:
 
-    The split is the "fail on master, pass with fix" discipline made
-    visible: the maintainer can re-run on both refs and compare. When
-    a PR adds the test itself (test didn't exist on master), the
-    before.txt captures `running 0 tests` and the manifest's
-    before.expected_test_present=False makes that visible too.
+        attestations/wild-linker-wild/
+          issue-1915-manifest.json
+          issue-1915-after.txt
+          issue-1915-before.txt
+          issue-2000-manifest.json
+          ...
 
-    Returns the manifest dict so callers can write + decide in one pass.
+    Maintainer browses one dir, sees the substrate's history.
     """
     attestation_dir.mkdir(parents=True, exist_ok=True)
 
@@ -156,10 +158,11 @@ def write_attestation_files(
         return s if len(s) <= 50_000 else s[-50_000:]
 
     after_facts = _parsed_facts_dict(after_stdout, expected_test_name)
-    (attestation_dir / "after.txt").write_text(_truncate(after_stdout))
+    (attestation_dir / f"{name}-after.txt").write_text(_truncate(after_stdout))
 
     manifest = {
         "kind": "test_attestation",
+        "name": name,
         "test_cmd": test_cmd,
         "expected_test_name": expected_test_name,
         "head_sha": head_sha,
@@ -170,29 +173,24 @@ def write_attestation_files(
     }
     if before_stdout is not None:
         before_facts = _parsed_facts_dict(before_stdout, expected_test_name)
-        (attestation_dir / "before.txt").write_text(_truncate(before_stdout))
+        (attestation_dir / f"{name}-before.txt").write_text(_truncate(before_stdout))
         manifest["before"] = before_facts
 
-    (attestation_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (attestation_dir / f"{name}-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
 
 
-def gate_push(attestation_dir: Path) -> tuple[bool, str]:
-    """Submit-actor / respond-actor calls this before invoking gh.
-    Returns (ok, reason). Refuses push when:
-      - manifest.json or after.txt missing
-      - manifest.after.verified is False
-      - re-parsed after.txt fails the deterministic check
-      - before.txt is present AND its parsed verdict shows the test
-        passed on master (fix would be unnecessary) — but the
-        before-was-added case (0 tests on master) does NOT fail
-        because the PR is adding the test fresh."""
-    manifest_path = attestation_dir / "manifest.json"
-    after_path = attestation_dir / "after.txt"
+def gate_push(attestation_dir: Path, name: str) -> tuple[bool, str]:
+    """Verify the attestation triple `<name>-{manifest.json,after.txt,before.txt}`.
+    Returns (ok, reason). Refuses when manifest/after missing, after
+    verdict false, re-parse fails, or before shows the test passing
+    on master (fix unnecessary)."""
+    manifest_path = attestation_dir / f"{name}-manifest.json"
+    after_path = attestation_dir / f"{name}-after.txt"
     if not manifest_path.exists():
-        return False, f"no manifest.json at {manifest_path}"
+        return False, f"no {name}-manifest.json at {attestation_dir}"
     if not after_path.exists():
-        return False, f"no after.txt at {after_path}"
+        return False, f"no {name}-after.txt at {attestation_dir}"
     try:
         manifest = json.loads(manifest_path.read_text())
     except json.JSONDecodeError as e:
@@ -206,7 +204,7 @@ def gate_push(attestation_dir: Path) -> tuple[bool, str]:
         return False, f"re-parse rejected after.txt: {result.reason}"
     # Optional before.txt sanity: if it exists AND the test was present
     # AND verdict shows it passed, the fix is unnecessary — reject.
-    before_path = attestation_dir / "before.txt"
+    before_path = attestation_dir / f"{name}-before.txt"
     if before_path.exists() and "before" in manifest:
         before = manifest["before"]
         if (before.get("expected_test_present") and before.get("tests_run", 0) > 0
