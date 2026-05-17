@@ -343,7 +343,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     # growing list. The pin check in submit's gate compares the fork
     # worktree's HEAD against manifest.head_sha at push time.
     try:
-        from sweep.attestation_verify import write_attestation_files
+        from sweep.attestation_writer import write_attestation_files
         import platform
         sweep_repo = Path(__file__).resolve().parent.parent.parent
         org_repo = req.repo.replace("/", "-")

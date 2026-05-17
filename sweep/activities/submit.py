@@ -95,7 +95,7 @@ async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
     if not branch:
         return False, "no branch — can't locate worktree"
     from sweep.activities.worktree import ensure_worktree
-    from sweep.attestation_verify import gate_push
+    from sweep._gate.verifier import gate_push
     try:
         worktree = await ensure_worktree(repo, branch)
     except Exception as e:

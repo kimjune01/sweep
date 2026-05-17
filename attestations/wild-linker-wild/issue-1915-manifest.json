@@ -3,28 +3,16 @@
   "name": "issue-1915",
   "test_cmd": "cargo test --release --test integration_tests -- version-node-not-found",
   "expected_test_name": "elf/x86_64/version-node-not-found/default",
-  "head_sha": "7981495b01875d8c47ed753abb76d1847efe3642",
+  "head_sha": "7f12118c16881ec2d4cfd3d8c08a61dab1d9a64e",
   "host": "darwin-arm64-via-qemu-amd64",
   "test_env": "docker:rust:1.94",
   "elapsed_seconds": 0.0,
   "after": {
-    "verified": true,
-    "verify_reason": "verified: 1 passed, 0 failed, 0 ignored",
-    "tests_run": 1,
-    "tests_passed": 1,
-    "tests_failed": 0,
-    "tests_ignored": 0,
-    "expected_test_present": true,
+    "bytes": 6732,
     "sha256": "63729dee8d2768be6b957a3ed3dc5a0f5fe8d147613c084e7ba281cf5de7cb76"
   },
   "before": {
-    "verified": false,
-    "verify_reason": "1 test(s) failed",
-    "tests_run": 1,
-    "tests_passed": 0,
-    "tests_failed": 1,
-    "tests_ignored": 0,
-    "expected_test_present": true,
+    "bytes": 13619,
     "sha256": "7e054c5efd46bf0bab73963321530622b4678a8ad4e7d22fc3165963a45cc383"
   }
 }
