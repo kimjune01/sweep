@@ -21,6 +21,59 @@ from sweep.io_safe import atomic_write_text
 from sweep.types import GateAttestation, QaOneEntryRequest, QaOneEntryResult
 
 
+def assert_test_env_available(repo: str) -> str:
+    """Pre-flight check: can the host actually produce the test env
+    this repo requires? Returns the resolved test_env (for the caller's
+    logs). Raises ApplicationError(non_retryable=True) — which trips
+    the actor's andon — when the env is declared but unreachable.
+
+    The point is to fail loud BEFORE running the skill against a
+    platform we can't validate on. A skill that runs without env
+    awareness produces fixes shaped by wrong assumptions; the right
+    move is to halt the line and let the operator install docker /
+    pull the image / fix the env config, then `sweep andon clear`.
+    """
+    env, _ = _get_test_env(repo)
+    if env == "native":
+        return env
+    if env.startswith("docker:"):
+        image = env.removeprefix("docker:")
+        # Docker daemon reachable?
+        info = subprocess.run(
+            ["docker", "info"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if info.returncode != 0:
+            raise ApplicationError(
+                f"test_env={env!r} requires docker but `docker info` "
+                f"failed (rc={info.returncode}): {(info.stderr or '')[:200]}. "
+                f"Either install/start docker (env-setup path), OR "
+                f"tighten sift's filter so {repo} isn't investigated "
+                f"on this host. Then `sweep andon clear`.",
+                non_retryable=True,
+            )
+        # Image pullable / present? Pull is idempotent (no-op if cached).
+        pull = subprocess.run(
+            ["docker", "pull", "--quiet", image],
+            capture_output=True, text=True, timeout=120,
+        )
+        if pull.returncode != 0:
+            raise ApplicationError(
+                f"test_env={env!r} requires image {image!r} but "
+                f"`docker pull` failed (rc={pull.returncode}): "
+                f"{(pull.stderr or '')[:200]}. Either fix the image "
+                f"name in retro_params (env-setup path), OR tighten "
+                f"sift's filter so {repo} isn't investigated. Then "
+                f"`sweep andon clear`.",
+                non_retryable=True,
+            )
+        return env
+    raise ApplicationError(
+        f"unknown test_env {env!r}; expected 'native' or 'docker:<image>'",
+        non_retryable=True,
+    )
+
+
 def _get_test_env(repo: str) -> tuple[str, str | None]:
     """Resolve (test_env, setup_cmd) for a repo from retro_params.
 

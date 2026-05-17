@@ -309,6 +309,17 @@ async def investigate_cycle(msg: Message) -> dict:
     if not msg.repo or not msg.pr:
         raise ApplicationError("investigate: repo + issue required",
                                non_retryable=True)
+
+    # Andon if the host can't produce the test_env this repo requires.
+    # The /investigate skill running without env-awareness produces
+    # fixes shaped by wrong assumptions (the wild #1924 class). Halt
+    # before the skill runs; operator clears once the env is reachable.
+    from sweep.activities.qa import assert_test_env_available
+    from sweep import observe
+    resolved_env = assert_test_env_available(msg.repo)
+    observe.event("investigate_env_check", repo=msg.repo, issue=msg.pr,
+                  test_env=resolved_env)
+
     try:
         return await _investigate_cycle_inner(msg)
     finally:
