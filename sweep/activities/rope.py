@@ -9,11 +9,15 @@ process variable, rope is the controller, target is the setpoint. Below
 target → fill; at-or-above target → drop the idle signal silently. The
 line has fuel; downstream's idle isn't a request for more.
 
-Why scout-depth alone (not aggregate WIP): every actor has its own WIP
-cap at its inbox boundary, so the cap chain already bounds total
-in-flight. Scout's inbox is the *only* thing rope can directly
-influence (rope deposits there); ergo, regulate that and trust the
-caps to do the rest.
+Why scout + triage depth (not just scout): triage is the LLM-cost
+choke point right downstream of scout/sift. If triage is already
+backed up, firing more scout cards just grows the queue without
+moving work. Reading triage's depth lets rope back off when the
+bottleneck is downstream, not at scout itself.
+
+Both inboxes gated by the same target: rope fires only if scout AND
+triage both have headroom. Either being at/above target means
+backpressure; rope drops the idle signal.
 
 Replaces:
   - leakdog's scout heartbeat (still kept as a slow bootstrap safety
@@ -40,7 +44,10 @@ from sweep.types import Message
 
 ROPE_INBOX = Path.home() / ".sweep" / "inbox" / "rope.jsonl"
 ROPE_TARGET_FILE = Path.home() / ".sweep" / "control" / "rope_target"
+ROPE_COOLDOWN_FILE = Path.home() / ".sweep" / "control" / "rope_cooldown"
+ROPE_LAST_FIRED_FILE = Path.home() / ".sweep" / "state" / "rope_last_fired"
 DEFAULT_TARGET = 2
+DEFAULT_COOLDOWN_S = 60
 
 
 def _read_target() -> int:
@@ -51,6 +58,40 @@ def _read_target() -> int:
         return max(1, int(ROPE_TARGET_FILE.read_text().strip()))
     except Exception:
         return DEFAULT_TARGET
+
+
+def _read_cooldown_s() -> int:
+    """Cooldown window between rope fires. Mitigates lag-induced
+    thrashing: triage depth lags scout fires by the scout→sift→triage
+    cascade time, so without a cooldown, rope keeps tugging in the
+    blind period and overshoots when the cascade lands. Default 60s
+    matches the longest healthy propagation."""
+    try:
+        return max(0, int(ROPE_COOLDOWN_FILE.read_text().strip()))
+    except Exception:
+        return DEFAULT_COOLDOWN_S
+
+
+def _last_fired_ts() -> float:
+    """Unix timestamp of the last rope_fired, 0.0 if never. Disk-backed
+    so it survives worker restarts — a restart shouldn't reset the
+    cooldown clock."""
+    try:
+        return float(ROPE_LAST_FIRED_FILE.read_text().strip())
+    except Exception:
+        return 0.0
+
+
+def _record_fire(ts: float) -> None:
+    """Write the last-fired timestamp. Best-effort — if the write
+    fails, the next cycle's cooldown check falls back to 0.0 and we
+    might over-fire once; preferable to raising and wedging the
+    controller."""
+    try:
+        ROPE_LAST_FIRED_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ROPE_LAST_FIRED_FILE.write_text(f"{ts:.3f}")
+    except Exception:
+        pass
 
 
 @activity.defn
@@ -96,28 +137,53 @@ async def rope_cycle(msg: Message) -> dict:
     No raise, no andon. Rope is the line's tempo regulator — if it
     fails, the line just doesn't pull, which is the safer failure mode.
     """
+    import time
     from sweep import observe
     from sweep.inbox_state import inbox_states
     from sweep.activities.scout import kick_scout_card
 
     target = _read_target()
-    try:
-        s = inbox_states("scout")
-        depth = len(s.get("queued", [])) + len(s.get("in_flight", []))
-    except Exception as e:
+    cooldown_s = _read_cooldown_s()
+    now = time.time()
+    elapsed = now - _last_fired_ts()
+    if elapsed < cooldown_s:
+        observe.event("rope_cooldown",
+                      elapsed_s=round(elapsed, 1),
+                      cooldown_s=cooldown_s,
+                      sender=msg.sender or "unknown")
+        return {"fired": False, "reason": "cooldown",
+                "elapsed_s": round(elapsed, 1),
+                "cooldown_s": cooldown_s}
+
+    def _depth(actor: str) -> int:
+        try:
+            s = inbox_states(actor)
+            return len(s.get("queued", [])) + len(s.get("in_flight", []))
+        except Exception:
+            return -1  # treat read failures as "unknown"; fall through to drop
+
+    scout_d = _depth("scout")
+    triage_d = _depth("triaged")
+    if scout_d < 0 or triage_d < 0:
         observe.event("rope_depth_read_failed",
-                      error_type=type(e).__name__, error=str(e)[:200])
+                      scout=scout_d, triage=triage_d)
         return {"fired": False, "reason": "depth_read_failed"}
 
-    if depth >= target:
-        observe.event("rope_drop", depth=depth, target=target,
-                      sender=msg.sender or "unknown")
-        return {"fired": False, "depth": depth, "target": target,
+    if scout_d >= target or triage_d >= target:
+        observe.event("rope_drop",
+                      scout_depth=scout_d, triage_depth=triage_d,
+                      target=target, sender=msg.sender or "unknown")
+        return {"fired": False, "scout_depth": scout_d,
+                "triage_depth": triage_d, "target": target,
                 "reason": "above_target"}
 
     wf_id = await kick_scout_card(f"rope-{msg.sender or 'idle'}")
-    observe.event("rope_fired", depth=depth, target=target,
+    _record_fire(now)
+    observe.event("rope_fired",
+                  scout_depth=scout_d, triage_depth=triage_d,
+                  target=target, cooldown_s=cooldown_s,
                   sender=msg.sender or "unknown",
                   scout_wf=wf_id or "(no-signal)")
-    return {"fired": True, "depth": depth, "target": target,
+    return {"fired": True, "scout_depth": scout_d,
+            "triage_depth": triage_d, "target": target,
             "scout_wf": wf_id}
