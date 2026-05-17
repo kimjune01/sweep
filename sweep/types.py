@@ -151,6 +151,7 @@ class PrStateResult:
     bucket: Bucket
     signals: dict
     reason: str
+    is_draft: bool = False
 
 
 @dataclass

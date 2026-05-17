@@ -33,7 +33,7 @@ CAPS: dict[str, dict[str, int | None]] = {
     "reqa":          {"queued": 5, "in_flight": 2},   # engagement-lane qa
     "respond":       {"queued": 5, "in_flight": 1},   # auto-responder (rebase/close/publish via /drip)
     "human":         {"queued": 8, "in_flight": 2},   # you — real backlog signal
-    "retro":         {"queued": None, "in_flight": None},  # in-review — geometry, not backlog
+    "retro_audit":   {"queued": None, "in_flight": None},  # in-review (view-only audit sink)
 }
 
 # Display names for the compressed flow line above the table. Differs from
@@ -52,7 +52,7 @@ FLOW_NAMES: dict[str, str] = {
     "qa":            "QA",
     "reqa":          "Re-QA",
     "respond":       "Respond",
-    "retro":         "In Review",
+    "retro_audit":   "In Review",
     "human":         "Human",
 }
 # Order interleaves the engagement-lane sibling next to its production
@@ -62,7 +62,7 @@ FLOW_ORDER = ("scout", "sift", "triaged", "immunize",
               "investigate", "reinvestigate",
               "tissue", "bless", "post",
               "qa", "reqa",
-              "respond", "retro", "human")
+              "respond", "retro_audit", "human")
 
 def register(app: typer.Typer) -> None:
     """Attach the cockpit command to a top-level Typer app."""
@@ -139,7 +139,7 @@ def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
                   "qa", "reqa",
                   "respond", "human"]
     if include_wait:
-        actionable = actionable + ["retro"]
+        actionable = actionable + ["retro_audit"]
 
     # Flow line always reads every station regardless of --include-wait —
     # geometry is the pipeline shape, not the action filter.
@@ -420,15 +420,30 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     if n:
         print()
         print(f"📥   {n}  _| `sweep inbox`_")
-    # Retro inbox is the wait-bucket audit trail; remit appends
-    # a fresh entry every poll cycle for each open PR, so raw length
-    # over-counts. Dedupe by (repo, pr) to get "PRs currently in
-    # review," which is what the chip is trying to convey.
-    retro_queued = (flow_states.get("retro") or {}).get("queued", [])
-    retro_count = len({(m.get("repo"), m.get("pr")) for m in retro_queued})
-    if retro_count:
+    # Wait-bucket audit trail. Remit appends an entry per poll cycle
+    # per open PR, so raw length over-counts; dedupe by (repo, pr).
+    # Drafts split out — they're "not yet asked for review," distinct
+    # from "asked and waiting." Splitting keeps the discrepancy visible
+    # rather than hiding drafts inside the review count.
+    audit_queued = (flow_states.get("retro_audit") or {}).get("queued", [])
+    by_pr: dict[tuple, dict] = {}
+    for m in audit_queued:
+        key = (m.get("repo"), m.get("pr"))
+        # Keep the latest entry per (repo, pr) so a flipped-from-draft
+        # PR reflects its current state.
+        prev = by_pr.get(key)
+        if prev is None or m.get("ts", "") > prev.get("ts", ""):
+            by_pr[key] = m
+    drafts = sum(1 for m in by_pr.values() if m.get("payload", {}).get("is_draft"))
+    in_review = len(by_pr) - drafts
+    chips: list[str] = []
+    if in_review:
+        chips.append(f"👀   {in_review} in review")
+    if drafts:
+        chips.append(f"📝   {drafts} in drafts")
+    if chips:
         print()
-        print(f"👀   {retro_count} in review")
+        print(" | ".join(chips))
 
     # Leakdog attention chip — silent when no interface is leaking.
     # Full breakdown lives in `sweep leakdog`; cockpit only names what

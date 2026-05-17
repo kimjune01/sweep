@@ -17,14 +17,14 @@ from sweep.inbox_state import inbox_states
 #   investigate — LLM (/investigate): root-cause + fix branch
 #   qa          — LLM, runs gates
 #   drip        — LLM, paces pushes
-#   in review   — reviewer holds the ball (retro/wait inbox)
+#   in flight   — reviewer holds the ball (wait-bucket audit, view-only)
 #   human       — ball back to you after reviewer engages
 STATIONS = [
     ("triaged",     "triaged"),
     ("investigate", "investigate"),
     ("qa",          "qa"),
     ("respond",     "respond"),
-    ("retro",       "in review"),
+    ("retro_audit", "in flight"),
     ("human", "human"),
 ]
 

@@ -541,6 +541,7 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
             "maintainer_question": state.maintainer_question,
         },
         reason="; ".join(reasons),
+        is_draft=state.is_draft,
     )
 
 
@@ -565,6 +566,7 @@ async def deposit_classified(result: PrStateResult) -> str:
         "bucket": result.bucket,
         "signals": result.signals,
         "reason": result.reason,
+        "is_draft": result.is_draft,
     }
     CLASSIFIED_INBOX.parent.mkdir(parents=True, exist_ok=True)
     with open(CLASSIFIED_INBOX, "a") as f:
@@ -636,6 +638,7 @@ async def route_classified() -> dict:
                 "bucket": bucket,
                 "signals": r.get("signals", {}),
                 "reason": r.get("reason", ""),
+                "is_draft": bool(r.get("is_draft", False)),
             },
             ts=now_iso,
         )
@@ -680,6 +683,7 @@ async def deliver_to_inbox(result: PrStateResult) -> str:
             "bucket": result.bucket,
             "signals": result.signals,
             "reason": result.reason,
+            "is_draft": result.is_draft,
         },
         ts=ts.isoformat(),
     )
