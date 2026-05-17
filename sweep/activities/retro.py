@@ -116,41 +116,74 @@ def _emit_human_card(msg: Message, summary: dict) -> None:
         f.write(json.dumps(asdict(out)) + "\n")
 
 
+def _window_since() -> str:
+    """ISO date for /retro --since. Defaults to last_processed time;
+    falls back to 7 days ago when there's no prior pass."""
+    if PROCESSED_MARK.exists():
+        try:
+            last_iso = json.loads(PROCESSED_MARK.read_text()).get("last_iso", "")
+            if last_iso:
+                return last_iso[:10]  # YYYY-MM-DD slice
+        except (json.JSONDecodeError, OSError):
+            pass
+    return (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)).date().isoformat()
+
+
 @activity.defn
 async def retro_cycle(msg: Message) -> dict:
-    """Backward-pass stub. Counts unprocessed audit rows, records the
-    pass, marks processed, surfaces a human card.
+    """Run /retro across the window since the last pass. The skill
+    applies obvious fixes directly (skill patches, memory writes,
+    parameter file edits via `sweep retro set` etc.) during its own
+    execution. This activity captures what the skill did and surfaces
+    it to the operator's human inbox.
 
-    Real behavior (next step, mirroring investigate_cycle's skill_runner
-    pattern): shell out to the /retro skill, which reads the audit
-    window, applies obvious fixes (skill patches, memory writes,
-    parameter file edits) on its own, and reports what it could not
-    decide. This stub records the trigger and emits a placeholder
-    human card so the wiring is exercised end-to-end before the LLM
-    invocation lands."""
-    from sweep import observe
+    Stdout tail is the body for now; structured auto_fixes /
+    human_attended parsing lands when the /retro skill grows a JSON
+    output contract."""
+    from sweep import budget as _budget, observe
+    from sweep.activities.skill_runner import _run_skill
 
     unprocessed = _count_unprocessed_audit()
+    since = _window_since()
     observe.event(
         "retro_pass_triggered",
         sender=msg.sender,
         unprocessed_audit_rows=unprocessed,
+        since=since,
         msg_id=msg.msg_id,
     )
+    _budget.record_subprocess_estimate("retro")
 
-    # Placeholder result shape — real /retro skill invocation will
-    # populate auto_fixes and human_attended with concrete entries.
+    # /retro accepts a since flag (per skills/retro.md). Don't pass a
+    # repo — retro is pipeline-wide, not per-repo, even though the
+    # skill's argument-hint says otherwise. If the skill complains
+    # we'll find out via the andon and tighten the invocation.
+    skill_result = await _run_skill(
+        ["/retro", "--since", since],
+        label="retro",
+        timeout_s=1800,  # backward pass over a week's events can be slow
+    )
+
     summary = {
         "unprocessed_audit_rows": unprocessed,
-        "auto_fixes": [],          # [{kind, path, what}]
-        "human_attended": [],      # [{kind, summary, evidence_path}]
+        "since": since,
+        "rc": skill_result.get("rc", 0),
+        "stdout_tail": skill_result.get("stdout_tail", ""),
         "trigger_sender": msg.sender,
-        "stub": True,              # remove once real /retro wiring lands
     }
     _emit_human_card(msg, summary)
     _mark_processed_now()
+
+    observe.event(
+        "retro_pass_complete",
+        unprocessed_audit_rows=unprocessed,
+        since=since,
+        rc=skill_result.get("rc", 0),
+        msg_id=msg.msg_id,
+    )
     return {
         "unprocessed_audit_rows": unprocessed,
+        "since": since,
         "human_card_emitted": True,
         "msg_id": msg.msg_id,
     }
