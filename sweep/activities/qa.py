@@ -16,9 +16,67 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import control_state, llm_io, models, observe, retro_state
+from sweep import control_state, llm_io, models, observe, retro_params, retro_state
 from sweep.io_safe import atomic_write_text
 from sweep.types import GateAttestation, QaOneEntryRequest, QaOneEntryResult
+
+
+def _get_test_env(repo: str) -> tuple[str, str | None]:
+    """Resolve (test_env, setup_cmd) for a repo from retro_params.
+
+    test_env: "native" (default) or "docker:<image>" (e.g.
+              "docker:rust:1.94" for wild-class repos).
+    setup_cmd: shell command run inside the container BEFORE test_cmd
+               (e.g. "apt-get update && apt-get install -y clang lld").
+               None for native or when no setup needed.
+
+    Operators set these per repo via `sweep retro set <repo> test_env
+    docker:rust:1.94 --reason 'needs Linux+clang+lld'`. Future:
+    auto-infer from .github/workflows/ + Dockerfile."""
+    params = retro_params.resolved(repo)
+    return (
+        params.get("test_env", "native"),
+        params.get("test_setup_cmd"),
+    )
+
+
+async def _run_in_test_env(
+    test_cmd: str, *, worktree: str, test_env: str, setup_cmd: str | None,
+) -> subprocess.CompletedProcess:
+    """Run test_cmd in the right environment. Native = host shell;
+    docker:<image> = container with worktree mounted at /work and a
+    persistent build cache mounted at /cache (CARGO_TARGET_DIR points
+    at it). Cache is per-repo under ~/.sweep/build-cache/<owner__repo>
+    so successive runs amortize compile cost.
+
+    The setup_cmd runs once inside the container per invocation
+    (cheap apt-get installs are mostly cached; first run is slow).
+    No persistent setup-installed-state — we trade speed for
+    determinism."""
+    if test_env == "native":
+        return await asyncio.to_thread(
+            subprocess.run, shlex.split(test_cmd),
+            cwd=worktree, capture_output=True, text=True,
+        )
+    if not test_env.startswith("docker:"):
+        raise ApplicationError(
+            f"unknown test_env {test_env!r}; expected 'native' or 'docker:<image>'",
+            non_retryable=True,
+        )
+    image = test_env.removeprefix("docker:")
+    cache_dir = Path.home() / ".sweep" / "build-cache" / Path(worktree).name
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    inner = f"{setup_cmd} && {test_cmd}" if setup_cmd else test_cmd
+    docker_args = [
+        "docker", "run", "--rm",
+        "-v", f"{worktree}:/work", "-w", "/work",
+        "-v", f"{cache_dir}:/cache",
+        "-e", "CARGO_TARGET_DIR=/cache",
+        image, "bash", "-c", inner,
+    ]
+    return await asyncio.to_thread(
+        subprocess.run, docker_args, capture_output=True, text=True,
+    )
 
 # adversary_1 / _2 / _3 cascade (defaults: codex → gemini → opus).
 # Each reviewer activity reads its slot from models.default_for.
@@ -141,6 +199,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     worktree = req.worktree
     log: list[str] = []
     _test_start = time.time()
+    test_env, setup_cmd = _get_test_env(req.repo)
 
     async def _run(args: list[str]) -> subprocess.CompletedProcess:
         if not args or not args[0]:
@@ -190,8 +249,10 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
             non_retryable=True,
         )
     _heartbeat({"stage": "test_on_master"})
-    master_run = await _run(shlex.split(req.test_cmd))
-    log.append(f"master ({default}) exit={master_run.returncode}")
+    master_run = await _run_in_test_env(
+        req.test_cmd, worktree=worktree, test_env=test_env, setup_cmd=setup_cmd,
+    )
+    log.append(f"master ({default}) exit={master_run.returncode} env={test_env}")
     if master_run.returncode == 0:
         raise ApplicationError(
             "test_passes_on_master — bug fixed upstream or test wrong",
@@ -207,8 +268,10 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
             non_retryable=True,
         )
     _heartbeat({"stage": "test_on_fix"})
-    fix_run = await _run(shlex.split(req.test_cmd))
-    log.append(f"fix ({req.branch}) exit={fix_run.returncode}")
+    fix_run = await _run_in_test_env(
+        req.test_cmd, worktree=worktree, test_env=test_env, setup_cmd=setup_cmd,
+    )
+    log.append(f"fix ({req.branch}) exit={fix_run.returncode} env={test_env}")
     if fix_run.returncode != 0:
         raise ApplicationError(
             f"test_fails_on_fix — fix is broken: {fix_run.stderr[:500]}",
@@ -237,7 +300,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
             expected_test_name=slug.split("__")[-1].replace("_", "-"),
             head_sha=_head_sha(req.worktree),
             host=f"{platform.system().lower()}-{platform.machine()}",
-            test_env="native",
+            test_env=test_env,
             before_stdout=(master_run.stdout or "") + "\n--- stderr ---\n" + (master_run.stderr or ""),
             after_stdout=(fix_run.stdout or "") + "\n--- stderr ---\n" + (fix_run.stderr or ""),
             elapsed_seconds=time.time() - _test_start,
