@@ -72,7 +72,7 @@ class QaOneEntryRequest:
     issue: int | None = None
 
 
-Bucket = Literal["close", "respondable", "rebase", "qa", "done", "wait"]
+Bucket = Literal["close", "respondable", "rebase", "qa", "investigate", "done", "wait"]
 
 # Each bucket has a destination inbox + intent verb the receiver consumes.
 #
