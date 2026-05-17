@@ -67,48 +67,21 @@ def operator_inbox_lines() -> list[str]:
 # counts that cockpit/lanes already render.
 _ARCHITECTURE_DIAGRAM = """\
 ```
- intake          production                         defense
- ══════          ══════════                         ═══════
-                 ┌────────┐
- [notifs] ──▶    │ scout  │
-                 └───┬────┘
-                     ▼
-                 ┌────────┐  (inline evict gate)
-                 │  sift  │ ────────────────────┐
-                 └───┬────┘                     │
-                     ▼                          ▼
-                 ┌────────┐               ┌──────────┐
-                 │ triage │ ─────────────▶│ immunize │── ack draft ──┐
-                 └───┬────┘               └──────────┘               │
-                     ▼                                               │
-                 ┌──────────────┐         ┌──────────┐               │
-                 │ investigate  │── no ──▶│  tissue  │               │
-                 └──────┬───────┘   fix   └────┬─────┘               │
-                        ▼                      │ operator OK         │
-                    ┌────────┐                 ▼                     │
-                    │   qa   │            ┌──────────┐               │
-                    └───┬────┘            │   wipe   │◀──────────────┘
-                        ▼                 └──────────┘  post / close
-                    ┌────────┐
-                    │compose │            ┌──────────┐
-                    └───┬────┘  leakdog ─▶│  bless   │  classify reply
-                        ▼                 └──────────┘  → tissue-drafts /
-                    ┌────────┐                            respondable-issues
-                    │  ship  │  ◀── dry-mode hold lives here
-                    └───┬────┘     (the only actor that gates on dry)
-                        ▼
- [notifs] ──▶    ┌──────────┐
-                 │  remit   │  classifier-router
-                 └─┬──┬──┬──┘
-       ┌──────────┘  │  └────────────────────┐
-       ▼             ▼                       ▼
-   ┌────────┐  ┌─────────┐            ┌─────────────┐
-   │respond │  │qa / etc.│            │ respondable │  ← needs you
-   └────────┘  └─────────┘            └─────────────┘
-   auto-handler                       manual peer
-   (rebase/close,                     to respond
-   grows by absorbing
-   from respondable)
+ ░ production ░    (dry-mode holds here ──┐
+                                          │     ▼      )
+   notifs ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ compose ▸ ship ▸ push
+                     └──┬──┘          │
+                        ▼             ▼
+                     immunize ─▶ tissue ─▶ wipe
+
+ ░ engagement (post-ship) ░
+   notifs ▸ remit ┬▸ respond     (auto: rebase / close / clarify)
+                  ├▸ qa          (re-attest on CI flip)
+                  └▸ respondable (you — the manual peer to respond)
+
+ ░ side-channels ░
+   leakdog ▸ bless ┬▸ tissue-drafts ▸ wipe
+                   └▸ respondable-issues
 ```
 """
 
