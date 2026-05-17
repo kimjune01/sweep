@@ -20,7 +20,8 @@ from sweep.system import system_status
 # Two caps per station — queue (backpressure) vs in-flight (concurrency).
 # Humans have deeper queues; LLM actors stay shallow.
 CAPS: dict[str, dict[str, int | None]] = {
-    "prospect":    {"queued": 3, "in_flight": 1},   # cards from triage/heartbeat
+    "scout":       {"queued": 3, "in_flight": 1},   # search cards from triage/heartbeat
+    "prospect":    {"queued": 100, "in_flight": 1}, # issue cards from scout (fan-out of one search)
     "triaged":     {"queued": 10, "in_flight": 3},  # LLM, fan-out friendly
     "investigate": {"queued": 5, "in_flight": 5},   # LLM, root-causing
     "immunize":    {"queued": 10, "in_flight": 1},  # anti-AI routing to slop-offer
@@ -36,6 +37,7 @@ CAPS: dict[str, dict[str, int | None]] = {
 # Display names for the compressed flow line above the table. Differs from
 # the table's actor-key column to read closer to the natural pipeline names.
 FLOW_NAMES: dict[str, str] = {
+    "scout":       "Scout",
     "prospect":    "Prospect",
     "triaged":     "Triage",
     "investigate": "Investigate",
@@ -48,7 +50,7 @@ FLOW_NAMES: dict[str, str] = {
     "retro":       "In Review",
     "respondable": "Respondable",
 }
-FLOW_ORDER = ("prospect", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "retro", "respondable")
+FLOW_ORDER = ("scout", "prospect", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "retro", "respondable")
 
 def register(app: typer.Typer) -> None:
     """Attach the cockpit command to a top-level Typer app."""
@@ -119,7 +121,7 @@ def _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode) 
 
 
 def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
-    actionable = ["prospect", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "respondable"]
+    actionable = ["scout", "prospect", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "respondable"]
     if include_wait:
         actionable = actionable + ["retro"]
 
