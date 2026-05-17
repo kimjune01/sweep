@@ -112,7 +112,39 @@ async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
     if len(candidates) > 1:
         names = ", ".join(p.name for p in candidates)
         return False, f"ambiguous attestation dirs: {names}"
-    return gate_push(candidates[0])
+    chosen = candidates[0]
+
+    # Pin check: the attestation captures a head_sha at write time.
+    # Any code change since then (commits other than the attestation
+    # files themselves) invalidates the receipt — the test was run
+    # against stale code. Compare the diff between manifest.head_sha
+    # and current HEAD, excluding attestations/, must be empty.
+    try:
+        import json as _json
+        manifest = _json.loads((chosen / "manifest.json").read_text())
+        manifest_sha = manifest.get("head_sha", "")
+    except Exception as e:
+        return False, f"manifest unreadable: {e}"
+    if not manifest_sha:
+        return False, "manifest missing head_sha"
+    import subprocess
+    diff = subprocess.run(
+        ["git", "-C", worktree, "diff", "--name-only",
+         manifest_sha, "HEAD", "--", ":(exclude)attestations/"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if diff.returncode != 0:
+        # Likely manifest_sha not in local git history — operator
+        # rewound, or attestation imported from elsewhere. Reject.
+        return False, (f"attestation head_sha {manifest_sha[:12]} not "
+                       f"reachable in worktree git history")
+    changed = [f for f in diff.stdout.strip().splitlines() if f]
+    if changed:
+        return False, (f"code changed since attestation: {len(changed)} "
+                       f"file(s) differ ({changed[0]}{'...' if len(changed)>1 else ''}) — "
+                       f"re-run qa to refresh")
+
+    return gate_push(chosen)
 
 
 async def _final_checks(repo: str, pr: int | None) -> tuple[bool, str]:
