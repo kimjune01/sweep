@@ -1,6 +1,9 @@
 """`sweep hygraph` — compact view of the pipeline hypothesis graph.
 
-Source: `HYPOTHESIS_GRAPH.md` at the repo root. Shows:
+Sources: `HYPOTHESIS_GRAPH.md` (PR-science, H-prefixed) and
+`OPS_HYGRAPH.md` (substrate/ops, O-prefixed) at the repo root. Both
+files share the same section structure; merged into one rendered view.
+Shows:
   • Unresolved hypotheses — no `**Status:**` line, or status starts with
     PRE-REGISTERED (treatment launched, no outcomes yet).
   • Recently resolved hypotheses — top N by parsed date from the status
@@ -20,10 +23,12 @@ from pathlib import Path
 import typer
 
 
-GRAPH_PATH = Path(__file__).resolve().parent.parent.parent / "HYPOTHESIS_GRAPH.md"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+GRAPH_PATH = REPO_ROOT / "HYPOTHESIS_GRAPH.md"
+OPS_GRAPH_PATH = REPO_ROOT / "OPS_HYGRAPH.md"
 TOP_N_RESOLVED = 10
 
-_HEADER_RE = re.compile(r"^## (H[0-9]+[a-z]?): (.+?)\s*$")
+_HEADER_RE = re.compile(r"^## ([HO][0-9]+[a-z]?): (.+?)\s*$")
 _STATUS_RE = re.compile(r"^\*\*Status:\s*(.+?)\s*$", re.IGNORECASE)
 _DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 
@@ -92,47 +97,44 @@ def _status_chip(text: str) -> str:
 
 def _render(hyps: list[Hypothesis]) -> str:
     unresolved = [h for h in hyps if not h.is_resolved]
-    resolved = [h for h in hyps if h.is_resolved]
-    # Sort resolved by date desc; undated go to the end in graph order.
-    resolved.sort(key=lambda h: (h.date or ""), reverse=True)
-    recent = resolved[:TOP_N_RESOLVED]
+    ops = [h for h in unresolved if h.id.startswith("O")]
+    oss = [h for h in unresolved if h.id.startswith("H")]
 
-    lines: list[str] = ["# Hypothesis graph", ""]
-
-    if unresolved:
-        lines += [f"## Unresolved ({len(unresolved)})", "", "```"]
-        idw = max(len(h.id) for h in unresolved)
-        for h in unresolved:
+    def _section(title: str, items: list[Hypothesis]) -> list[str]:
+        out = [f"## {title} ({len(items)})", ""]
+        if not items:
+            out += ["_none._", ""]
+            return out
+        out += ["| id · status | description |", "|---|---|"]
+        for h in items:
             chip = _status_chip(h.status_text)
-            lines.append(f"{h.id.ljust(idw)}  {chip.ljust(16)}  {h.title}")
-        lines += ["```", ""]
-    else:
-        lines += ["## Unresolved (0)", "", "_All hypotheses have a status._", ""]
+            chip_part = f" · _{chip}_" if chip != "—" else ""
+            out.append(f"| **{h.id}**{chip_part} | {h.title} |")
+        out.append("")
+        return out
 
-    if recent:
-        lines += [f"## Recently resolved (top {len(recent)})", "", "```"]
-        idw = max(len(h.id) for h in recent)
-        for h in recent:
-            chip = _status_chip(h.status_text)
-            date = h.date or "—"
-            lines.append(f"{h.id.ljust(idw)}  {date}  {chip.ljust(20)}  {h.title}")
-        lines += ["```", ""]
-
+    lines: list[str] = ["# Hygraph", ""]
+    lines += _section("Unresolved Ops", ops)
+    lines += _section("Unresolved OSS", oss)
     return "\n".join(lines)
 
 
 def register(app: typer.Typer) -> None:
     @app.command("hygraph")
     def hygraph() -> None:
-        """Show unresolved + recently-resolved hypotheses from
-        HYPOTHESIS_GRAPH.md."""
-        if not GRAPH_PATH.exists():
-            typer.echo(f"# Hypothesis graph\n\n_{GRAPH_PATH} not found._")
+        """Show unresolved + recently-resolved hypotheses across both
+        the PR-science graph (HYPOTHESIS_GRAPH.md) and the substrate
+        graph (OPS_HYGRAPH.md)."""
+        hyps: list[Hypothesis] = []
+        for path in (GRAPH_PATH, OPS_GRAPH_PATH):
+            if not path.exists():
+                continue
+            try:
+                hyps.extend(parse_graph(path.read_text()))
+            except OSError as e:
+                typer.echo(f"# Hypothesis graph\n\n_Read failed ({path.name}): {e}_")
+                return
+        if not hyps:
+            typer.echo("# Hypothesis graph\n\n_No graph files found._")
             return
-        try:
-            text = GRAPH_PATH.read_text()
-        except OSError as e:
-            typer.echo(f"# Hypothesis graph\n\n_Read failed: {e}_")
-            return
-        hyps = parse_graph(text)
         typer.echo(_render(hyps))

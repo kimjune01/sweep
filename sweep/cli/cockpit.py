@@ -27,7 +27,7 @@ CAPS: dict[str, dict[str, int | None]] = {
     "immunize":    {"queued": 10, "in_flight": 1},  # anti-AI routing to slop-offer
     "tissue":      {"queued": 5, "in_flight": 1},   # side-hatch comment drafts
     "bless":       {"queued": 5, "in_flight": 1},   # response classifier-router
-    "wipe":        {"queued": 5, "in_flight": 1},   # operator-approved posts
+    "post":        {"queued": 5, "in_flight": 1},   # operator-approved posts
     "qa":          {"queued": 5, "in_flight": 5},   # LLM, gates
     "respond":     {"queued": 5, "in_flight": 1},   # auto-responder (rebase/close/publish via /drip)
     "human": {"queued": 8, "in_flight": 2},   # you — real backlog signal
@@ -44,13 +44,13 @@ FLOW_NAMES: dict[str, str] = {
     "immunize":    "Immunize",
     "tissue":      "Tissue",
     "bless":       "Bless",
-    "wipe":        "Wipe",
+    "post":        "Post",
     "qa":          "QA",
     "respond":     "Respond",
     "retro":       "In Review",
     "human":       "Human",
 }
-FLOW_ORDER = ("scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "respond", "retro", "human")
+FLOW_ORDER = ("scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "post", "qa", "respond", "retro", "human")
 
 def register(app: typer.Typer) -> None:
     """Attach the cockpit command to a top-level Typer app."""
@@ -121,7 +121,7 @@ def _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode) 
 
 
 def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
-    actionable = ["scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "respond", "human"]
+    actionable = ["scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "post", "qa", "respond", "human"]
     if include_wait:
         actionable = actionable + ["retro"]
 
@@ -279,36 +279,26 @@ def _build_rows(states, actionable, spark_minutes, spark_buckets):
             spark_minutes, spark_buckets,
         )
         spark = glyphs.sparkline_pct(sparks, q_cap) or "·" * spark_buckets
-        rate_str = f"{glyphs.rate_per_hour(sparks, spark_minutes):.1f}/h"
+        rate = glyphs.rate_per_hour(sparks, spark_minutes)
+        rate_str = f"{rate:.1f}/h" if rate > 0 else "·"
         var_glyph = glyphs.variance_glyph(sparks)
+        # Save ink: 0s render as · so non-zero numbers pop.
+        # In-flight also carries the cap signal: bold `N/cap` when capped.
+        queued_cell = str(queued) if queued > 0 else "·"
+        if f_cap is not None and in_flight >= f_cap:
+            in_flight_cell = f"**{in_flight}/{f_cap}**"
+        else:
+            in_flight_cell = str(in_flight) if in_flight > 0 else "·"
         rows.append((
             actor,
-            queued,
-            in_flight,
+            queued_cell,
+            in_flight_cell,
             rate_str,
             var_glyph,
             spark,
             glyphs.oldest_age_str(s["queued"] + s["in_flight"]),
-            _status_for(actor, queued, in_flight, q_cap, f_cap),
         ))
     return rows
-
-
-def _status_for(actor, queued, in_flight, q_cap, f_cap) -> str:
-    if queued + in_flight == 0:
-        return "idle"
-    flags = []
-    if q_cap is not None and queued >= q_cap:
-        flags.append(f"**queue capped** ({queued}/{q_cap})")
-    if f_cap is not None and in_flight >= f_cap:
-        flags.append(f"**in-flight capped** ({in_flight}/{f_cap})")
-    if flags:
-        return ", ".join(flags)
-    if actor == "retro":
-        return "history"
-    if in_flight > 0:
-        return "working"
-    return "queued"
 
 
 # ---------------------------------------------------------- markdown render
@@ -399,12 +389,12 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     print(f"🎛   Sift Controls{age}:   {_knob_line()}{state_chip}")
     print()
 
-    print(f"| Station | Queued | In-flight | Rate | Var | Trend ( {_window_label(spark_minutes, spark_buckets)} ) | Oldest | Status |")
-    print( "|---|---:|---:|---:|:-:|---|---|---|")
-    for actor, queued, in_flight, rate_str, var_glyph, spark, oldest, status in rows:
+    print(f"| Station | Queued | In-flight | Rate | Var | Trend ( {_window_label(spark_minutes, spark_buckets)} ) | Oldest |")
+    print( "|---|---:|---:|---:|:-:|---|---|")
+    for actor, queued, in_flight, rate_str, var_glyph, spark, oldest in rows:
         print(
             f"| {FLOW_NAMES.get(actor, actor)} | {queued} | {in_flight} | {rate_str} | `{var_glyph}` "
-            f"| `{spark}` | {oldest} | {status} |"
+            f"| `{spark}` | {oldest} |"
         )
 
     # Inbox + in-review below the table — "what's queued for human
@@ -414,7 +404,7 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     if n:
         print()
         print(f"📥   {n}  _| `sweep inbox`_")
-    # Retro inbox is the wait-bucket audit trail; pr-state appends
+    # Retro inbox is the wait-bucket audit trail; remit appends
     # a fresh entry every poll cycle for each open PR, so raw length
     # over-counts. Dedupe by (repo, pr) to get "PRs currently in
     # review," which is what the chip is trying to convey.
@@ -424,15 +414,34 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
         print()
         print(f"👀   {retro_count} in review")
 
+    # Leakdog attention chip — silent when no interface is leaking.
+    # Full breakdown lives in `sweep leakdog`; cockpit only names what
+    # needs attention so the operator can decide whether to look.
+    from sweep.cli.leakdog import leak_summary, inbox_drift_summary
+    leaks = leak_summary(hours=24)
+    if leaks:
+        summary = ", ".join(f"{label} ({n})" for label, n in leaks)
+        print()
+        print(f"🩸   {summary}  _| `sweep leakdog`_")
+
+    # Inbox-drift chip — surfaces when a producer is minting fresh
+    # msg_ids for the same (repo, pr) (broken idempotency at the
+    # routing layer). Silent when all dedup-actors are clean.
+    drift = inbox_drift_summary()
+    if drift:
+        summary = ", ".join(f"{a} (+{n_msgs - n_keys})" for a, n_msgs, n_keys in drift)
+        print()
+        print(f"📑   inbox drift: {summary}  _| `sweep leakdog`_")
+
     # Operator-toggled holds. Each flag file presence emits one line so
     # the cockpit reminds the operator that an actor is intentionally
     # held — easy to forget after the bounce. Add new flags here as
     # the pattern proliferates.
     from pathlib import Path as _Path
-    _wipe_flag = _Path.home() / ".sweep" / "control" / "wipe_disabled"
-    if _wipe_flag.exists():
+    _post_flag = _Path.home() / ".sweep" / "control" / "post_disabled"
+    if _post_flag.exists():
         print()
-        print("🚧   wipe disabled — `rm ~/.sweep/control/wipe_disabled` to enable")
+        print("🚧   post disabled — `rm ~/.sweep/control/post_disabled` to enable")
 
 
 # ---------------------------------------------------------- rich render
@@ -447,33 +456,32 @@ def _render_rich(rows) -> None:
     console = Console()
 
     source = Panel(
-        Text("pr-state\n(dispatcher)\n\nreads GitHub\nroutes by bucket", justify="center"),
+        Text("remit\n(dispatcher)\n\nreads GitHub\nroutes by bucket", justify="center"),
         title="intake",
         border_style="dim",
         width=18,
         padding=(0, 1),
     )
     panels = []
-    for actor, queued, in_flight, rate_str, var_glyph, spark, oldest, status in rows:
-        plain_status = status.replace("**", "")
-        if "capped" in status:
+    for actor, queued, in_flight, rate_str, var_glyph, spark, oldest in rows:
+        # in_flight cell carries cap markup as **N/cap** from _build_rows;
+        # strip for plain rendering and detect cap via the slash.
+        is_capped = "/" in str(in_flight)
+        plain_in_flight = str(in_flight).replace("**", "")
+        is_idle = str(queued) == "·" and plain_in_flight == "·"
+        if is_capped:
             border, color = "red", "red bold"
-        elif status == "idle":
+        elif is_idle:
             border, color = "green", "green"
-        elif status == "history":
-            border, color = "dim", "dim"
-        elif status == "queued":
-            border, color = "blue", "blue"
         else:
             border, color = "yellow", "yellow"
         body = Text()
         body.append("queued     ", style="dim"); body.append(f"{queued}\n", style="bold")
-        body.append("in-flight  ", style="dim"); body.append(f"{in_flight}\n", style="bold")
+        body.append("in-flight  ", style="dim"); body.append(f"{plain_in_flight}\n", style="bold")
         body.append("rate       ", style="dim"); body.append(f"{rate_str}\n", style="bold")
         body.append("var        ", style="dim"); body.append(f"{var_glyph}\n", style="bold")
         body.append(f"oldest     {oldest}\n", style="dim")
-        body.append("trend      ", style="dim"); body.append(spark, style="cyan"); body.append("\n")
-        body.append(plain_status, style=color)
+        body.append("trend      ", style="dim"); body.append(spark, style="cyan")
         panels.append(Panel(body, title=f"[bold]{actor}[/]", border_style=border, width=22, padding=(0, 1)))
 
     console.print()

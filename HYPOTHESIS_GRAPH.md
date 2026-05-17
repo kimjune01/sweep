@@ -628,55 +628,18 @@ How to apply: tag scientist-class repos in repos.jsonl with `reception: scientis
 
 **Compounds with:** the pushout design (`project_sweep_investigate_pushout.md`). If H19 holds (sole-Claude is sufficient), the pushout default secondary stays at sonnet rather than upgrading to codex — saves cost without losing signal. If H19 fails, the pushout MUST cross families.
 
-## H20: Activity-owned observability is more reliable than skill-emitted events
-
-**Prediction:** When an activity wrapper (e.g. `triage_cycle`) shells out to a skill (e.g. `/triage`), the wrapper emitting observability events post-hoc (by reading the artifact the skill produced) catches strictly more events than relying on the skill to call `observe.event` itself.
-
-**Status: CONFIRMED (2026-05-16, retro this-session).** triage_cycle previously delegated event emission to the /triage skill. Of 80 acked triage items, only 1 emitted a `triage_decision` event. After fix (wrapper re-reads the attestation post-skill-run and emits the event from there), 23 historical events backfilled instantly from existing attestations on disk, and the structural pathway now guarantees emission whenever the artifact exists. The skill was silently skipping its own logging in 79/80 cases — invisible until the leakdog manifest revealed the funnel mismatch.
-
-**Mechanism:** skills are LLM-driven free-form executions. Even when prompted to emit observability events, the skill skips them under variable conditions (different prompt versions, error paths, summarization passes). The Python wrapper around the skill is deterministic code and runs every time.
-
-**Generalization:** any pipeline stage that shells out should derive its observability from the *side-effect artifact* (attestation file, branch push, PR opened), not from the *log message the skill chose to emit*. The artifact is the receipt; the log is editorial.
-
-**Falsifier:** if a skill consistently emits its own event AND the wrapper double-emits the same event, downstream gets duplicates that break dedup. This would force a per-event ownership decision. Hasn't happened — skills mostly underemit.
-
-**Compounds with:** [[H21-watchdog-independence]] — both are about putting observability/recovery infrastructure outside the thing being observed.
-
-## H21: Watchdog auto-recovery must run independent of the workflow it governs
-
-**Prediction:** When an auto-recovery mechanism (e.g. "clear the API-budget andon when projected < 40%") lives inside the same workflow loop that the andon also blocks, a wedged workflow can never recover. The recovery must run from an independent tick.
-
-**Status: CONFIRMED (2026-05-16).** API budget watchdog fired correctly at 77% projected and set the prospect_puller andon. Projection dropped to 37% (well below the 40% recover threshold) but the marker stayed because the auto-clear lived inside `check_pull_conditions`, which only runs when the prospect-puller advances. The puller was wedged retrying a different activity (attempt #15 of `prospect_recency_window` with no progress). Result: line stayed paused 30+ minutes past the condition that should have lifted it; required manual `sweep andon clear prospect_puller` to recover.
-
-**Mechanism:** if the recovery path is downstream of the wedge point, the wedge blocks its own recovery. This is a classic supervisor problem — the supervisor cannot itself be supervised by the thing it supervises. Toyota's andon cord works because pulling it stops the *line*, not the *operator who pulls it*.
-
-**Fix shape (not yet wired):** move `_clear_budget_andon_if_held` to a separate periodic activity scheduled by a sibling workflow (not by prospect-puller), or to a cron-style external tick. Same heartbeat that watchdog-fires the andon should be capable of clearing it.
-
-**Falsifier:** if a fully independent watchdog also stops firing under similar wedge conditions (the worker process itself dies), then a higher-level supervisor is needed. Most likely outcome: independent tick is sufficient because Temporal workers restart cleanly and worker-internal wedges don't propagate to sibling workflows.
-
-**Compounds with:** [[H20-activity-owned-observability]] — both are jidoka-discipline. Recovery and observability infrastructure must sit outside the thing they monitor.
-
-## H22: Interface accounting (leakdog) detects silent-drop failure modes earlier than downstream symptoms
-
-**Prediction:** A per-interface in/out/drop/pending balance, computed from event stream + inbox state, surfaces silent processing failures (acked but no event emitted) before they manifest as downstream symptoms (no QA convergence, no merges).
-
-**Status: CONFIRMED (2026-05-16).** The leakdog row "prospect → triage: 50 in, 25 out, 25 leak ⚠️" was the first observable signal of the triage_cycle silent-skip bug ([[H20-activity-owned-observability]]). Without the leakdog, the only visible symptom was "investigations not triggering QA" — a downstream effect 3+ stages removed from the actual leak point, with multiple plausible explanations. Leakdog narrowed it to the prospect→triage interface in one read.
-
-**Mechanism:** funnel-accounting is a generic supervisor pattern. Every stage transition is an interface; every interface should balance. Imbalance localizes the bug to the interface, not the broader pipeline. Same principle as double-entry bookkeeping: every debit needs a credit, every drop needs a reason.
-
-**Refinement (key learning):** `leak = in - out - dropped - pending`. Without subtracting `pending` (items still queued or in-flight), slow processing masquerades as loss. The first version of leakdog over-reported leaks because it counted events only.
-
-**Operational discipline:** zero unaccounted leaks as the target. Every drop must have an explicit decision event (e.g. `triage_decision(decision=drop|surface|defer)`, `investigate_done(no_fix=true)`). When a leak appears, the immediate fix is either (a) emit the missing decision event, or (b) backflow the item one stage upstream and re-process.
-
-**Falsifier:** if leakdog routinely shows persistent leaks that are genuinely benign (e.g. items that drop out for legitimate reasons no one wants to log), the zero-leak target erodes into noise. Hasn't happened — every leak found so far has been a real bug or a missing event.
-
-**Compounds with:** [[H20-activity-owned-observability]] (the structural fix for most leaks); [[H21-watchdog-independence]] (the leakdog itself must run on its own tick, not behind the pipeline it watches).
+_Substrate/ops hypotheses moved to [`OPS_HYGRAPH.md`](./OPS_HYGRAPH.md)
+and renumbered as O1–O5. Mapping: H20 → O1 (activity-owned
+observability), H21 → O2 (watchdog independence), H22 → O3 (leakdog
+interface accounting), H24 → O4 (immunize routing actor), H25 → O5
+(bless classifier-router). Continue with H23 below (still a PR-outcome
+hypothesis about tissue engagement)._
 
 ## H23: The investigation has standalone value; reporting it back earns engagement without a PR
 
 **Prediction:** Investigations that conclude "no fix to ship" but produce a concrete finding (already-fixed-upstream, premise-killed, policy-gated with provenance) have value the maintainer can act on. Posting a one-paragraph comment with that finding earns measurable engagement (acknowledgement, issue close, reply) without requiring our code to merge. The substrate stops being PR-only; the analysis itself becomes shippable.
 
-**Status: PRE-REGISTERED (2026-05-17, retro this-session).** Side-hatch actor (`tissue-actor`) wired up. Drafts pending operator approval before posting — no auto-post. First batch from the 20 screened investigations identified by the [[H20-activity-owned-observability]] manifest pass, classified as `no-fix` with concrete provenance.
+**Status: PRE-REGISTERED (2026-05-17, retro this-session).** Side-hatch actor (`tissue-actor`) wired up. Drafts pending operator approval before posting — no auto-post. First batch from the 20 screened investigations identified by the [[O1-activity-owned-observability]] manifest pass, classified as `no-fix` with concrete provenance.
 
 **Mechanism:** the pipeline previously only credited investigations that ended in a PR. Hypothesis graphs concluded "STALE — already implemented upstream #1820" or "Halted at policy gate (maintainer self-PR)" died on local disk. Those findings are useful to the maintainer — they're "you can close this" advice grounded in evidence the maintainer often hadn't seen. Side-hatch ships that finding directly as a comment instead of forcing it through a PR shape that doesn't fit.
 
@@ -697,53 +660,3 @@ How to apply: tag scientist-class repos in repos.jsonl with `reception: scientis
 
 **Compounds with:** [[H0-quality-gated-AI-contributions]] (extends "quality is the differentiator" from code to comments); [[H2c-standing-compounds-within-a-repo]] (side-hatch is a low-cost way to plant the first contact in a repo we haven't PR'd to yet); [[H5-solo-maintainers-merge-boring-fixes]] (the tissue surface is exactly the maintainers we have least leverage with — they didn't want a PR from us, but they might want a "looks-already-fixed" pointer).
 
-## H24: A dedicated routing actor for anti-AI repos catches what prospect's cache misses, prevents wasted investigate cycles, and unifies slop-offer routing
-
-**Prediction:** Hostile-AI-policy repos slip past prospect's 24h-cached `repo_ai_policy` check often enough to be worth a dedicated safety-net actor. A purpose-built `immunize` actor that (a) re-checks the policy live, (b) decides worth-pursuing via stars/recency/dedupe heuristics, and (c) routes pursued candidates into the existing slop-offer pipeline OR drafts a deferential acknowledgement comment for operator review, will catch more cases than the prospect-side inline check while preventing investigate from burning tokens on cards it shouldn't have seen.
-
-**Status: PRE-REGISTERED (2026-05-17, retro this-session).** Immunize actor wired live. Two upstream sources: prospect (RepoCandidate filter + per-issue deterministic check) kicks immunize when policy is hostile; triage_cycle re-checks policy at the front of its loop and short-circuits to immunize. Both replace inline `slop_offer_seed.append` calls — the seeding decision now lives in one place with one observability surface.
-
-**Mechanism:** GitHub's repo metadata changes at a rate that an aggressive 24h TTL doesn't track perfectly. Operators add AGENTS.md / CONTRIBUTING.md AI policies mid-month, repos get rebranded, archived, or relabeled. The prospect-time check is the front gate; immunize is the second gate that catches what the cache missed. Co-locating the worth-pursuing decision (stars, recency, dedupe) inside one actor means the slop-offer pipeline gets a single, observable, tunable feeder instead of three scattered append-calls.
-
-**The two output paths:**
-- Issue-level routing (triage source): draft a deferential acknowledgement comment, route through `tissue-drafts` → operator approval → wipe. Same approval gate as tissue; operator never gets surprised by an unreviewed post.
-- Repo-level routing (prospect source, no specific issue): append to legacy `slop_offer_seeds.txt`. The existing `sweep slop-offer` CLI consumes it. Future work could unify this with the drafts queue once the slop-offer message shape is mature enough.
-
-**Operationalization:**
-- `immunize_card_deposited` events from both upstream sources
-- `immunize_redirected` (pursued, seeded/drafted)
-- `immunize_skipped` (policy resettled, below-stars, archived, already-seeded)
-- Leakdog interface row `(prospect|triage) → immunize` balances cards-in against pursued+skipped
-
-**Falsifiers:**
-- ≥6 months of zero `immunize_redirected` events from triage source → prospect's gate already catches everything; immunize-from-triage is safety theater and can be removed (keep the prospect routing for the worth-pursuing decision alone).
-- Immunize fires constantly from triage (more than prospect rejection rate) → prospect's `repo_ai_policy` check is broken (cache invalidation, TTL too long, query bug). Fix prospect's gate upstream; don't lean on the safety net to compensate for broken front-of-funnel.
-- High pursue rate (>50% of cards) with no subsequent slop-offer engagement → worth-pursuing heuristics are too loose. Tighten (raise stars threshold, shorten recency window).
-- High operator-discard rate on immunize-drafted acknowledgements → the template tone is wrong, OR maintainers find the acknowledgement itself unwelcome (in which case stop drafting; just seed-and-drop).
-
-**Compounds with:** [[H22-leakdog-interface-accounting]] (immunize's events make the anti-AI escape hatch first-class in the funnel instead of a side-channel); [[H20-activity-owned-observability]] (the worth-pursuing decision lives in the wrapper activity, not in skill prose). The pattern — a dedicated routing actor for an escape hatch — generalizes to other categorical "this card needs to leave the main pipeline" cases (e.g. future explicit-no-LLM cooldown enforcement, maintainer block-list).
-
-## H25: A classifier-router actor for issue-comment responses, template-first with a /retro compression loop, asymptotically reduces the LLM cost of response handling to near zero
-
-**Prediction:** When a maintainer replies to a tissue, a small set of reply shapes ("thanks, closing", "you're right", brief acknowledgements, plain pushbacks) covers most of the long tail. A `bless` actor that matches replies against a template catalog first (deterministic regex, no LLM) and only falls through to LLM classification when no template hits will, after a few /retro cycles, route the majority of responses without paying any LLM cost. The substrate's per-response cost asymptotes toward "pattern match + file write."
-
-**Status: PRE-REGISTERED (2026-05-17, retro this-session).** Bless actor wired. Bootstrap stance: LLM classifier disabled (`~/.sweep/control/bless_llm_enabled` flag, default off); every non-template-match defaults to human-attendable (routes to `respondable-issues.jsonl`). Operator handles all novel responses directly; /retro extracts templates from repeated decisions. Seed templates: `thanks-closing`, `youre-right`. Operator-extensible via `~/.sweep/templates/bless/*.json`.
-
-**Mechanism:** the same compression loop that fills `prospect_kill_list`, `prospect_evicted`, `retro_params`, and the artifact-classifier vocabulary. First time a pattern shows up → human decision. Second/third time → /retro extracts → template. After N templates exist, the LLM call is only invoked for genuinely novel responses, and the operator only sees those that survive both template and (eventually) LLM classification.
-
-**Why the LLM is OFF by default at start:** without operator-decision data, the LLM has no priors on what counts as "auto-answerable" in this substrate's voice. Letting it classify before the catalog exists risks burning reputation on a hallucinated "auto-reply" that reads as bot-shaped or worse. Defer the LLM until templates demonstrate that the deterministic surface is well-mapped — at that point the LLM is filling the long tail, not establishing the policy.
-
-**Operationalization:**
-- `bless_card_deposited` from leakdog engagement detector when reply text is non-empty
-- `bless_routed` (kind=template|auto|human) per outcome
-- `bless_skipped` (no_fence, timeout, unknown_classification)
-- Template hit rate over time: track `bless_routed{kind=template}` / total — this number is the H25 success metric (should climb monotonically as /retro fills the catalog)
-- Leakdog interface row `engagement → bless` balances cards-in against routed+skipped
-
-**Falsifiers:**
-- ≥3 months of operator decisions and template hit rate stays <30% → reply shapes are more idiosyncratic than predicted; the compression target doesn't converge. Reconsider: maybe the LLM IS the right primary classifier, with templates as cache.
-- Template hit rate is high but maintainer engagement on bless-replied threads drops vs human-replied threads → templates are too generic and feel bot-shaped. Tighten template criteria, broaden human routing.
-- /retro produces templates faster than the operator handles novel cases → /retro is over-extracting (generalizing single-instance patterns). Tighten retro discipline (require N=3 before templating).
-- Operator never flips `bless_llm_enabled=true` even after 6 months with a mature catalog → the LLM path was unnecessary; remove it and simplify.
-
-**Compounds with:** [[feedback-retro-compression-loop]] (the underlying principle; bless is its first deliberately-designed instance with the compression target named upfront); [[H20-activity-owned-observability]] (the classify-and-route decision lives in the wrapper, deterministic, fast); [[H23-tissue-side-hatch]] (bless completes the loop tissue started — H23 demonstrates value of one-way information transfer; H25 demonstrates value of the conversational follow-up at the same low cost).
