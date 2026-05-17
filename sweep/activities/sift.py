@@ -911,8 +911,8 @@ async def sift_cycle(msg: Message) -> dict:
     per-issue work down to one prospect cycle per issue.
     """
     from sweep import budget as _budget
-    _budget.set_caller("prospect")
-    if _budget.is_blocked("prospect"):
+    _budget.set_caller("sift")
+    if _budget.is_blocked("sift"):
         observe.event("sift_cycle_skipped", reason="budget_andon",
                       msg_id=msg.msg_id)
         return {"skipped": "budget_andon"}
