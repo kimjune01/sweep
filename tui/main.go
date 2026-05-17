@@ -268,6 +268,10 @@ type model struct {
 	viewBody     string    // last fetched output for the current view
 	width        int       // terminal width, fed by tea.WindowSizeMsg; 80 fallback
 	pulseExpires time.Time // until this moment, append a ` ·` to the view's H1 line
+	// N+1 prefetch buffer — keyed by view index, holds rendered bodies
+	// ready to swap in instantly on `c`. Cleared on width change (re-
+	// rendered at wrong wrap) and on tick (stale-bound to ~5s).
+	prefetched map[int]string
 }
 
 const pulseDuration = 400 * time.Millisecond
@@ -277,37 +281,53 @@ type statusMsg string
 type viewMsg string
 type pulseMsg struct{}
 
-// fetchView shells out asynchronously so the 5s tick doesn't block
-// the event loop. Markdown is rendered in-process via glamour (the
-// same library glow wraps), so no subprocess pipe and we get
-// programmatic control over the style.
+// prefetchMsg carries a rendered body for a non-current view, dropped
+// into model.prefetched so the next `c` keypress lands instantly.
+type prefetchMsg struct {
+	idx  int
+	body string
+}
+
+// renderView shells out to `sweep <cmd>` and pipes through glamour.
+// Shared by foreground fetch (returns viewMsg) and background
+// prefetch (returns prefetchMsg).
+func renderView(idx, width int) string {
+	args := views[idx].args
+	raw, err := exec.Command("sweep", args...).Output()
+	if err != nil {
+		return fmt.Sprintf("%s error: %v", views[idx].label, err)
+	}
+	if width < 40 {
+		width = 80
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStyles(sweepGlamourStyle()),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return string(raw)
+	}
+	styled, err := r.Render(string(raw))
+	if err != nil {
+		return string(raw)
+	}
+	return colorizeTableHeader(styled)
+}
+
 func fetchView(idx, width int) tea.Cmd {
+	return func() tea.Msg { return viewMsg(renderView(idx, width)) }
+}
+
+// prefetchView renders the next view in the cycle into the model's
+// prefetch buffer so the next `c` lands instantly. Game-dev style
+// double-buffer: render N+1 while operator looks at N.
+func prefetchView(idx, width int) tea.Cmd {
 	return func() tea.Msg {
-		args := views[idx].args
-		raw, err := exec.Command("sweep", args...).Output()
-		if err != nil {
-			return viewMsg(fmt.Sprintf("%s error: %v", views[idx].label, err))
-		}
-		if width < 40 {
-			width = 80
-		}
-		// "auto" picks light/dark from terminal background detection.
-		// WordWrap=width keeps long lines inside the column without
-		// truncating; glamour handles tables, headings, code spans.
-		r, err := glamour.NewTermRenderer(
-			glamour.WithStyles(sweepGlamourStyle()),
-			glamour.WithWordWrap(width),
-		)
-		if err != nil {
-			return viewMsg(string(raw))
-		}
-		styled, err := r.Render(string(raw))
-		if err != nil {
-			return viewMsg(string(raw))
-		}
-		return viewMsg(colorizeTableHeader(styled))
+		return prefetchMsg{idx: idx, body: renderView(idx, width)}
 	}
 }
+
+func nextIdx(idx int) int { return (idx + 1) % len(views) }
 
 // restartWorker shells out `sweep down && sweep up` async so the TUI
 // stays interactive during the ~2s lifecycle bounce. The final
@@ -401,29 +421,64 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return refresh(m, ""), nil
 		case "c":
-			// Cycle to next view. Triggers an immediate fetch so the
-			// new view shows up on the next tick at worst, sooner if
-			// the subprocess returns in under a frame.
-			m.viewIdx = (m.viewIdx + 1) % len(views)
+			// Cycle to next view. If the prefetcher already rendered
+			// it (the common case after the first ~150ms in any
+			// session), swap instantly — perceived latency is one
+			// paint. Otherwise fall back to sync fetch.
+			next := nextIdx(m.viewIdx)
+			m.viewIdx = next
+			if body, ok := m.prefetched[next]; ok {
+				m.viewBody = body
+				delete(m.prefetched, next)
+				m.pulseExpires = time.Now().Add(pulseDuration)
+				// Queue the next-next so the buffer stays one ahead.
+				return m, tea.Batch(
+					prefetchView(nextIdx(next), m.width),
+					tea.Tick(pulseDuration, func(time.Time) tea.Msg { return pulseMsg{} }),
+				)
+			}
 			m.viewBody = ""
 			return m, fetchView(m.viewIdx, m.width)
 		}
 
 	case tea.WindowSizeMsg:
-		// Width feeds glow's --width on the next fetch; re-fetch
-		// immediately so the body redraws at the new width.
+		// Width changed — any prefetched bodies were rendered at the
+		// wrong wrap. Clear the buffer and re-fetch the current view.
 		m.width = msg.Width
+		m.prefetched = nil
 		return m, fetchView(m.viewIdx, m.width)
 
 	case tickMsg:
-		return refresh(m, m.status), tea.Batch(tick(), fetchView(m.viewIdx, m.width))
+		// 5s tick: re-fetch current view AND invalidate the prefetch
+		// buffer so the operator never cycles to a 5s-stale render.
+		// The next prefetch fires automatically when the new viewMsg
+		// lands.
+		next := refresh(m, m.status)
+		next.prefetched = nil
+		return next, tea.Batch(tick(), fetchView(m.viewIdx, m.width))
 
 	case viewMsg:
 		m.viewBody = string(msg)
 		m.pulseExpires = time.Now().Add(pulseDuration)
-		// Schedule a re-render right after the pulse expires so the
-		// dot disappears on its own.
-		return m, tea.Tick(pulseDuration, func(time.Time) tea.Msg { return pulseMsg{} })
+		// Got the current view; immediately queue N+1 in the
+		// background. Buffer is keyed by viewIdx so out-of-order
+		// landings still place correctly.
+		return m, tea.Batch(
+			prefetchView(nextIdx(m.viewIdx), m.width),
+			tea.Tick(pulseDuration, func(time.Time) tea.Msg { return pulseMsg{} }),
+		)
+
+	case prefetchMsg:
+		// Stash the rendered body unless the operator already cycled
+		// past it (idx no longer the immediate next). Stale-after-
+		// cycle prefetch results are silently dropped.
+		if msg.idx == nextIdx(m.viewIdx) {
+			if m.prefetched == nil {
+				m.prefetched = map[int]string{}
+			}
+			m.prefetched[msg.idx] = msg.body
+		}
+		return m, nil
 
 	case pulseMsg:
 		return m, nil // pulse window already encoded in pulseExpires; this just forces a redraw
