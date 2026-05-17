@@ -78,6 +78,7 @@ _ARCHITECTURE_DIAGRAM = """\
  engagement (post-ship)
    notifs ▸ remit ┬▸ respond      auto: rebase / close / clarify
                   ├▸ qa           re-attest on CI flip
+                  ├▸ investigate  maintainer raised a new in-PR concern
                   └▸ human        you — the manual peer to respond
 
  side-channels
