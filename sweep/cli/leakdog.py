@@ -66,7 +66,7 @@ def _inbox_pending(actor: str) -> int:
 # minting fresh msg_ids for the same logical item, wasting writes and
 # polluting downstream counts.
 _DEDUP_ACTORS = ("triaged", "investigate", "qa", "respond", "human",
-                 "retro", "tissue", "bless", "immunize", "post",
+                 "retro_audit", "tissue", "bless", "immunize", "post",
                  "submit", "remit")
 
 
