@@ -104,6 +104,22 @@ Friction we keep hitting and a newcomer would hit harder. README's quick-start c
 - **TUI kanban item selection.** `sweep-tui` currently exposes the two pipeline-wide flags as a horizontal action bar. Per-item actions (select a PR row in the kanban, ack / open in browser / clear from inbox) would let the TUI cover the swim-lane operator surface too. Out of scope until the bar version earns its keep.
 - **Wish front door for remote control.** Wrap `sweep-tui` in [Charm Wish](https://github.com/charmbracelet/wish) so `ssh sweep@factory` lands directly in the TUI with no shell in between, no local binary install, no login session. Today's path (`ssh factory; sweep-tui`) already works; Wish collapses it into one hop. Make sense when sweep runs unattended on a remote box and the operator wants a single-command control plane. ~50 lines of Go, one `sweep-tui --serve :2222` flag. Defer until there's a real remote deployment that wants it.
 
+### From monoidal-contract audit (2026-05-17)
+
+These came out of the per-actor contract vibes-check. Substrate is mostly clean; the items below are honest loose joints.
+
+- **/compose skill.** compose-actor is a passthrough today — no PR title/body is actually composed; /drip --push writes one inline. Wiring is in place (qa → compose → submit), so when the skill lands the actor immediately produces a real artifact (payload['pr_title'], payload['pr_body']). Until then the gap is benign: drip's inline writer keeps working.
+- **respond/post external-state tracking.** Both actors' artifacts live on github (PR URL, comment URL). Idempotency relies on gh's own dedup. Mid-call crashes can leave inconsistent state. Improvement: record the gh-returned URL into a local sidecar (`~/.sweep/published/<repo>__<pr>.json`) after success; refuse re-create when sidecar exists with matching head SHA. Cheap; deferred because the failure rate observed is ~0 today.
+- **Auto-infer test_env per repo.** Today `test_env` is operator-set via `sweep retro set --key test_env`. Phase B: heuristic auto-detect from `.github/workflows/*.yml` (look for `runs-on: ubuntu-…` or `container:` keys) and Dockerfile presence. Phase C: LLM inference under `infer_test_env(worktree, repo)` sibling to `infer_test_cmd`. Defer until N>5 repos need manual config and the pattern is clear.
+- **Codex/gemini attestations under `attestations/<slug>/` umbrella.** Today test_attestation publishes to the worktree; codex_review + gemini_review still write only to `~/.sweep/attestations/<msg_id>/` (substrate-private). Symmetric work: write `codex-attestation.json` + `gemini-attestation.json` (verdict + sha256, NOT full transcript — avoids the bot-shaped-communication critique) into `attestations/<slug>/` so the manifest carries the full review chain publicly.
+- **Branch-on-remote sanity check generalization.** investigate_cycle now ls-remotes the fix branch before kicking qa (catches the [[O1]] ghost-branch case). Similar pattern would help other actors that depend on remote state being a particular shape — submit's `_final_checks` could ls-remote the PR's base ref before declaring it mergeable, etc.
+
+### From punch list following O8 (publish-or-perish, 2026-05-17)
+
+Items 1–4 shipped (qa→compose handoff, container test_env per repo, persistent build cache, retro_params plumbing). Item 5 outstanding:
+
+- **Documentation: operator escape hatches.** When does the operator bypass the andon manually? `sweep qa one` (single-PR dev run), direct `cargo test` in the worktree (debugging a specific failure), `sweep dry off` (resume after structural fix). Each has a legitimate use; the doc names which and warns against the rest. Write this when the next operator-onboarding happens.
+
 ## Flagged, not doing (yet)
 
 - 24h user-identity TTL across a mid-day `gh auth login` switch. Acceptable for single-operator use; reconsider for shared/CI deployments.

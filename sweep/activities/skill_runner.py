@@ -401,16 +401,35 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                             capture_output=True, text=True, timeout=5,
                         )
                         branch = br_out.stdout.strip() if br_out.returncode == 0 else ""
-                        if branch and branch not in ("HEAD", "main", "master"):
-                            from sweep.activities.qa import kick_qa_card
-                            await kick_qa_card(
-                                msg.repo, branch,
-                                sender="investigate",
-                            )
-                        else:
+                        if not branch or branch in ("HEAD", "main", "master"):
                             observe.event("kick_qa_skipped",
                                           repo=msg.repo, issue=msg.pr,
                                           reason=f"branch={branch!r} not a fix branch")
+                        else:
+                            # [[O1]] sanity check: skill SAID it shipped; verify
+                            # the branch actually exists on the remote before
+                            # we wake qa to chase a phantom. Otherwise qa
+                            # tries to checkout a branch that origin doesn't
+                            # have and errors out, which masquerades as a
+                            # toolchain bug rather than a skill misreport.
+                            ls = subprocess.run(
+                                ["git", "-C", str(wt), "ls-remote",
+                                 "--heads", "origin", branch],
+                                capture_output=True, text=True, timeout=10,
+                            )
+                            if ls.returncode == 0 and ls.stdout.strip():
+                                from sweep.activities.qa import kick_qa_card
+                                await kick_qa_card(
+                                    msg.repo, branch,
+                                    sender="investigate",
+                                )
+                            else:
+                                observe.event("ghost_branch",
+                                              repo=msg.repo, issue=msg.pr,
+                                              branch=branch,
+                                              reason="skill claimed shipped; "
+                                                     "ls-remote shows branch not "
+                                                     "on origin")
                 except Exception as e:
                     observe.event("kick_qa_failed",
                                   repo=msg.repo, issue=msg.pr,
