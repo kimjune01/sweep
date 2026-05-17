@@ -1,0 +1,411 @@
+debconf: unable to initialize frontend: Dialog
+debconf: (TERM is not set, so the dialog frontend is not usable.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+debconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+x86_64
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded anstyle-query v1.1.5
+  Downloaded anstream v0.6.21
+  Downloaded byteorder v1.5.0
+  Downloaded debugid v0.8.0
+  Downloaded crypto-common v0.2.1
+  Downloaded colosseum v0.2.2
+  Downloaded adler2 v2.0.1
+  Downloaded escape8259 v0.5.3
+  Downloaded crossbeam-queue v0.3.12
+  Downloaded clap_lex v1.0.0
+  Downloaded heck v0.5.0
+  Downloaded cobs v0.3.0
+  Downloaded fastrand v2.3.0
+  Downloaded cpufeatures v0.3.0
+  Downloaded cfg_aliases v0.2.1
+  Downloaded hash32 v0.2.1
+  Downloaded hex v0.4.3
+  Downloaded equivalent v1.0.2
+  Downloaded lazy_static v1.5.0
+  Downloaded fnv v1.0.7
+  Downloaded block-buffer v0.12.0
+  Downloaded errno v0.3.14
+  Downloaded embedded-io v0.6.1
+  Downloaded cfg-if v1.0.4
+  Downloaded arrayref v0.3.9
+  Downloaded matchers v0.2.0
+  Downloaded testing_table v0.3.0
+  Downloaded leb128 v0.2.6
+  Downloaded bumpalo-herd v0.1.2
+  Downloaded atomic-take v1.1.0
+  Downloaded is_terminal_polyfill v1.70.2
+  Downloaded embedded-io v0.4.0
+  Downloaded colorchoice v1.0.4
+  Downloaded autocfg v1.5.0
+  Downloaded ar v0.9.0
+  Downloaded jobserver v0.1.34
+  Downloaded foldhash v0.2.0
+  Downloaded anstyle-parse v1.0.0
+  Downloaded find-msvc-tools v0.1.9
+  Downloaded lock_api v0.4.14
+  Downloaded either v1.15.0
+  Downloaded anstyle v1.0.13
+  Downloaded libtest-mimic v0.8.2
+  Downloaded constant_time_eq v0.4.2
+  Downloaded digest v0.11.3
+  Downloaded crossbeam-deque v0.8.6
+  Downloaded paste v1.0.15
+  Downloaded os_info v3.14.0
+  Downloaded perfetto-recorder v0.3.2
+  Downloaded memmap2 v0.9.10
+  Downloaded libloading v0.9.0
+  Downloaded arrayvec v0.7.6
+  Downloaded anyhow v1.0.102
+  Downloaded anstyle-parse v0.2.7
+  Downloaded crossbeam-utils v0.8.21
+  Downloaded perf-event-open-sys v4.0.0
+  Downloaded getrandom v0.4.1
+  Downloaded log v0.4.29
+  Downloaded getrandom v0.3.4
+  Downloaded papergrid v0.17.0
+  Downloaded num-traits v0.2.19
+  Downloaded miniz_oxide v0.8.9
+  Downloaded bumpalo v3.20.2
+  Downloaded clap v4.5.60
+  Downloaded const-oid v0.10.2
+  Downloaded allocator-api2 v0.2.21
+  Downloaded once_cell v1.21.3
+  Downloaded hybrid-array v0.4.12
+  Downloaded crc32fast v1.5.0
+  Downloaded convert_case v0.10.0
+  Downloaded console v0.16.2
+  Downloaded clap_derive v4.5.55
+  Downloaded bytecount v0.6.9
+  Downloaded bitflags v2.11.1
+  Downloaded anstream v1.0.0
+  Downloaded glob v0.3.3
+  Downloaded crossbeam-epoch v0.9.18
+  Downloaded colored v3.1.1
+  Downloaded bytesize v2.3.1
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded indicatif v0.18.4
+  Downloaded cpp_demangle v0.4.5
+  Downloaded heapless v0.7.17
+  Downloaded flate2 v1.1.9
+  Downloaded cc v1.2.62
+  Downloaded memchr v2.8.0
+  Downloaded nom v7.1.3
+  Downloaded indexmap v2.14.0
+  Downloaded derive_more-impl v2.1.1
+  Downloaded hashbrown v0.17.1
+  Downloaded itertools v0.14.0
+  Downloaded sharded-vec-writer v0.3.0
+  Downloaded clap_builder v4.5.60
+  Downloaded aho-corasick v1.1.4
+  Downloaded hashbrown v0.16.1
+  Downloaded tabled_derive v0.11.0
+  Downloaded blake3 v1.8.5
+  Downloaded minimal-lexical v0.2.1
+  Downloaded nix v0.30.1
+  Downloaded derive_more v2.1.1
+  Downloaded bytes v1.11.1
+  Downloaded object v0.39.1
+  Downloaded gimli v0.33.0
+  Downloaded serde_spanned v1.1.1
+  Downloaded scopeguard v1.2.0
+  Downloaded libc v0.2.186
+  Downloaded strum v0.28.0
+  Downloaded sharded-vec-writer v0.4.0
+  Downloaded rustc_version v0.4.1
+  Downloaded linux-raw-sys v0.12.1
+  Downloaded wait-timeout v0.2.1
+  Downloaded unicode-xid v0.2.6
+  Downloaded proc-macro-error-attr2 v2.0.0
+  Downloaded iced-x86 v1.21.0
+  Downloaded utf8parse v0.2.2
+  Downloaded serde-keyvalue v0.1.0
+  Downloaded sharded-offset-map v0.2.0
+  Downloaded strsim v0.11.1
+  Downloaded thiserror-impl v1.0.69
+  Downloaded pin-project-lite v0.2.16
+  Downloaded rustc-demangle v0.1.27
+  Downloaded remain v0.2.15
+  Downloaded ppv-lite86 v0.2.21
+  Downloaded thiserror v1.0.69
+  Downloaded pkg-config v0.3.32
+  Downloaded quote v1.0.44
+  Downloaded wait4 v0.1.3
+  Downloaded toml_datetime v1.1.1+spec-1.1.0
+  Downloaded zstd-safe v7.2.4
+  Downloaded thiserror v2.0.18
+  Downloaded prost-derive v0.14.3
+  Downloaded proc-macro-error2 v2.0.1
+  Downloaded unit-prefix v0.5.2
+  Downloaded thiserror-impl v2.0.18
+  Downloaded rand_core v0.9.5
+  Downloaded which v8.0.2
+  Downloaded rand_chacha v0.9.0
+  Downloaded perf-event v0.4.8
+  Downloaded thread_local v1.1.9
+  Downloaded symbolic-common v13.0.0
+  Downloaded toml_writer v1.1.1+spec-1.1.0
+  Downloaded simd-adler32 v0.3.8
+  Downloaded prost v0.14.3
+  Downloaded postcard v1.1.3
+  Downloaded semver v1.0.27
+  Downloaded twox-hash v2.1.2
+  Downloaded strum_macros v0.28.0
+  Downloaded tempfile v3.27.0
+  Downloaded spin v0.9.8
+  Downloaded shlex v1.3.0
+  Downloaded smallvec v1.15.1
+  Downloaded sha2 v0.11.0
+  Downloaded serde_core v1.0.228
+  Downloaded zstd v0.13.3
+  Downloaded toml_parser v1.1.2+spec-1.1.0
+  Downloaded unicode-ident v1.0.24
+  Downloaded serde_derive v1.0.228
+  Downloaded tracing-core v0.1.36
+  Downloaded proc-macro2 v1.0.106
+  Downloaded tracing-attributes v0.1.31
+  Downloaded uuid v1.23.1
+  Downloaded toml v1.1.2+spec-1.1.0
+  Downloaded sharded-slab v0.1.7
+  Downloaded rayon-core v1.13.0
+  Downloaded serde v1.0.228
+  Downloaded rand v0.9.2
+  Downloaded unicode-segmentation v1.12.0
+  Downloaded ruzstd v0.8.2
+  Downloaded typenum v1.20.0
+  Downloaded zerocopy-derive v0.8.48
+  Downloaded regex v1.12.3
+  Downloaded rayon v1.12.0
+  Downloaded portable-atomic v1.13.1
+  Downloaded winnow v1.0.3
+  Downloaded symbolic-demangle v13.0.0
+  Downloaded zlib-rs v0.6.2
+  Downloaded tracing-subscriber v0.3.23
+  Downloaded tabled v0.20.0
+  Downloaded unicode-width v0.2.2
+  Downloaded zerocopy v0.8.48
+  Downloaded wasmparser v0.248.0
+  Downloaded syn v2.0.117
+  Downloaded regex-syntax v0.8.9
+  Downloaded rustix v1.1.4
+  Downloaded tracing v0.1.44
+  Downloaded regex-automata v0.4.14
+  Downloaded zstd-sys v2.0.16+zstd.1.5.7
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.44
+   Compiling unicode-ident v1.0.24
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.186
+   Compiling serde_core v1.0.228
+   Compiling memchr v2.8.0
+   Compiling shlex v1.3.0
+   Compiling find-msvc-tools v0.1.9
+   Compiling anyhow v1.0.102
+   Compiling serde v1.0.228
+   Compiling stable_deref_trait v1.2.1
+   Compiling getrandom v0.4.1
+   Compiling crossbeam-utils v0.8.21
+   Compiling semver v1.0.27
+   Compiling scopeguard v1.2.0
+   Compiling zerocopy v0.8.48
+   Compiling bitflags v2.11.1
+   Compiling thiserror v2.0.18
+   Compiling heck v0.5.0
+   Compiling utf8parse v0.2.2
+   Compiling byteorder v1.5.0
+   Compiling lock_api v0.4.14
+   Compiling rustc_version v0.4.1
+   Compiling crc32fast v1.5.0
+   Compiling pkg-config v0.3.32
+   Compiling getrandom v0.3.4
+   Compiling spin v0.9.8
+   Compiling hash32 v0.2.1
+   Compiling heapless v0.7.17
+   Compiling aho-corasick v1.1.4
+   Compiling jobserver v0.1.34
+   Compiling equivalent v1.0.2
+   Compiling cfg_aliases v0.2.1
+   Compiling rayon-core v1.13.0
+   Compiling once_cell v1.21.3
+   Compiling simd-adler32 v0.3.8
+   Compiling typenum v1.20.0
+   Compiling adler2 v2.0.1
+   Compiling unicode-segmentation v1.12.0
+   Compiling regex-syntax v0.8.9
+   Compiling cc v1.2.62
+   Compiling allocator-api2 v0.2.21
+   Compiling foldhash v0.2.0
+   Compiling syn v2.0.117
+   Compiling convert_case v0.10.0
+   Compiling miniz_oxide v0.8.9
+   Compiling uuid v1.23.1
+   Compiling hybrid-array v0.4.12
+   Compiling hashbrown v0.17.1
+   Compiling nix v0.30.1
+   Compiling crossbeam-epoch v0.9.18
+   Compiling colorchoice v1.0.4
+   Compiling twox-hash v2.1.2
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling regex-automata v0.4.14
+   Compiling unicode-xid v0.2.6
+   Compiling object v0.39.1
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling lazy_static v1.5.0
+   Compiling either v1.15.0
+   Compiling fnv v1.0.7
+   Compiling anstyle-query v1.1.5
+   Compiling anstyle v1.0.13
+   Compiling cpp_demangle v0.4.5
+   Compiling paste v1.0.15
+   Compiling zlib-rs v0.6.2
+   Compiling ruzstd v0.8.2
+   Compiling indexmap v2.14.0
+   Compiling crossbeam-deque v0.8.6
+   Compiling itertools v0.14.0
+   Compiling debugid v0.8.0
+   Compiling rand_core v0.9.5
+   Compiling tracing-core v0.1.36
+   Compiling memmap2 v0.9.10
+   Compiling anstyle-parse v0.2.7
+   Compiling serde_derive v1.0.228
+   Compiling thiserror-impl v2.0.18
+   Compiling zerocopy-derive v0.8.48
+   Compiling derive_more-impl v2.1.1
+   Compiling tracing-attributes v0.1.31
+   Compiling symbolic-demangle v13.0.0
+   Compiling pin-project-lite v0.2.16
+   Compiling flate2 v1.1.9
+   Compiling zstd-safe v7.2.4
+   Compiling matchers v0.2.0
+   Compiling prost-derive v0.14.3
+   Compiling anstream v0.6.21
+   Compiling symbolic-common v13.0.0
+   Compiling cobs v0.3.0
+   Compiling tracing v0.1.44
+   Compiling derive_more v2.1.1
+   Compiling sharded-slab v0.1.7
+   Compiling blake3 v1.8.5
+   Compiling crypto-common v0.2.1
+   Compiling block-buffer v0.12.0
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling winnow v1.0.3
+   Compiling thread_local v1.1.9
+   Compiling bytes v1.11.1
+   Compiling const-oid v0.10.2
+   Compiling postcard v1.1.3
+   Compiling hashbrown v0.16.1
+   Compiling leb128 v0.2.6
+   Compiling autocfg v1.5.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling unicode-width v0.2.2
+   Compiling rustix v1.1.4
+   Compiling cpufeatures v0.3.0
+   Compiling rustc-demangle v0.1.27
+   Compiling clap_lex v1.0.0
+   Compiling rand_chacha v0.9.0
+   Compiling strsim v0.11.1
+   Compiling num-traits v0.2.19
+   Compiling gimli v0.33.0
+   Compiling linker-layout v0.8.0 (/work/linker-layout)
+   Compiling linker-trace v0.8.0 (/work/linker-trace)
+   Compiling prost v0.14.3
+   Compiling linker-utils v0.8.0 (/work/linker-utils)
+   Compiling digest v0.11.3
+   Compiling tracing-subscriber v0.3.23
+   Compiling clap_builder v4.5.60
+   Compiling rand v0.9.2
+   Compiling proc-macro-error2 v2.0.1
+   Compiling clap_derive v4.5.55
+   Compiling libwild v0.8.0 (/work/libwild)
+   Compiling perf-event-open-sys v4.0.0
+   Compiling colored v3.1.1
+   Compiling sharded-vec-writer v0.3.0
+   Compiling arrayvec v0.7.6
+   Compiling constant_time_eq v0.4.2
+   Compiling linux-raw-sys v0.12.1
+   Compiling thiserror v1.0.69
+   Compiling bumpalo v3.20.2
+   Compiling arrayref v0.3.9
+   Compiling bytecount v0.6.9
+   Compiling wasmparser v0.248.0
+   Compiling clap v4.5.60
+   Compiling sharded-offset-map v0.2.0
+   Compiling bumpalo-herd v0.1.2
+   Compiling papergrid v0.17.0
+   Compiling perf-event v0.4.8
+   Compiling perfetto-recorder v0.3.2
+   Compiling tabled_derive v0.11.0
+   Compiling sha2 v0.11.0
+   Compiling testing_table v0.3.0
+   Compiling rayon v1.12.0
+   Compiling thiserror-impl v1.0.69
+   Compiling crossbeam-queue v0.3.12
+   Compiling anstyle-parse v1.0.0
+   Compiling fastrand v2.3.0
+   Compiling colosseum v0.2.2
+   Compiling hex v0.4.3
+   Compiling minimal-lexical v0.2.1
+   Compiling bytesize v2.3.1
+   Compiling glob v0.3.3
+   Compiling atomic-take v1.1.0
+   Compiling sharded-vec-writer v0.4.0
+   Compiling smallvec v1.15.1
+   Compiling wild-linker v0.8.0 (/work/wild)
+   Compiling tempfile v3.27.0
+   Compiling anstream v1.0.0
+   Compiling nom v7.1.3
+   Compiling tabled v0.20.0
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling strum_macros v0.28.0
+   Compiling remain v0.2.15
+   Compiling iced-x86 v1.21.0
+   Compiling serde_spanned v1.1.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling which v8.0.2
+   Compiling escape8259 v0.5.3
+   Compiling toml_writer v1.1.1+spec-1.1.0
+   Compiling log v0.4.29
+   Compiling serde-keyvalue v0.1.0
+   Compiling libtest-mimic v0.8.2
+   Compiling os_info v3.14.0
+   Compiling strum v0.28.0
+   Compiling toml v1.1.2+spec-1.1.0
+   Compiling regex v1.12.3
+   Compiling wait-timeout v0.2.1
+   Compiling libloading v0.9.0
+   Compiling ar v0.9.0
+   Compiling linker-diff v0.8.0 (/work/linker-diff)
+   Compiling zstd v0.13.3
+    Finished `release` profile [optimized] target(s) in 1m 41s
+     Running tests/integration_tests.rs (/cache/target/release/deps/integration_tests-e685c9ae6ceee474)
+
+running 1 test
+-- stdout --
+
+-- stderr --
+
+-- end --
+test elf/x86_64/version-node-not-found/default ... FAILED
+
+failures:
+
+---- elf/x86_64/version-node-not-found/default ----
+Test failed: `version-node-not-found.c` with linker `wild` config `default`
+  Caused by:
+    Linker expected to report `Symbol mysql_affected_rows has undefined version libmysqlclient_18` on stderr, but didn't. Command:
+        cargo run --bin wild -- -flavor gnu -static --gc-sections --shared /work/wild/tests/sources/elf/version-node-not-found/version-node-not-found.map -o /work/wild/tests/build/elf/x86_64/version-node-not-found/default/version-node-not-found.c.wild /work/wild/tests/build/elf/x86_64/version-node-not-found/default/version-node-not-found.c.o --validate-output --dependency-file=/work/wild/tests/build/elf/x86_64/version-node-not-found/default/version-node-not-found.c.wild.deps
+
+
+
+failures:
+    elf/x86_64/version-node-not-found/default
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1097 filtered out; finished in 0.21s
+
+error: test failed, to rerun pass `-p wild-linker --test integration_tests`

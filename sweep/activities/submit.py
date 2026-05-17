@@ -84,18 +84,14 @@ async def kick_submit_card(repo: str, branch: str, pr: int | None = None,
 
 
 async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
-    """Find the worktree's attestations dir and run the deterministic
-    verifier. Returns (ok, reason). Refuses push if no attestation
-    manifest exists, if the verifier rejects it, or if the worktree
-    can't be located.
+    """Read the attestation manifest from OUR sweep repo and run the
+    deterministic verifier. Returns (ok, reason). Refuses push if no
+    manifest exists, the verifier rejects, or the fork worktree drifted
+    from the head_sha pinned at attestation time.
 
-    Convention: each PR ships an
-    `attestations/<org>-<repo>-<issue#>-<n>/` dir (flat, easy to
-    browse) with `manifest.json` + `after.txt` (test stdout on fix
-    branch). Optional `before.txt` shows the test on master. <n> is
-    the attempt counter — multiple runs of qa for the same issue
-    accumulate as separate dirs; the gate picks the highest-n entry
-    that matches this branch's repo as current."""
+    Layout (in this repo):
+      attestations/<org>-<repo>/issue-<n>-{manifest,before,after}.*
+    """
     if not branch:
         return False, "no branch — can't locate worktree"
     from sweep.activities.worktree import ensure_worktree
@@ -104,11 +100,11 @@ async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
         worktree = await ensure_worktree(repo, branch)
     except Exception as e:
         return False, f"ensure_worktree: {type(e).__name__}: {e}"
-    att_root = Path(worktree) / "attestations"
+    sweep_repo = Path(__file__).resolve().parent.parent.parent
     org_repo = repo.replace("/", "-")
-    repo_dir = att_root / org_repo
+    repo_dir = sweep_repo / "attestations" / org_repo
     if not repo_dir.exists():
-        return False, f"no attestations/{org_repo}/ in worktree"
+        return False, f"no attestations/{org_repo}/ in sweep repo"
     # Per-repo dir holds a flat list of issue-N-manifest.json files.
     # Pick the highest issue-N for this branch's gate. If there are
     # multiple (we've attested several issues for this repo), submit
@@ -137,7 +133,7 @@ async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
     import subprocess
     diff = subprocess.run(
         ["git", "-C", worktree, "diff", "--name-only",
-         manifest_sha, "HEAD", "--", ":(exclude)attestations/"],
+         manifest_sha, "HEAD"],
         capture_output=True, text=True, timeout=10,
     )
     if diff.returncode != 0:

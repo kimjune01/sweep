@@ -335,21 +335,19 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     att = _capture(req.msg_id, "test", body, worktree=req.worktree)
     att.verdict = "pass"
 
-    # Write the committable attestation set into the worktree's
-    # attestations/ dir. The "fail on master, pass with fix"
-    # discipline is made visible: maintainer can re-run test_cmd
-    # on both refs and compare sha256. The deterministic verifier
-    # (attestation_verify.py) re-parses after.txt independently —
-    # silent-skip cases that this code reads as 'pass' get caught
-    # at the push gate.
+    # Write attestations into OUR sweep repo, not the fork's worktree.
+    # Maintainers don't want our receipts polluting their PR diff; we
+    # publish them on our side instead. Layout:
+    #   <sweep>/attestations/<org>-<repo>/issue-<n>-{manifest,before,after}
+    # Per-repo dir, flat issue-prefixed files — easy to browse our
+    # growing list. The pin check in submit's gate compares the fork
+    # worktree's HEAD against manifest.head_sha at push time.
     try:
         from sweep.attestation_verify import write_attestation_files
         import platform
-        # Flat per-repo layout: attestations/<org>-<repo>/issue-<n>-*
-        # Maintainer browses attestations/wild-linker-wild/ and sees
-        # every issue we've attested as a flat list.
+        sweep_repo = Path(__file__).resolve().parent.parent.parent
         org_repo = req.repo.replace("/", "-")
-        attestation_dir = Path(req.worktree) / "attestations" / org_repo
+        attestation_dir = sweep_repo / "attestations" / org_repo
         issue_key = req.issue or req.branch.removeprefix("fix/").replace("/", "__")
         attestation_name = f"issue-{issue_key}"
         expected_test = req.branch.removeprefix("fix/").replace("/", "__").split("__")[-1].replace("_", "-")
@@ -365,33 +363,24 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
             after_stdout=(fix_run.stdout or "") + "\n--- stderr ---\n" + (fix_run.stderr or ""),
             elapsed_seconds=time.time() - _test_start,
         )
-        # Auto-commit + ship: the forcing function only works if the
-        # files are public. /drip's push picks up the commit naturally.
-        # If the verifier rejects, gate_push refuses; if it accepts,
-        # the maintainer sees the receipts in the PR. No invisible
-        # middle ground where the substrate "checked but didn't show."
+        # Auto-commit in the sweep repo. The babysitter / operator
+        # pushes our repo on its own cadence; the attestation lives
+        # publicly here, not on the maintainer's branch.
+        rel = str(attestation_dir.relative_to(sweep_repo))
         add = subprocess.run(
-            ["git", "-C", req.worktree, "add", "attestations/"],
+            ["git", "-C", str(sweep_repo), "add", rel],
             capture_output=True, text=True, timeout=10,
         )
         if add.returncode == 0:
             cmt = subprocess.run(
-                ["git", "-C", req.worktree, "commit", "-m",
+                ["git", "-C", str(sweep_repo), "commit", "-m",
                  f"attestation: {slug} ({req.test_cmd[:60]})"],
                 capture_output=True, text=True, timeout=10,
             )
-            # commit returns 1 when nothing new to commit (re-runs of
-            # the same fix on the same sha). That's fine; the existing
-            # commit still ships.
             if cmt.returncode == 0:
                 observe.event("attestation_committed", msg_id=req.msg_id,
                               slug=slug, branch=req.branch)
     except Exception as e:
-        # Don't fail the test_attestation activity if the writer hits
-        # an issue (e.g. read-only fs, git config missing) — substrate-
-        # private record still got written via _capture above. Log so
-        # leakdog can see it; gate_push will then refuse the push for
-        # lack of a committed manifest, which is the right outcome.
         observe.event("attestation_write_failed", msg_id=req.msg_id,
                       error_type=type(e).__name__, error=str(e)[:200])
 
