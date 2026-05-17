@@ -34,7 +34,7 @@ from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
 from sweep import observe
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 
 BLESS_INBOX = Path.home() / ".sweep" / "inbox" / "bless.jsonl"
@@ -216,7 +216,8 @@ async def kick_bless_card(*, repo: str, issue: int,
                            tissue_draft_id: str,
                            reply_text: str,
                            reply_author: str,
-                           comment_url: str = "") -> str | None:
+                           comment_url: str = "",
+                           incoming: Message | None = None) -> str | None:
     """Engagement detector → bless. Carries the original tissue draft_id
     plus the reply context inline so bless can match templates without
     a gh round-trip in the hot path."""
@@ -235,6 +236,7 @@ async def kick_bless_card(*, repo: str, issue: int,
             "comment_url":     comment_url,
         },
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     BLESS_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:

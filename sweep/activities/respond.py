@@ -25,7 +25,7 @@ from pathlib import Path
 
 from temporalio import activity
 
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 
 RESPOND_INBOX = Path.home() / ".sweep" / "inbox" / "respond.jsonl"
@@ -36,7 +36,8 @@ async def kick_respond_card(repo: str, branch: str,
                             pr: int | None = None,
                             sender: str = "qa",
                             intent: str = "publish",
-                            attestation_hash: str | None = None) -> str | None:
+                            attestation_hash: str | None = None,
+                            incoming: Message | None = None) -> str | None:
     """Deposit a publish/rebase/close card on respond.jsonl and signal
     respond-actor. Returns the workflow id on success, None on failure."""
     from sweep import observe
@@ -58,6 +59,7 @@ async def kick_respond_card(repo: str, branch: str,
         branch=branch,
         payload=payload,
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     RESPOND_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:

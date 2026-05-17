@@ -34,7 +34,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 SUBMIT_INBOX = Path.home() / ".sweep" / "inbox" / "submit.jsonl"
 
@@ -42,7 +42,8 @@ SUBMIT_INBOX = Path.home() / ".sweep" / "inbox" / "submit.jsonl"
 @activity.defn
 async def kick_submit_card(repo: str, branch: str, pr: int | None = None,
                            sender: str = "qa",
-                           attestation_hash: str | None = None) -> str | None:
+                           attestation_hash: str | None = None,
+                           incoming: Message | None = None) -> str | None:
     """Deposit a ready-to-publish card on submit.jsonl and signal
     submit-actor. Called by qa (eventually compose) when a fix is
     verified and ready to land as a new PR or push.
@@ -69,6 +70,7 @@ async def kick_submit_card(repo: str, branch: str, pr: int | None = None,
         branch=branch,
         payload=payload,
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     SUBMIT_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:

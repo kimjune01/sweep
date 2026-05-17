@@ -18,7 +18,7 @@ from temporalio.exceptions import ApplicationError
 
 from sweep import control_state, llm_io, models, observe, retro_params, retro_state
 from sweep.io_safe import atomic_write_text
-from sweep.types import GateAttestation, QaOneEntryRequest, QaOneEntryResult
+from sweep.types import GateAttestation, Message, QaOneEntryRequest, QaOneEntryResult
 
 
 def assert_test_env_available(repo: str) -> str:
@@ -146,7 +146,8 @@ QA_INBOX = Path.home() / ".sweep" / "inbox" / "qa.jsonl"
 async def kick_qa_card(repo: str, branch: str,
                        pr: int | None = None,
                        sender: str = "investigate",
-                       attestation_hash: str | None = None) -> str | None:
+                       attestation_hash: str | None = None,
+                       incoming: Message | None = None) -> str | None:
     """Deposit a card on qa.jsonl and signal qa-actor. Called by
     investigate_cycle on the production lane when a fresh fix branch
     is ready for verification. Reqa-actor handles the engagement-lane
@@ -154,7 +155,7 @@ async def kick_qa_card(repo: str, branch: str,
     import datetime as _dt
     import json as _json
     from dataclasses import asdict as _asdict
-    from sweep.types import Message
+    from sweep.types import Message, forward_ledger
     from sweep.activities.pr_state import _signal_actor
 
     ts = _dt.datetime.now(_dt.timezone.utc)
@@ -173,6 +174,7 @@ async def kick_qa_card(repo: str, branch: str,
         branch=branch,
         payload=payload,
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     QA_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:

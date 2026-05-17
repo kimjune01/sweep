@@ -34,7 +34,7 @@ from temporalio.exceptions import ApplicationError
 
 from sweep import gh_io, observe
 from sweep.io_safe import atomic_write_text
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 
 TISSUE_DRAFTS = Path.home() / ".sweep" / "inbox" / "tissue-drafts.jsonl"
@@ -45,7 +45,8 @@ HYPOTHESES_DIR = Path("/Users/junekim/Documents/sweep/repo-hypotheses")
 
 
 async def kick_tissue_card(repo: str, issue: int, *,
-                            source: str, signal: str) -> str | None:
+                            source: str, signal: str,
+                            incoming: Message | None = None) -> str | None:
     """Deposit a card to the tissue inbox and signal the actor. Called
     from `investigate_cycle` when an artifact classifies as no-fix with
     concrete provenance. Idempotent at the actor (msg_id dedupes).
@@ -63,6 +64,7 @@ async def kick_tissue_card(repo: str, issue: int, *,
         repo=repo, pr=issue, branch=None,
         payload={"signal": signal, "source": source},
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     TISSUE_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:

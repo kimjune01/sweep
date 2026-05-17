@@ -26,7 +26,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 REMIT_INBOX = Path.home() / ".sweep" / "inbox" / "remit.jsonl"
 
@@ -34,7 +34,8 @@ REMIT_INBOX = Path.home() / ".sweep" / "inbox" / "remit.jsonl"
 @activity.defn
 async def kick_remit_card(repo: str, pr: int,
                           sender: str = "notification-poller",
-                          thread_id: str | None = None) -> str | None:
+                          thread_id: str | None = None,
+                          incoming: Message | None = None) -> str | None:
     """Deposit one raw PR-state-changed card on remit.jsonl and signal
     remit-actor. Used by NotificationPoller (steady-state) and the
     leakdog's `_seed_unclassified_prs` tick (safety-net rescan).
@@ -57,6 +58,7 @@ async def kick_remit_card(repo: str, pr: int,
         branch=None,
         payload={"thread_id": thread_id} if thread_id else {},
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     REMIT_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:

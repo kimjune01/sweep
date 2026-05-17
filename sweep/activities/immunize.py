@@ -30,14 +30,15 @@ from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
 from sweep import control_state, gh_io, observe, slop_offer_seed
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 
 IMMUNIZE_INBOX = Path.home() / ".sweep" / "inbox" / "immunize.jsonl"
 
 
 async def kick_immunize_card(repo: str, issue: int | None, *,
-                              source: str) -> str | None:
+                              source: str,
+                              incoming: Message | None = None) -> str | None:
     """Deposit an anti-AI card on the immunize inbox and signal the
     actor. Called from sift (repo-level, issue=None) and from
     triage (issue-level, issue=number).
@@ -58,6 +59,7 @@ async def kick_immunize_card(repo: str, issue: int | None, *,
         repo=repo, pr=issue, branch=None,
         payload={"source": source},
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     IMMUNIZE_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:

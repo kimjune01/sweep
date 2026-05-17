@@ -40,7 +40,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 ROPE_INBOX = Path.home() / ".sweep" / "inbox" / "rope.jsonl"
 ROPE_TARGET_FILE = Path.home() / ".sweep" / "control" / "rope_target"
@@ -95,7 +95,8 @@ def _record_fire(ts: float) -> None:
 
 
 @activity.defn
-async def kick_rope_card(sender: str = "idle") -> str | None:
+async def kick_rope_card(sender: str = "idle",
+                         incoming: Message | None = None) -> str | None:
     """Deposit an idle signal on rope.jsonl and signal rope-actor.
 
     Called by any actor that finds its own inbox empty after processing
@@ -117,6 +118,7 @@ async def kick_rope_card(sender: str = "idle") -> str | None:
         branch=None,
         payload={},
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     ROPE_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -177,7 +179,7 @@ async def rope_cycle(msg: Message) -> dict:
                 "triage_depth": triage_d, "target": target,
                 "reason": "above_target"}
 
-    wf_id = await kick_scout_card(f"rope-{msg.sender or 'idle'}")
+    wf_id = await kick_scout_card(f"rope-{msg.sender or 'idle'}", incoming=msg)
     _record_fire(now)
     observe.event("rope_fired",
                   scout_depth=scout_d, triage_depth=triage_d,

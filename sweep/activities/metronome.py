@@ -20,7 +20,7 @@ from pathlib import Path
 
 from temporalio import activity
 
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 
 STATE_FILE = Path.home() / ".sweep" / "metronome" / "last_fired.json"
@@ -123,7 +123,8 @@ async def metronome_tick(manual: Message | None = None) -> dict:
 
 
 @activity.defn
-async def kick_metronome_card(sender: str = "operator") -> str | None:
+async def kick_metronome_card(sender: str = "operator",
+                              incoming: Message | None = None) -> str | None:
     """Operator or other-actor entry point: force a metronome evaluation
     pass right now (don't wait for the next scheduled wake)."""
     from sweep import observe
@@ -136,6 +137,7 @@ async def kick_metronome_card(sender: str = "operator") -> str | None:
         sender=sender,
         intent="tick",
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     INBOX = Path.home() / ".sweep" / "inbox" / "metronome.jsonl"
     INBOX.parent.mkdir(parents=True, exist_ok=True)

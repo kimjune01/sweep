@@ -27,7 +27,7 @@ from temporalio.exceptions import ApplicationError
 
 from sweep import control_state, gh_io, observe, retro_state, warm_orgs
 from sweep.io_safe import atomic_write_text
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 
 SCOUT_INBOX = Path.home() / ".sweep" / "inbox" / "scout.jsonl"
@@ -208,7 +208,7 @@ async def scout_cycle(msg: Message) -> dict:
     return {"source": source, "raw": len(raw), "emitted": emitted}
 
 
-async def kick_scout_card(sender: str) -> str | None:
+async def kick_scout_card(sender: str, incoming: Message | None = None) -> str | None:
     """Drop one trigger card on scout's inbox and signal it.
 
     Fires from leakdog (heartbeat when sift's inbox runs dry) and
@@ -225,6 +225,7 @@ async def kick_scout_card(sender: str) -> str | None:
         repo="", pr=None, branch=None,
         payload={"reason": f"pull from {sender}"},
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     SCOUT_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:

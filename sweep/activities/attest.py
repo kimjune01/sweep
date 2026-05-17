@@ -9,9 +9,9 @@ the card based on outcome:
   fail, 1st    → investigate.jsonl (one cheap retry)
   fail, 2nd+   → human.jsonl (escalation)
 
-"1st vs 2nd" is read from the kanban trail: `msg.path.count("attest")`.
-First time attest sees a card, path has no "attest"; second time, it
-does. No separate counter, no cross-inbox reads.
+"1st vs 2nd" is read from the card's ledger: `msg.ledger.count("attest")`.
+First time attest sees a card, the ledger has no "attest"; second
+time, it does. No separate counter, no cross-inbox reads.
 
 Pre/post matches qa: the attestation artifact lands on disk via the
 same `_capture()` path qa already uses, and the routed message carries
@@ -29,7 +29,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep.types import Message, QaOneEntryRequest
+from sweep.types import Message, QaOneEntryRequest, forward_ledger
 
 
 ATTEST_INBOX = Path.home() / ".sweep" / "inbox" / "attest.jsonl"
@@ -48,12 +48,13 @@ def _append(inbox: Path, msg: Message) -> None:
 async def kick_attest_card(repo: str, branch: str,
                            pr: int | None = None,
                            sender: str = "investigate",
-                           incoming_path: list[str] | None = None,
+                           incoming: Message | None = None,
                            payload: dict | None = None) -> str | None:
     """Deposit an attest card on attest.jsonl and signal attest-actor.
 
-    Caller should pass `incoming_path = incoming.path + [incoming.sender]`
-    when forwarding. Origin callers (pr-state) pass [].
+    Caller passes `incoming=msg` when forwarding from inside an
+    activity processing `msg`; the ledger extends automatically.
+    Origin callers pass nothing → ledger=[].
     """
     from sweep import observe
     from sweep.activities.pr_state import _signal_actor
@@ -71,7 +72,7 @@ async def kick_attest_card(repo: str, branch: str,
         branch=branch,
         payload=payload or {},
         ts=ts.isoformat(),
-        path=incoming_path or [],
+        ledger=forward_ledger(incoming),
     )
     try:
         _append(ATTEST_INBOX, msg)
@@ -82,11 +83,6 @@ async def kick_attest_card(repo: str, branch: str,
     observe.event("attest_card_deposited", repo=repo, branch=branch,
                   sender=sender, msg_id=msg_id)
     return await _signal_actor("attest", msg)
-
-
-def _forward_path(msg: Message) -> list[str]:
-    """Path to stamp on a card we're about to emit downstream."""
-    return list(msg.path) + [msg.sender]
 
 
 def _emit(inbox: Path, msg: Message, *, kind: str, extra_payload: dict) -> Message:
@@ -103,7 +99,7 @@ def _emit(inbox: Path, msg: Message, *, kind: str, extra_payload: dict) -> Messa
         branch=msg.branch,
         payload={**(msg.payload or {}), **extra_payload},
         ts=dt.datetime.now(dt.timezone.utc).isoformat(),
-        path=_forward_path(msg),
+        ledger=forward_ledger(msg),
     )
     _append(inbox, out)
     return out
@@ -153,7 +149,7 @@ async def attest_cycle(msg: Message) -> dict:
         issue=int(msg.pr) if msg.pr else 0,
     )
 
-    second_look = msg.path.count("attest") >= 1
+    second_look = msg.ledger.count("attest") >= 1
 
     try:
         att = await test_attestation(req)

@@ -273,7 +273,7 @@ async def _drain_inbox(client, actor: str, deliver_method, wf_id: str) -> int:
             branch=d.get("branch") or "",
             payload=d.get("payload", {}),
             ts=d.get("ts", _dt.datetime.now(_dt.timezone.utc).isoformat()),
-            path=d.get("path") or [],
+            ledger=d.get("ledger") or [],
         )
         try:
             await handle.signal(deliver_method, msg)

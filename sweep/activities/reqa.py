@@ -25,7 +25,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep.types import Message, QaOneEntryRequest
+from sweep.types import Message, QaOneEntryRequest, forward_ledger
 
 
 REQA_INBOX = Path.home() / ".sweep" / "inbox" / "reqa.jsonl"
@@ -35,7 +35,8 @@ REQA_INBOX = Path.home() / ".sweep" / "inbox" / "reqa.jsonl"
 async def kick_reqa_card(repo: str, pr: int,
                          branch: str | None = None,
                          sender: str = "reinvestigate",
-                         attestation_hash: str | None = None) -> str | None:
+                         attestation_hash: str | None = None,
+                         incoming: Message | None = None) -> str | None:
     """Deposit a reqa card on reqa.jsonl and signal reqa-actor.
     Called by reinvestigate after producing a follow-up patch, OR by
     remit when CI fails with a mechanical-fix check on an existing PR."""
@@ -57,6 +58,7 @@ async def kick_reqa_card(repo: str, pr: int,
         branch=branch,
         payload=payload,
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     REQA_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -131,6 +133,7 @@ async def reqa_cycle(msg: Message) -> dict:
             await kick_respond_card(
                 msg.repo, branch, pr=int(msg.pr),
                 sender="reqa",
+                incoming=msg,
             )
         except Exception as e:
             observe.event("kick_respond_failed", repo=msg.repo, pr=msg.pr,

@@ -37,7 +37,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 COMPOSE_INBOX = Path.home() / ".sweep" / "inbox" / "compose.jsonl"
 
@@ -45,7 +45,8 @@ COMPOSE_INBOX = Path.home() / ".sweep" / "inbox" / "compose.jsonl"
 @activity.defn
 async def kick_compose_card(repo: str, branch: str, pr: int | None = None,
                             sender: str = "qa",
-                            attestation_hash: str | None = None) -> str | None:
+                            attestation_hash: str | None = None,
+                            incoming: Message | None = None) -> str | None:
     """Deposit a verified-fix card on compose.jsonl and signal
     compose-actor. Called by qa when verdict=pass and a fix is ready
     to be packaged for the maintainer.
@@ -71,6 +72,7 @@ async def kick_compose_card(repo: str, branch: str, pr: int | None = None,
         branch=branch,
         payload=payload,
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     COMPOSE_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -109,6 +111,7 @@ async def compose_cycle(msg: Message) -> dict:
         msg.repo, msg.branch, msg.pr,
         sender="compose",
         attestation_hash=attestation_hash,
+        incoming=msg,
     )
     observe.event("compose_passed_through", repo=msg.repo, branch=msg.branch,
                   pr=msg.pr, msg_id=msg.msg_id,

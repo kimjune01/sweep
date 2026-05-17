@@ -26,7 +26,7 @@ from pathlib import Path
 
 from temporalio import activity
 
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 
 RETRO_INBOX = Path.home() / ".sweep" / "inbox" / "retro.jsonl"
@@ -68,7 +68,8 @@ def _mark_processed_now() -> None:
 
 
 @activity.defn
-async def kick_retro_card(sender: str = "metronome") -> str | None:
+async def kick_retro_card(sender: str = "metronome",
+                          incoming: Message | None = None) -> str | None:
     """Deposit a retro card and signal retro-actor."""
     from sweep import observe
     from sweep.activities.pr_state import _signal_actor
@@ -80,6 +81,7 @@ async def kick_retro_card(sender: str = "metronome") -> str | None:
         sender=sender,
         intent="pass",
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     RETRO_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -109,7 +111,7 @@ def _emit_human_card(msg: Message, summary: dict) -> None:
         intent="retro-summary",
         payload=summary,
         ts=ts.isoformat(),
-        path=list(msg.path) + [msg.sender],
+        ledger=forward_ledger(msg),
     )
     HUMAN_INBOX.parent.mkdir(parents=True, exist_ok=True)
     with open(HUMAN_INBOX, "a") as f:

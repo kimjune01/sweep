@@ -214,7 +214,8 @@ async def triage_cycle(msg: Message) -> dict:
             from sweep.activities.immunize import kick_immunize_card
             try:
                 await kick_immunize_card(msg.repo, int(msg.pr),
-                                         source="triage")
+                                         source="triage",
+                                         incoming=msg)
             except Exception as e:
                 observe.event("kick_immunize_failed", site="triage_cycle",
                               repo=msg.repo, issue=msg.pr,
@@ -276,7 +277,7 @@ async def triage_cycle(msg: Message) -> dict:
         # point so the line doesn't over-fire from multiple callers.
         try:
             from sweep.activities.rope import kick_rope_card
-            await kick_rope_card("triage")
+            await kick_rope_card("triage", incoming=msg)
         except Exception as e:
             observe.event("kick_rope_failed", site="triage_cycle",
                           error_type=type(e).__name__, error=str(e)[:200])
@@ -354,7 +355,7 @@ async def investigate_cycle(msg: Message) -> dict:
         # high-value signal for the controller.
         try:
             from sweep.activities.rope import kick_rope_card
-            await kick_rope_card("investigate")
+            await kick_rope_card("investigate", incoming=msg)
         except Exception as e:
             from sweep import observe
             observe.event("kick_rope_failed", site="investigate_cycle",
@@ -462,6 +463,7 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                         msg.repo, int(msg.pr),
                         source="investigate",
                         signal=classified["signal"],
+                        incoming=msg,
                     )
                 except Exception as e:
                     observe.event("kick_tissue_failed",
@@ -511,6 +513,7 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                                 await kick_qa_card(
                                     msg.repo, branch,
                                     sender="investigate",
+                                    incoming=msg,
                                 )
                             else:
                                 observe.event("ghost_branch",
@@ -570,6 +573,7 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                     msg.repo, int(msg.pr),
                     source="investigate-reject",
                     signal="self-pr-halt",
+                    incoming=msg,
                 )
             except Exception as e:
                 observe.event("kick_tissue_failed",

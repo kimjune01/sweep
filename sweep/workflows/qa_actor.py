@@ -233,7 +233,7 @@ class QaActor:
                     if req.branch and req.branch not in ("HEAD", "main", "master"):
                         await workflow.execute_activity(
                             kick_compose_card,
-                            args=[req.repo, req.branch, req.issue, "qa", None],
+                            args=[req.repo, req.branch, req.issue, "qa", None, msg],
                             start_to_close_timeout=timedelta(seconds=10),
                         )
                 except Exception as e:
@@ -280,7 +280,7 @@ class QaActor:
             # missed signal is a missed pull, not a correctness bug.
             try:
                 await workflow.execute_activity(
-                    kick_rope_card, args=["qa"],
+                    kick_rope_card, args=["qa", msg],
                     start_to_close_timeout=timedelta(seconds=5),
                 )
             except Exception:

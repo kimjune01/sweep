@@ -28,7 +28,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep.types import Message
+from sweep.types import Message, forward_ledger
 
 
 REINVESTIGATE_INBOX = Path.home() / ".sweep" / "inbox" / "reinvestigate.jsonl"
@@ -36,7 +36,8 @@ REINVESTIGATE_INBOX = Path.home() / ".sweep" / "inbox" / "reinvestigate.jsonl"
 
 @activity.defn
 async def kick_reinvestigate_card(repo: str, pr: int,
-                                  sender: str = "remit") -> str | None:
+                                  sender: str = "remit",
+                                  incoming: Message | None = None) -> str | None:
     """Deposit a reinvestigate card on reinvestigate.jsonl and signal
     reinvestigate-actor. Called by remit when a PR classifies into
     bucket=reinvestigate (maintainer_raised_concern or non-mechanical
@@ -56,6 +57,7 @@ async def kick_reinvestigate_card(repo: str, pr: int,
         branch=None,
         payload={},
         ts=ts.isoformat(),
+        ledger=forward_ledger(incoming),
     )
     REINVESTIGATE_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -112,6 +114,7 @@ async def reinvestigate_cycle(msg: Message) -> dict:
                 msg.repo, int(msg.pr),
                 branch=result.get("branch"),
                 sender="reinvestigate",
+                incoming=msg,
             )
         except Exception as e:
             observe.event("kick_reqa_failed", repo=msg.repo, pr=msg.pr,

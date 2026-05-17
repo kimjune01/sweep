@@ -32,11 +32,26 @@ class Message:
     branch: str | None = None
     payload: dict = field(default_factory=dict)
     ts: str = ""  # ISO 8601 UTC
-    # Sender trail. When an actor forwards a card, set new.path to
-    # incoming.path + [incoming.sender]. Lets receivers count prior
-    # hops (e.g. attest: path.count("attest") >= 1 → second look,
-    # escalate to human). Default [] for origin cards (pr-state, scout).
-    path: list[str] = field(default_factory=list)
+    # The card's own ledger of where it's been. Each actor that
+    # forwards the card appends the previous sender (the actor it
+    # came from). Receivers count their own name in the ledger to
+    # answer "is this my Nth look?" — that's how attest decides
+    # between "bounce back to investigate" (1st fail) and "escalate
+    # to human" (2nd fail).
+    # Default [] for origin cards (pr-state from gh, scout, operator).
+    # Always set via forward_ledger() — never compute by hand.
+    ledger: list[str] = field(default_factory=list)
+
+
+def forward_ledger(incoming: "Message | None") -> list[str]:
+    """The ledger to stamp on a new card emitted from inside an
+    activity that's processing `incoming`. Origin sites (pr-state from
+    gh, scout heartbeats, operator kicks) pass None → []. Every
+    kick_*_card helper accepts an `incoming` param and routes it
+    through here so there's exactly one way to extend the ledger."""
+    if incoming is None:
+        return []
+    return list(incoming.ledger) + [incoming.sender]
 
 
 # ---------------------------------------------------------------- qa types
@@ -105,7 +120,7 @@ BUCKET_ROUTING: dict[str, tuple[str, str]] = {
     "close":         ("respond",       "close"),
     "human":         ("human",         "respond"),
     "rebase":        ("respond",       "rebase"),
-    "qa":            ("qa",            "reattest"),
+    "qa":            ("attest",        "verify-then-qa"),
     "reqa":          ("reqa",          "reattest-followup"),
     "investigate":   ("investigate",   "diagnose"),
     "reinvestigate": ("reinvestigate", "diagnose-followup"),
