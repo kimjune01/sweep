@@ -26,6 +26,7 @@ with workflow.unsafe.imports_passed_through():
         mark_thread_read,
         poll_github_notifications,
     )
+    from sweep.activities.pause_gate import should_idle
     from sweep.activities.pr_state import (
         classify_one_pr,
         deliver_to_inbox,
@@ -55,6 +56,15 @@ class NotificationPoller:
     @workflow.run
     async def run(self) -> None:
         while True:
+            # Inbox-boundary pause check: idle while paused. Don't even
+            # poll GitHub when the line is down — burning notifications
+            # API quota under pause is the same waste as any other.
+            while await workflow.execute_activity(
+                should_idle, args=["notifications"],
+                start_to_close_timeout=timedelta(seconds=5),
+                retry_policy=RetryPolicy(maximum_attempts=2),
+            ):
+                await workflow.sleep(timedelta(seconds=10))
             self.last_poll_iso = workflow.now().isoformat()
             self.polls_total += 1
             try:

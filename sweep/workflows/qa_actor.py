@@ -47,6 +47,7 @@ with workflow.unsafe.imports_passed_through():
         gemini_review,
         test_attestation,
     )
+    from sweep.activities.pause_gate import should_idle
     from sweep.activities.worktree import (
         clear_andon_marker,
         ensure_worktree,
@@ -105,6 +106,14 @@ class QaActor:
             await workflow.wait_condition(lambda: (
                 self._pending and self.in_flight < MAX_IN_FLIGHT and not self.halted
             ))
+            # Inbox-boundary pause check: idle while paused or while
+            # qa's own budget andon is held. In-flight tasks finish.
+            while await workflow.execute_activity(
+                should_idle, args=["qa"],
+                start_to_close_timeout=timedelta(seconds=5),
+                retry_policy=RetryPolicy(maximum_attempts=2),
+            ):
+                await workflow.sleep(timedelta(seconds=10))
             msg = self._pending.pop(0)
             self.in_flight += 1
             asyncio.create_task(self._process_one(msg))

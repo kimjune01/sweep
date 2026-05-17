@@ -38,18 +38,29 @@ from sweep.io_safe import atomic_write_text
 
 
 BUDGET_DIR = Path.home() / ".sweep" / "budget"
-HOURLY_LIMIT = 5000  # gh core rate limit
+HOURLY_LIMIT = 5000  # gh core rate limit (GitHub-side window = 1h)
 OVERSHOOT = 0.10     # actor andons when usage exceeds share by this much
+
+# Per-actor measurement window. GitHub's rate-limit window is 1h, but
+# the actor andon uses a tighter window so bursts trip faster and
+# recoveries clear faster. The cap is pro-rated to the same fraction:
+# a 15min window means cap_calls = HOURLY_LIMIT * share * (15/60).
+# Same share semantics; just a higher-resolution lens.
+LOCAL_WINDOW_MINUTES = 15
 
 # Per-actor share of the hourly limit. Sum > 1.0 by design — these are
 # caps, not reservations; one actor's slack doesn't pass to others.
 SHARES: dict[str, float] = {
-    "pr-state":      0.40,
+    # Rebalanced 2026-05-16: pr-state is a manual escape hatch
+    # (`sweep pr-state run`), notifications auto-runs every 60s and
+    # is the real PR querier in steady state. Original 40/10 split
+    # was inverted relative to actual traffic.
+    "notifications": 0.25,
     "prospect":      0.20,
     "qa":            0.15,
     "investigate":   0.15,
-    "notifications": 0.10,
     "drip":          0.10,
+    "pr-state":      0.10,
 }
 
 # Estimated cost-per-invocation for subprocess actors that bypass
@@ -119,14 +130,19 @@ def record_subprocess_estimate(actor: str) -> None:
     record(n, caller=actor)
 
 
-def calls_last_hour(actor: str) -> int:
-    """Count records in the actor's log from the last hour. Prunes
-    older entries opportunistically when >50% of the file is stale."""
+def calls_last_window(actor: str, *, minutes: int = LOCAL_WINDOW_MINUTES) -> int:
+    """Count records in the actor's log from the last `minutes`. Prunes
+    entries older than 1h (GitHub's hard window) opportunistically when
+    >50% of the file is stale — keeps the file from growing unbounded
+    even when the read window is shorter."""
     p = BUDGET_DIR / f"{actor}.jsonl"
     if not p.exists():
         return 0
-    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)
-    fresh: list[str] = []
+    now = dt.datetime.now(dt.timezone.utc)
+    read_cutoff = now - dt.timedelta(minutes=minutes)
+    prune_cutoff = now - dt.timedelta(hours=1)
+    in_window = 0
+    keep: list[str] = []
     total = 0
     try:
         text = p.read_text()
@@ -141,24 +157,27 @@ def calls_last_hour(actor: str) -> int:
             t = dt.datetime.fromisoformat(line)
         except ValueError:
             continue
-        if t >= cutoff:
-            fresh.append(line)
-    if total and len(fresh) < total / 2:
+        if t >= prune_cutoff:
+            keep.append(line)
+        if t >= read_cutoff:
+            in_window += 1
+    if total and len(keep) < total / 2:
         try:
-            atomic_write_text(p, "\n".join(fresh) + ("\n" if fresh else ""))
+            atomic_write_text(p, "\n".join(keep) + ("\n" if keep else ""))
         except OSError:
             pass
-    return len(fresh)
+    return in_window
 
 
 def share_used(actor: str) -> float:
-    """Actor's usage as a fraction of its allotted share. 1.0 = at cap;
-    >1.0 = over cap; >=1.0+OVERSHOOT = andon-worthy."""
+    """Actor's usage as a fraction of its allotted share over the local
+    measurement window. 1.0 = at cap; >1.0 = over cap; >=1.0+OVERSHOOT
+    = andon-worthy. Cap is pro-rated: HOURLY_LIMIT × share × (window/60)."""
     share = SHARES.get(actor, 0.0)
     if share <= 0:
         return 0.0
-    cap_calls = HOURLY_LIMIT * share
-    return calls_last_hour(actor) / cap_calls if cap_calls else 0.0
+    cap_calls = HOURLY_LIMIT * share * (LOCAL_WINDOW_MINUTES / 60.0)
+    return calls_last_window(actor) / cap_calls if cap_calls else 0.0
 
 
 # ---- per-actor andon markers (mirror prospect's pattern) ---------
@@ -209,13 +228,14 @@ def check_and_andon(actor: str) -> str | None:
     share = SHARES[actor]
     if used >= 1.0 + OVERSHOOT:
         reason = (f"{actor} over budget — {100*used:.0f}% of its "
-                  f"{int(share*100)}% share (andon at "
-                  f"+{int(OVERSHOOT*100)} overshoot)")
+                  f"{int(share*100)}% share in {LOCAL_WINDOW_MINUTES}m "
+                  f"(andon at +{int(OVERSHOOT*100)} overshoot)")
         record_andon(actor, reason)
         return reason
     if used >= 1.0:
         return (f"{actor} at cap — {100*used:.0f}% of its "
-                f"{int(share*100)}% share (throttle, no andon)")
+                f"{int(share*100)}% share in {LOCAL_WINDOW_MINUTES}m "
+                f"(throttle, no andon)")
     return None
 
 
@@ -231,18 +251,18 @@ def all_actor_status() -> list[dict]:
         used = share_used(actor)
         out.append({
             "actor": actor,
-            "calls_1h": calls_last_hour(actor),
+            f"calls_{LOCAL_WINDOW_MINUTES}m": calls_last_window(actor),
             "share": share,
             "share_used_pct": round(100 * used, 1),
             "over_cap": used >= 1.0,
             "andon_pulled": is_blocked(actor),
         })
     # Untagged "unknown" bucket — calls that escaped attribution.
-    unknown = calls_last_hour("unknown")
+    unknown = calls_last_window("unknown")
     if unknown:
         out.append({
             "actor": "unknown",
-            "calls_1h": unknown,
+            f"calls_{LOCAL_WINDOW_MINUTES}m": unknown,
             "share": None,
             "share_used_pct": None,
             "over_cap": False,

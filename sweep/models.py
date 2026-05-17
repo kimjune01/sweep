@@ -65,7 +65,6 @@ Role = Literal[
     "adversary_1",          # first reviewer in the cascade
     "adversary_2",          # second reviewer
     "adversary_3",          # fallback reviewer
-    "test_fixture",         # synthetic test traffic
 ]
 
 # Per-role defaults. Override via env var SWEEP_MODEL_<role>=<nick>.
@@ -84,7 +83,6 @@ ROLE_DEFAULTS: dict[str, str] = {
     "adversary_1":          "codex",
     "adversary_2":          "gemini",
     "adversary_3":          "opus",
-    "test_fixture":         "haiku",
 }
 
 

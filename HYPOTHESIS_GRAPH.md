@@ -671,3 +671,79 @@ How to apply: tag scientist-class repos in repos.jsonl with `reception: scientis
 **Falsifier:** if leakdog routinely shows persistent leaks that are genuinely benign (e.g. items that drop out for legitimate reasons no one wants to log), the zero-leak target erodes into noise. Hasn't happened — every leak found so far has been a real bug or a missing event.
 
 **Compounds with:** [[H20-activity-owned-observability]] (the structural fix for most leaks); [[H21-watchdog-independence]] (the leakdog itself must run on its own tick, not behind the pipeline it watches).
+
+## H23: The investigation has standalone value; reporting it back earns engagement without a PR
+
+**Prediction:** Investigations that conclude "no fix to ship" but produce a concrete finding (already-fixed-upstream, premise-killed, policy-gated with provenance) have value the maintainer can act on. Posting a one-paragraph comment with that finding earns measurable engagement (acknowledgement, issue close, reply) without requiring our code to merge. The substrate stops being PR-only; the analysis itself becomes shippable.
+
+**Status: PRE-REGISTERED (2026-05-17, retro this-session).** Side-hatch actor (`tissue-actor`) wired up. Drafts pending operator approval before posting — no auto-post. First batch from the 20 screened investigations identified by the [[H20-activity-owned-observability]] manifest pass, classified as `no-fix` with concrete provenance.
+
+**Mechanism:** the pipeline previously only credited investigations that ended in a PR. Hypothesis graphs concluded "STALE — already implemented upstream #1820" or "Halted at policy gate (maintainer self-PR)" died on local disk. Those findings are useful to the maintainer — they're "you can close this" advice grounded in evidence the maintainer often hadn't seen. Side-hatch ships that finding directly as a comment instead of forcing it through a PR shape that doesn't fit.
+
+**Operationalization:** new event `report_back_posted` carries `(repo, issue, comment_url, draft_chars, signal)`. Match against:
+- maintainer response within 7 days (any reply, reaction, close, or label change on the issue post-comment)
+- subsequent PR engagement: when later PRs to the same repo get faster first-touch and higher merge rate from maintainers who saw a side-hatch comment
+- mute rate: maintainers who explicitly ask us to stop, or repos where comments produce zero engagement across N attempts
+
+**Falsifiers:**
+- ≥70% silence rate across 20+ comments → side-hatch is noise; the operator-approval gate becomes a "discard" gate by default. Reframe: human-only side-hatch, machines stop drafting.
+- Maintainer pushback ("please stop commenting unless you have a fix") on ≥2 repos → tone/framing is wrong; revisit prompt or kill the comment path entirely.
+- Response rate decent (≥30%) but zero correlation with subsequent PR merge rate → comments earn local goodwill but don't transfer to standing. Still worth doing (free value to maintainer), but won't compound into H2c.
+- Response rate decent AND correlated PR boost → confirmed; double down on tissue, prioritize artifact quality.
+
+**Operator-approval gate is load-bearing:** unlike PR posting (deterministic gates plus drift policy), comment tone is judgment-heavy. One pushy or wrong-tone comment poisons the repo's prior on us. The drip-style queue + operator review keeps the substrate honest while we learn what lands.
+
+**Cost framing:** drafting cost is one Sonnet call per artifact (cheap; artifact is structured). Posting cost is one `gh issue comment` (one API call). Reputation cost is the real currency — a comment with a wrong finding or apologetic-bot tone burns more standing than the PR pipeline gains in a week.
+
+**Compounds with:** [[H0-quality-gated-AI-contributions]] (extends "quality is the differentiator" from code to comments); [[H2c-standing-compounds-within-a-repo]] (side-hatch is a low-cost way to plant the first contact in a repo we haven't PR'd to yet); [[H5-solo-maintainers-merge-boring-fixes]] (the tissue surface is exactly the maintainers we have least leverage with — they didn't want a PR from us, but they might want a "looks-already-fixed" pointer).
+
+## H24: A dedicated routing actor for anti-AI repos catches what prospect's cache misses, prevents wasted investigate cycles, and unifies slop-offer routing
+
+**Prediction:** Hostile-AI-policy repos slip past prospect's 24h-cached `repo_ai_policy` check often enough to be worth a dedicated safety-net actor. A purpose-built `immunize` actor that (a) re-checks the policy live, (b) decides worth-pursuing via stars/recency/dedupe heuristics, and (c) routes pursued candidates into the existing slop-offer pipeline OR drafts a deferential acknowledgement comment for operator review, will catch more cases than the prospect-side inline check while preventing investigate from burning tokens on cards it shouldn't have seen.
+
+**Status: PRE-REGISTERED (2026-05-17, retro this-session).** Immunize actor wired live. Two upstream sources: prospect (RepoCandidate filter + per-issue deterministic check) kicks immunize when policy is hostile; triage_cycle re-checks policy at the front of its loop and short-circuits to immunize. Both replace inline `slop_offer_seed.append` calls — the seeding decision now lives in one place with one observability surface.
+
+**Mechanism:** GitHub's repo metadata changes at a rate that an aggressive 24h TTL doesn't track perfectly. Operators add AGENTS.md / CONTRIBUTING.md AI policies mid-month, repos get rebranded, archived, or relabeled. The prospect-time check is the front gate; immunize is the second gate that catches what the cache missed. Co-locating the worth-pursuing decision (stars, recency, dedupe) inside one actor means the slop-offer pipeline gets a single, observable, tunable feeder instead of three scattered append-calls.
+
+**The two output paths:**
+- Issue-level routing (triage source): draft a deferential acknowledgement comment, route through `tissue-drafts` → operator approval → wipe. Same approval gate as tissue; operator never gets surprised by an unreviewed post.
+- Repo-level routing (prospect source, no specific issue): append to legacy `slop_offer_seeds.txt`. The existing `sweep slop-offer` CLI consumes it. Future work could unify this with the drafts queue once the slop-offer message shape is mature enough.
+
+**Operationalization:**
+- `immunize_card_deposited` events from both upstream sources
+- `immunize_redirected` (pursued, seeded/drafted)
+- `immunize_skipped` (policy resettled, below-stars, archived, already-seeded)
+- Leakdog interface row `(prospect|triage) → immunize` balances cards-in against pursued+skipped
+
+**Falsifiers:**
+- ≥6 months of zero `immunize_redirected` events from triage source → prospect's gate already catches everything; immunize-from-triage is safety theater and can be removed (keep the prospect routing for the worth-pursuing decision alone).
+- Immunize fires constantly from triage (more than prospect rejection rate) → prospect's `repo_ai_policy` check is broken (cache invalidation, TTL too long, query bug). Fix prospect's gate upstream; don't lean on the safety net to compensate for broken front-of-funnel.
+- High pursue rate (>50% of cards) with no subsequent slop-offer engagement → worth-pursuing heuristics are too loose. Tighten (raise stars threshold, shorten recency window).
+- High operator-discard rate on immunize-drafted acknowledgements → the template tone is wrong, OR maintainers find the acknowledgement itself unwelcome (in which case stop drafting; just seed-and-drop).
+
+**Compounds with:** [[H22-leakdog-interface-accounting]] (immunize's events make the anti-AI escape hatch first-class in the funnel instead of a side-channel); [[H20-activity-owned-observability]] (the worth-pursuing decision lives in the wrapper activity, not in skill prose). The pattern — a dedicated routing actor for an escape hatch — generalizes to other categorical "this card needs to leave the main pipeline" cases (e.g. future explicit-no-LLM cooldown enforcement, maintainer block-list).
+
+## H25: A classifier-router actor for issue-comment responses, template-first with a /retro compression loop, asymptotically reduces the LLM cost of response handling to near zero
+
+**Prediction:** When a maintainer replies to a tissue, a small set of reply shapes ("thanks, closing", "you're right", brief acknowledgements, plain pushbacks) covers most of the long tail. A `bless` actor that matches replies against a template catalog first (deterministic regex, no LLM) and only falls through to LLM classification when no template hits will, after a few /retro cycles, route the majority of responses without paying any LLM cost. The substrate's per-response cost asymptotes toward "pattern match + file write."
+
+**Status: PRE-REGISTERED (2026-05-17, retro this-session).** Bless actor wired. Bootstrap stance: LLM classifier disabled (`~/.sweep/control/bless_llm_enabled` flag, default off); every non-template-match defaults to human-attendable (routes to `respondable-issues.jsonl`). Operator handles all novel responses directly; /retro extracts templates from repeated decisions. Seed templates: `thanks-closing`, `youre-right`. Operator-extensible via `~/.sweep/templates/bless/*.json`.
+
+**Mechanism:** the same compression loop that fills `prospect_kill_list`, `prospect_evicted`, `retro_params`, and the artifact-classifier vocabulary. First time a pattern shows up → human decision. Second/third time → /retro extracts → template. After N templates exist, the LLM call is only invoked for genuinely novel responses, and the operator only sees those that survive both template and (eventually) LLM classification.
+
+**Why the LLM is OFF by default at start:** without operator-decision data, the LLM has no priors on what counts as "auto-answerable" in this substrate's voice. Letting it classify before the catalog exists risks burning reputation on a hallucinated "auto-reply" that reads as bot-shaped or worse. Defer the LLM until templates demonstrate that the deterministic surface is well-mapped — at that point the LLM is filling the long tail, not establishing the policy.
+
+**Operationalization:**
+- `bless_card_deposited` from leakdog engagement detector when reply text is non-empty
+- `bless_routed` (kind=template|auto|human) per outcome
+- `bless_skipped` (no_fence, timeout, unknown_classification)
+- Template hit rate over time: track `bless_routed{kind=template}` / total — this number is the H25 success metric (should climb monotonically as /retro fills the catalog)
+- Leakdog interface row `engagement → bless` balances cards-in against routed+skipped
+
+**Falsifiers:**
+- ≥3 months of operator decisions and template hit rate stays <30% → reply shapes are more idiosyncratic than predicted; the compression target doesn't converge. Reconsider: maybe the LLM IS the right primary classifier, with templates as cache.
+- Template hit rate is high but maintainer engagement on bless-replied threads drops vs human-replied threads → templates are too generic and feel bot-shaped. Tighten template criteria, broaden human routing.
+- /retro produces templates faster than the operator handles novel cases → /retro is over-extracting (generalizing single-instance patterns). Tighten retro discipline (require N=3 before templating).
+- Operator never flips `bless_llm_enabled=true` even after 6 months with a mature catalog → the LLM path was unnecessary; remove it and simplify.
+
+**Compounds with:** [[feedback-retro-compression-loop]] (the underlying principle; bless is its first deliberately-designed instance with the compression target named upfront); [[H20-activity-owned-observability]] (the classify-and-route decision lives in the wrapper, deterministic, fast); [[H23-tissue-side-hatch]] (bless completes the loop tissue started — H23 demonstrates value of one-way information transfer; H25 demonstrates value of the conversational follow-up at the same low cost).

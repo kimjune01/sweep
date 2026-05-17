@@ -25,6 +25,7 @@ import typer
 
 from sweep import missing_calls, models as _models
 from sweep.cli import cockpit as _cockpit
+from sweep.cli import hygraph as _hygraph
 from sweep.cli import lanes as _lanes
 from sweep.cli import claim as _claim
 from sweep.cli import investigate as _investigate
@@ -45,6 +46,7 @@ from sweep.cli.prospect import prospect_app
 from sweep.cli.qa import qa_app
 from sweep.cli.retro import retro_app
 from sweep.cli.slop_offer import slop_offer_app
+from sweep.cli.tissue import tissue_app
 
 
 app = typer.Typer(
@@ -61,6 +63,7 @@ app.add_typer(attest_app, name="attest")
 app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
 app.add_typer(slop_offer_app, name="slop-offer")
+app.add_typer(tissue_app, name="tissue")
 app.add_typer(drip_app, name="drip")
 app.add_typer(dry_app, name="dry")
 app.add_typer(pause_app, name="pause")
@@ -68,6 +71,7 @@ app.add_typer(up_app, name="up")
 app.add_typer(down_app, name="down")
 app.add_typer(status_app, name="status")
 _cockpit.register(app)
+_hygraph.register(app)
 _lanes.register(app)
 _pr.register(app)
 _claim.register(app)

@@ -26,6 +26,7 @@ from sweep.activities.prospect import (
     auto_evict_stale_repos,
     check_pull_conditions,
     loosen_floor,
+    prospect_cycle,
     prospect_one_pass,
     prospect_recency_window,
     reset_floor,
@@ -36,6 +37,9 @@ from sweep.activities.notifications import (
     poll_github_notifications,
 )
 from sweep.activities.skill_runner import drip_cycle, investigate_cycle, triage_cycle
+from sweep.activities.bless import bless_cycle
+from sweep.activities.immunize import immunize_cycle
+from sweep.activities.tissue import tissue_cycle, wipe_cycle
 from sweep.activities.usage_probe import probe_claude_usage
 from sweep.activities.qa import (
     codex_review,
@@ -50,10 +54,10 @@ from sweep.activities.worktree import (
     record_andon,
 )
 from sweep.activities.leakdog import leakdog_tick
+from sweep.activities.pause_gate import should_idle
 from sweep.workflows.leakdog import LeakdogDaemon
 from sweep.workflows.notification_poller import NotificationPoller
 from sweep.workflows.pr_state_workflow import PrStateWorkflow
-from sweep.workflows.prospect_puller import ProspectPuller
 from sweep.workflows.qa_actor import QaActor
 from sweep.workflows.skill_actor import SkillActor
 from sweep.workflows.usage_poller import UsagePoller
@@ -67,7 +71,7 @@ async def _amain() -> None:
     worker = Worker(
         client,
         task_queue=SWEEP_TASK_QUEUE,
-        workflows=[QaActor, SkillActor, PrStateWorkflow, ProspectPuller, UsagePoller, NotificationPoller, LeakdogDaemon],
+        workflows=[QaActor, SkillActor, PrStateWorkflow, UsagePoller, NotificationPoller, LeakdogDaemon],
         activities=[
             # qa
             test_attestation, codex_review, gemini_review,
@@ -75,10 +79,23 @@ async def _amain() -> None:
             infer_test_cmd, claim_issue,
             # skill-shelling actors (drip + triage + investigate via SkillActor)
             drip_cycle, triage_cycle, investigate_cycle,
+            # tissue (drafts) + wipe (posts) — side-hatch on no-fix
+            # investigations. tissue drafts, wipe posts; separation of
+            # concerns means LLM hiccups and gh hiccups don't share an
+            # andon.
+            tissue_cycle, wipe_cycle,
+            # immunize — anti-AI repo routing (worth-pursuing decider
+            # for slop-offer candidates). Receives from prospect (two
+            # branches) and triage.
+            immunize_cycle,
+            # bless — classifier-router for issue-comment responses.
+            # Template-first, default human (LLM off in bootstrap).
+            bless_cycle,
             # usage probe
             probe_claude_usage,
-            # prospect puller (recency-first three-tier funnel)
-            prospect_recency_window, should_triage_issue, check_pull_conditions,
+            # prospect actor (recency-first three-tier funnel, card-driven)
+            prospect_cycle, prospect_recency_window, should_triage_issue,
+            check_pull_conditions,
             loosen_floor, reset_floor, auto_evict_stale_repos,
             prospect_one_pass,  # legacy star-cursor path, kept as escape hatch
             # worktree + cockpit view-layer markers
@@ -91,6 +108,10 @@ async def _amain() -> None:
             poll_github_notifications, mark_thread_read,
             # leakdog daemon (independent watchdog for resource leaks)
             leakdog_tick,
+            # pause-gate: inbox-boundary check used by every actor's
+            # main loop. Lets pause mean "no new starts" universally
+            # instead of just prospect.
+            should_idle,
         ],
     )
     logging.info("worker up on task queue=%s", SWEEP_TASK_QUEUE)

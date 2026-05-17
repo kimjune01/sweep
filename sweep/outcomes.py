@@ -28,14 +28,30 @@ def outcomes(days: int = 7) -> dict:
 
     Returns {days, user, start, end, merged, closed, merged_per_day,
     closed_per_day, fetched_at}.
+
+    Cache layout: ~/.sweep/cache/outcomes.json is a dict keyed by the
+    `days` value. The wasteboard calls this twice per render with two
+    different windows (score window + pick-since-epoch), so a
+    single-slot cache made one of the two calls always miss. Old format
+    (top-level keys `days`/`fetched_at`/...) is read once and migrated
+    in place under its `days` key.
     """
+    store: dict[str, dict] = {}
     if CACHE.exists():
         try:
-            data = json.loads(CACHE.read_text())
-            if data.get("days") == days and (time.time() - data.get("fetched_at", 0)) < CACHE_TTL:
-                return data
+            raw = json.loads(CACHE.read_text())
+            if isinstance(raw, dict):
+                if "days" in raw and "fetched_at" in raw:
+                    # Legacy single-slot file — fold it into the new shape.
+                    store = {str(raw["days"]): raw}
+                else:
+                    store = {str(k): v for k, v in raw.items()
+                             if isinstance(v, dict)}
         except (json.JSONDecodeError, OSError):
-            pass
+            store = {}
+    hit = store.get(str(days))
+    if hit and (time.time() - hit.get("fetched_at", 0)) < CACHE_TTL:
+        return hit
 
     end = dt.datetime.now(dt.timezone.utc).date()
     start = end - dt.timedelta(days=days - 1)
@@ -124,8 +140,9 @@ def outcomes(days: int = 7) -> dict:
         "closed_records": closed_records,
         "fetched_at": time.time(),
     }
+    store[str(days)] = result
     try:
-        atomic_write_text(CACHE, json.dumps(result))
+        atomic_write_text(CACHE, json.dumps(store))
     except OSError:
         pass
     return result

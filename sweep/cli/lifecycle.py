@@ -107,13 +107,13 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     from temporalio.client import Client
     from sweep.cli._common import (
         DRIP_ACTOR_ID, INVESTIGATE_ACTOR_ID, LEAKDOG_DAEMON_ID,
-        NOTIFICATION_POLLER_ID, PROSPECT_PULLER_ID, QA_ACTOR_ID,
-        SWEEP_TASK_QUEUE, TRIAGE_ACTOR_ID, USAGE_POLLER_ID,
+        NOTIFICATION_POLLER_ID, PROSPECT_ACTOR_ID, QA_ACTOR_ID,
+        BLESS_ACTOR_ID, IMMUNIZE_ACTOR_ID, SWEEP_TASK_QUEUE,
+        TISSUE_ACTOR_ID, TRIAGE_ACTOR_ID, USAGE_POLLER_ID, WIPE_ACTOR_ID,
     )
     from sweep.system import TEMPORAL_ADDR
     from sweep.workflows.leakdog import LeakdogDaemon
     from sweep.workflows.notification_poller import NotificationPoller
-    from sweep.workflows.prospect_puller import ProspectPuller
     from sweep.workflows.qa_actor import QaActor
     from sweep.workflows.skill_actor import SkillActor
     from sweep.workflows.usage_poller import UsagePoller
@@ -140,7 +140,11 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (DRIP_ACTOR_ID,         SkillActor.run,     ("drip_cycle",)),
         (TRIAGE_ACTOR_ID,       SkillActor.run,     ("triage_cycle",)),
         (INVESTIGATE_ACTOR_ID,  SkillActor.run,     ("investigate_cycle",)),
-        (PROSPECT_PULLER_ID,    ProspectPuller.run, ()),
+        (PROSPECT_ACTOR_ID,     SkillActor.run,     ("prospect_cycle",)),
+        (TISSUE_ACTOR_ID,       SkillActor.run,     ("tissue_cycle",)),
+        (WIPE_ACTOR_ID,         SkillActor.run,     ("wipe_cycle",)),
+        (IMMUNIZE_ACTOR_ID,     SkillActor.run,     ("immunize_cycle",)),
+        (BLESS_ACTOR_ID,        SkillActor.run,     ("bless_cycle",)),
         (USAGE_POLLER_ID,       UsagePoller.run,    ()),
         (NOTIFICATION_POLLER_ID, NotificationPoller.run, ()),
         (LEAKDOG_DAEMON_ID,     LeakdogDaemon.run,  ()),
@@ -174,6 +178,21 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "investigate", SkillActor.deliver, INVESTIGATE_ACTOR_ID)
     if drained:
         anomalies.append(f"{INVESTIGATE_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "prospect", SkillActor.deliver, PROSPECT_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{PROSPECT_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "tissue", SkillActor.deliver, TISSUE_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{TISSUE_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "wipe", SkillActor.deliver, WIPE_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{WIPE_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "immunize", SkillActor.deliver, IMMUNIZE_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{IMMUNIZE_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "bless", SkillActor.deliver, BLESS_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{BLESS_ACTOR_ID}: drained {drained} pending")
     return started, anomalies
 
 

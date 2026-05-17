@@ -178,12 +178,13 @@ class ProspectPuller:
                         )
                     except Exception as e:
                         workflow.logger.warning("eviction sweep failed: %s", e)
-                # Minimum spacing between fires: even when there's
-                # slack, don't tight-loop. The recency window doesn't
-                # refill faster than gh's search indexing anyway, and
-                # rate-of-fires far above ingest rate just burns API
-                # quota and produces noise events. 15s is the floor.
-                await workflow.sleep(timedelta(seconds=15))
+                # No takt sleep. The throttle lives in check_pull_conditions
+                # as a per-actor budget-share check (blocks at 80% of share);
+                # POLL_S below is the recovery cadence when blocked. One
+                # throttle mechanism unified on the budget — was a parallel
+                # 180s takt floor here that did the same job worse (no
+                # awareness of actual per-pass cost or recent burn).
+                await workflow.sleep(timedelta(seconds=2))
                 continue
             self.last_state = f"blocked: {check.get('reason', 'unknown')}"
             await workflow.sleep(timedelta(seconds=POLL_S))

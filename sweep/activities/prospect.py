@@ -203,11 +203,19 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
     # "required" / "permissive" / "unknown" all pass. Result is cached
     # 24h in gh_io so this is one API call per repo per day.
     if gh_io.repo_ai_policy(repo.name_with_owner) == "hostile":
-        # Side-channel: hostile AI-policy repos are warm targets for the
-        # slop-offer pipeline (already publicly committed to the framing).
-        # Append-only seed; slop-offer tick consumes. Fail-soft.
-        from sweep import slop_offer_seed
-        slop_offer_seed.append(repo.name_with_owner)
+        # Hostile repos route to the immunize actor — immunize decides
+        # whether they're worth pursuing via slop-offer (visibility,
+        # recency, dedupe) instead of every prospect tick auto-seeding.
+        # Fail-soft: signaling failures emit observe events but never
+        # raise — prospect's hot path stays liveness-preserving.
+        try:
+            import asyncio as _asyncio
+            from sweep.activities.immunize import kick_immunize_card
+            _asyncio.create_task(kick_immunize_card(
+                repo.name_with_owner, None, source="prospect-lightweight",
+            ))
+        except Exception:
+            pass
         return False
     return True
 
@@ -492,6 +500,84 @@ def _target_complexity() -> str:
     return "MEDIUM"
 
 
+# --- prospect cost knobs (operator-tunable from ~/.sweep/control/) ----
+# Same hot-reload pattern as _min_complexity: read each call, no cache.
+# Files are plaintext ints; missing/malformed = use the default.
+
+PROSPECT_SEARCH_LIMIT_DEFAULT = 100
+PROSPECT_WARM_ORG_FAN_OUT_CAP_DEFAULT = 3
+PROSPECT_WARM_ORG_ISSUE_LIMIT_DEFAULT = 30
+PROSPECT_MIN_ISSUE_AGE_MINUTES_DEFAULT = 3
+
+
+def _read_int_knob(name: str, default: int, *, lo: int = 1, hi: int = 1000) -> int:
+    path = Path.home() / ".sweep" / "control" / name
+    if not path.exists():
+        return default
+    try:
+        v = int(path.read_text().strip())
+    except (OSError, ValueError):
+        return default
+    return max(lo, min(hi, v))
+
+
+def _search_limit() -> int:
+    """Cap on issues returned per pass from the global gh_search. Each
+    survivor costs one `issue_events` call downstream — this is the
+    biggest single lever on prospect's hourly gh budget."""
+    return _read_int_knob("prospect_search_limit",
+                          PROSPECT_SEARCH_LIMIT_DEFAULT)
+
+
+def _warm_org_fan_out_cap() -> int:
+    """Max warm orgs visited per pass. With the cap, _merge_warm_org_issues
+    round-robins via the cursor below so coverage amortizes across passes."""
+    return _read_int_knob("prospect_warm_org_fan_out_cap",
+                          PROSPECT_WARM_ORG_FAN_OUT_CAP_DEFAULT, hi=100)
+
+
+def _warm_org_issue_limit() -> int:
+    """Per-warm-org issue cap inside _merge_warm_org_issues."""
+    return _read_int_knob("prospect_warm_org_issue_limit",
+                          PROSPECT_WARM_ORG_ISSUE_LIMIT_DEFAULT, hi=200)
+
+
+def _min_issue_age_minutes() -> int:
+    """Minimum age (in minutes) before an issue is considered for
+    triage. The maintainer-self-PR pattern (open issue then immediately
+    open the PR yourself) shows up as a rejection at /investigate, after
+    we've already spent triage tokens. Filtering at prospect time on a
+    short delay catches most of these for one cheap timestamp check.
+    Cedes a small first-mover advantage on issues no maintainer will
+    engage with, which is acceptable because that's not our edge anyway."""
+    return _read_int_knob("prospect_min_issue_age_minutes",
+                          PROSPECT_MIN_ISSUE_AGE_MINUTES_DEFAULT, hi=120)
+
+
+_WARM_ORG_CURSOR_PATH = Path.home() / ".sweep" / "cursors" / "prospect_warm_org.json"
+
+
+def _warm_org_cursor_advance(total: int, step: int) -> int:
+    """Round-robin cursor for warm-org fan-out. Returns the starting
+    index for this pass and advances by `step` for next time. Wraps
+    modulo `total`. Returns 0 if total <= 0."""
+    if total <= 0:
+        return 0
+    start = 0
+    try:
+        if _WARM_ORG_CURSOR_PATH.exists():
+            start = int(json.loads(_WARM_ORG_CURSOR_PATH.read_text()).get("idx", 0)) % total
+    except (OSError, json.JSONDecodeError, ValueError):
+        start = 0
+    next_idx = (start + step) % total
+    try:
+        _WARM_ORG_CURSOR_PATH.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(_WARM_ORG_CURSOR_PATH, json.dumps({"idx": next_idx}))
+    except OSError:
+        pass
+    return start
+
+
 @activity.defn
 async def should_triage_issue(issue_payload: dict) -> dict:
     """LLM judge: is this issue worth /triage tokens, and at what depth?
@@ -600,7 +686,19 @@ async def prospect_recency_window(req: ProspectRunRequest) -> dict:
     if effective_cap <= 0:
         return {"considered": 0, "deposited": 0, "filtered": {"triage_full": 1}}
 
-    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=req.days)
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    cutoff = now_utc - dt.timedelta(days=req.days)
+    search_limit = min(req.search_limit, _search_limit())
+    # Push every cheap filter into the gh search query so GitHub does
+    # the work, not us. Each qualifier here eliminates a post-fetch
+    # reject and the per-survivor API calls those rejects would have
+    # incurred.
+    age_floor = now_utc - dt.timedelta(minutes=_min_issue_age_minutes())
+    mechanical = [
+        "-linked:pr",                                # was _has_related_pr
+        f"created:<{age_floor.strftime('%Y-%m-%dT%H:%M:%SZ')}",   # was too_fresh
+        "comments:<20",                              # was saturated_thread
+    ]
     try:
         # Don't pass archived=False — gh CLI returns 0 hits when that
         # flag is combined with --label/--created. The per-issue
@@ -609,8 +707,9 @@ async def prospect_recency_window(req: ProspectRunRequest) -> dict:
             labels=["bug", "help-wanted"],
             state="open", no_assignee=True, archived=None,
             created_after=cutoff.strftime('%Y-%m-%d'),
+            extra_qualifiers=mechanical,
             sort="created", order="desc",
-            limit=req.search_limit,
+            limit=search_limit,
         )
     except subprocess.CalledProcessError as e:
         raise ApplicationError(
@@ -640,6 +739,20 @@ async def prospect_recency_window(req: ProspectRunRequest) -> dict:
         if seen.has_seen(key):
             filtered["seen"] = filtered.get("seen", 0) + 1
             continue
+        # Min-age gate: give the maintainer N minutes to assign or open
+        # their own PR before we burn /investigate cycles on the bug.
+        # Don't seen-mark: the next pass should re-evaluate once aged in.
+        created_iso = it.get("createdAt") or it.get("created_at") or ""
+        if created_iso:
+            try:
+                t_created = dt.datetime.fromisoformat(
+                    created_iso.replace("Z", "+00:00"))
+                age_min = (now - t_created).total_seconds() / 60.0
+                if age_min < _min_issue_age_minutes():
+                    filtered["too_fresh"] = filtered.get("too_fresh", 0) + 1
+                    continue
+            except (ValueError, AttributeError):
+                pass
         # Skip if this issue has a related PR (any state).
         if _has_related_pr(repo, number):
             filtered["has_pr"] = filtered.get("has_pr", 0) + 1
@@ -772,6 +885,16 @@ def _merge_warm_org_issues(global_results: list[dict], *,
         warm_org_list = list((warm_state.get("orgs") or {}).keys())
     except Exception:
         return global_results
+    # Cap fan-out per pass; round-robin via cursor so all warm orgs
+    # get covered over consecutive passes instead of always hitting
+    # the first N. With cap=3 and 9 warm orgs, each gets visited
+    # every 3rd pass.
+    fan_out_cap = _warm_org_fan_out_cap()
+    per_org_limit = _warm_org_issue_limit()
+    if warm_org_list and fan_out_cap < len(warm_org_list):
+        start = _warm_org_cursor_advance(len(warm_org_list), fan_out_cap)
+        rotated = warm_org_list[start:] + warm_org_list[:start]
+        warm_org_list = rotated[:fan_out_cap]
     seen_urls = {(it.get("url") or "") for it in global_results}
     merged = list(global_results)
     for org in warm_org_list:
@@ -786,8 +909,9 @@ def _merge_warm_org_issues(global_results: list[dict], *,
                 state="open", no_assignee=True, archived=None,
                 created_after=warm_cutoff_iso,
                 owner=org,
+                extra_qualifiers=["-linked:pr", "comments:<20"],
                 sort="created", order="desc",
-                limit=30,
+                limit=per_org_limit,
             )
         except Exception as e:
             observe.event("warm_org_search_failed", org=org,
@@ -847,8 +971,17 @@ def _passes_deterministic_issue(repo: str, meta: dict) -> bool:
     if meta.get("stars", 0) > BIG_REPO_STAR_THRESHOLD and not warm:
         return False
     if gh_io.repo_ai_policy(repo) == "hostile":
-        from sweep import slop_offer_seed
-        slop_offer_seed.append(repo)
+        # Route to immunize (the worth-pursuing decider for slop-offer
+        # candidates). Fire-and-forget — running inside an async caller
+        # so the loop is available; failures are observable via events.
+        try:
+            import asyncio as _asyncio
+            from sweep.activities.immunize import kick_immunize_card
+            _asyncio.create_task(kick_immunize_card(
+                repo, None, source="prospect-deterministic",
+            ))
+        except Exception:
+            pass
         return False
     return True
 
@@ -1005,127 +1138,139 @@ async def reset_floor() -> dict:
     return {"floor": target, "changed": True}
 
 
-# Prospect's share of the GitHub core rate limit. Conservative on
-# purpose: pr-state polls every open PR on every cycle, drip does
-# pushes, qa pulls reviews — they all share the same hourly bucket and
-# their loads scale with the number of open PRs, not the operator's
-# tempo. 20% leaves ~4000 calls/hr (5000 × 0.80) for everything
-# downstream, which is the bottleneck under heavy roster. Bump this
-# upward only after rate-limit hits stop appearing in andon.
-_API_BUDGET_THRESHOLD = 0.20
-# Projected utilization above this means the throttle failed: prospect
-# (or something it sits in front of) is burning through the budget
-# faster than the 20% cap allows. That's an andon — pull the cord,
-# stop the line, demand operator eyes. Block AND record the marker.
-_API_BUDGET_ANDON = 0.50
-# Hysteresis: don't auto-resume the moment we drop under the andon
-# threshold (we'd flap). Recovery happens once projected falls under
-# this lower floor. 10-point dead band between andon and recover keeps
-# the line from oscillating across the trigger.
-_API_BUDGET_RECOVER = 0.40
-_API_BUDGET_CACHE_S = 30        # how long to trust a rate_limit snapshot
-_api_budget_cache: dict = {"ts": 0.0, "block_reason": None}
+# API budget watchdog (threshold/andon/recover thresholds, hysteresis,
+# marker file path) lives in sweep.api_budget. Re-exported here so the
+# pre-existing imports from sweep.activities.prospect keep working
+# without surface change for callers (leakdog, tests, REPL).
+from sweep.api_budget import (
+    _API_BUDGET_THRESHOLD,
+    _API_BUDGET_ANDON,
+    _API_BUDGET_RECOVER,
+    _api_budget_cache,
+    _api_budget_block,
+    _clear_budget_andon_if_held,
+    _record_budget_andon,
+)
 
 
-def _budget_andon_path():
-    from pathlib import Path
-    return Path.home() / ".sweep" / "control" / "andon" / "prospect_puller.json"
+PROSPECT_INBOX = Path.home() / ".sweep" / "inbox" / "prospect.jsonl"
 
 
-def _record_budget_andon(reason: str) -> None:
-    """Write an andon marker for prospect when the API budget goes
-    critical. Inlines the file format from activities.worktree.record_andon
-    so we don't need a workflow path to engage the cord."""
-    import datetime as _dt
-    import json as _json
-    from sweep.control_state import set_paused
-    path = _budget_andon_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "actor": "prospect_puller",
-        "msg_id": "(api budget watchdog)",
-        "reason": reason[:500],
-        "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-    }
-    path.write_text(_json.dumps(payload))
-    set_paused(True)
+async def kick_prospect_card(sender: str) -> str | None:
+    """Pull-signal: deposit one card on prospect's inbox and signal the
+    actor. Called from triage's ack path (each triaged item drops a card)
+    and from the leakdog heartbeat (safety net when the inbox goes empty).
 
-
-def _clear_budget_andon_if_held() -> bool:
-    """Auto-recover: if our budget-watchdog marker is the one holding
-    the line, remove it and lift the pause (when no other markers
-    remain). Returns True if a clear happened. Only touches our own
-    marker — never clears anyone else's andon."""
-    from pathlib import Path
-    from sweep.control_state import set_paused
-    path = _budget_andon_path()
-    if not path.exists():
-        return False
-    path.unlink()
-    andon_dir = Path.home() / ".sweep" / "control" / "andon"
-    if not any(andon_dir.glob("*.json")):
-        set_paused(False)
-    return True
-
-
-def _api_budget_block() -> str | None:
-    """Return a block reason if projected core utilization at reset is
-    over prospect's allotted share, else None. Cached for
-    `_API_BUDGET_CACHE_S` to keep poll cycles cheap. The `gh api
-    rate_limit` call itself doesn't count against the limit (per
-    GitHub docs), so polling it is free.
-
-    Cursor-safe: a `False` from this function makes the puller idle
-    without invoking `prospect_one_pass`, so the stars cursor stays put."""
-    import json as _json
-    import subprocess as _sp
-    import time as _time
-
-    now = _time.time()
-    if now - _api_budget_cache["ts"] < _API_BUDGET_CACHE_S:
-        return _api_budget_cache["block_reason"]
-
-    reason: str | None = None
+    Idempotency: the actor dedupes by msg_id; we mint a fresh id per
+    call so each card is a distinct unit of demand. Best-effort — jsonl
+    write is the durable record; signal failure logs an event but
+    doesn't raise (leakdog will catch the strand on the next tick).
+    """
+    from sweep.activities.pr_state import _signal_actor
+    ts = dt.datetime.now(dt.timezone.utc)
+    # repo is typed `str` (not Optional) on Message — Temporal's strict
+    # dataclass deserialization rejects None even though dataclasses
+    # would tolerate it. Use empty string as the no-repo sentinel.
+    msg = Message(
+        msg_id=f"prospect-card-{sender}-{ts.strftime('%Y%m%dT%H%M%S%f')}",
+        sender=sender,
+        intent="card",
+        repo="", pr=None, branch=None,
+        payload={"reason": f"pull from {sender}"},
+        ts=ts.isoformat(),
+    )
+    PROSPECT_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:
-        raw = _sp.run(
-            ["gh", "api", "rate_limit"],
-            capture_output=True, text=True, timeout=3,
-        )
-        if raw.returncode == 0:
-            core = _json.loads(raw.stdout).get("resources", {}).get("core", {})
-            used = core.get("used", 0)
-            limit = core.get("limit", 0)
-            reset = core.get("reset", 0)
-            if limit:
-                secs_remaining = max(1, int(reset - now))
-                elapsed = 3600 - secs_remaining
-                # Need at least 60s of history before extrapolating —
-                # otherwise a single early request looks catastrophic.
-                if elapsed >= 60:
-                    projected = used * 3600 / elapsed
-                    proj_pct = projected / limit
-                    # Auto-clear runs FIRST so it can fire even while
-                    # the throttle block is still engaged (the throttle
-                    # band 20-40% needs to be able to release a prior
-                    # andon — otherwise we'd be latched until we drop
-                    # under 20%, defeating the hysteresis).
-                    if proj_pct < _API_BUDGET_RECOVER:
-                        _clear_budget_andon_if_held()
-                    if proj_pct >= _API_BUDGET_ANDON:
-                        reason = (f"api budget CRITICAL "
-                                  f"({100 * proj_pct:.0f}% projected ≥ "
-                                  f"{int(_API_BUDGET_ANDON * 100)}% andon threshold)")
-                        _record_budget_andon(reason)
-                    elif proj_pct >= _API_BUDGET_THRESHOLD:
-                        reason = (f"api budget tight "
-                                  f"({100 * proj_pct:.0f}% projected, "
-                                  f"prospect capped at {int(_API_BUDGET_THRESHOLD * 100)}%)")
-    except Exception:
+        with open(PROSPECT_INBOX, "a") as f:
+            f.write(json.dumps(asdict(msg)) + "\n")
+    except OSError as e:
+        observe.event("prospect_card_write_failed",
+                      error_type=type(e).__name__, error=str(e)[:200])
+        return None
+    return await _signal_actor("prospect", msg)
+
+
+_PROSPECT_STATE_PATH = Path.home() / ".sweep" / "state" / "prospect_actor.json"
+PROSPECT_EVICT_EVERY = 10  # auto_evict_stale_repos runs every Nth cycle
+PROSPECT_LOOSEN_EMPTY_STREAK = 5  # loosen the floor after N empties in a row
+
+
+def _load_prospect_state() -> dict:
+    if not _PROSPECT_STATE_PATH.exists():
+        return {"empty_streak": 0, "fires_total": 0}
+    try:
+        return json.loads(_PROSPECT_STATE_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"empty_streak": 0, "fires_total": 0}
+
+
+def _save_prospect_state(state: dict) -> None:
+    try:
+        _PROSPECT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(_PROSPECT_STATE_PATH, json.dumps(state))
+    except OSError:
         pass
 
-    _api_budget_cache["ts"] = now
-    _api_budget_cache["block_reason"] = reason
-    return reason
+
+@activity.defn
+async def prospect_cycle(msg: Message) -> dict:
+    """One prospect pass triggered by a card from downstream (typically
+    triage's ack handler, with a leakdog heartbeat as fallback). Wraps
+    `prospect_recency_window` plus the periodic side-effects that used
+    to live in the bespoke `ProspectPuller` loop (floor loosening on
+    empty streaks, eviction sweep every N fires). State persists in
+    `_PROSPECT_STATE_PATH` so it survives restarts and is independent
+    of any one workflow instance.
+
+    The msg payload is unused — the card itself is the trigger; what
+    to do is fixed (one pass). Kept for the SkillActor interface."""
+    # Throttle gate at entry: refuse to fire if the budget gate would
+    # block. The pause_gate.should_idle already covered this at the
+    # SkillActor's pull boundary, but a fresh check here protects
+    # against races (state changed between idle-check and activity start).
+    from sweep import budget as _budget
+    if _budget.is_blocked("prospect"):
+        observe.event("prospect_cycle_skipped", reason="budget_andon")
+        return {"considered": 0, "deposited": 0, "skipped": "budget_andon"}
+
+    state = _load_prospect_state()
+    state["fires_total"] = int(state.get("fires_total", 0)) + 1
+
+    req = ProspectRunRequest()  # defaults; knobs apply inside
+    result = await prospect_recency_window(req)
+
+    considered = int(result.get("considered", 0)) if isinstance(result, dict) else 0
+    deposited = int(result.get("deposited", 0)) if isinstance(result, dict) else 0
+
+    # Empty-streak floor loosening (was inside ProspectPuller).
+    if deposited > 0:
+        state["empty_streak"] = 0
+    elif considered > 0:
+        state["empty_streak"] = int(state.get("empty_streak", 0)) + 1
+        if state["empty_streak"] >= PROSPECT_LOOSEN_EMPTY_STREAK:
+            try:
+                r = await loosen_floor()
+                if r.get("changed"):
+                    state["empty_streak"] = 0
+            except Exception as e:
+                observe.event("loosen_floor_failed",
+                              error_type=type(e).__name__, error=str(e)[:200])
+
+    # Periodic eviction sweep (was inside ProspectPuller).
+    if state["fires_total"] % PROSPECT_EVICT_EVERY == 0:
+        try:
+            await auto_evict_stale_repos()
+        except Exception as e:
+            observe.event("auto_evict_failed",
+                          error_type=type(e).__name__, error=str(e)[:200])
+
+    _save_prospect_state(state)
+    return {
+        "considered": considered,
+        "deposited": deposited,
+        "fires_total": state["fires_total"],
+        "empty_streak": state["empty_streak"],
+    }
 
 
 @activity.defn
@@ -1158,6 +1303,20 @@ async def check_pull_conditions() -> dict:
     budget_reason = _api_budget_block()
     if budget_reason:
         return {"can_pull": False, "reason": budget_reason, "depths": depths}
+    # Per-actor throttle: block at 80% of the 15m share so a single
+    # ~50-call fire doesn't bust cap. Same mechanism as the andon
+    # (budget.share_used) just one step earlier in the escalation —
+    # throttle here, andon at +10 overshoot if a fire still slips past.
+    # Replaces the puller-side 180s takt sleep with a unified
+    # budget-driven gate. Cap = HOURLY_LIMIT × share × 15/60.
+    from sweep import budget as _budget
+    share_pct = _budget.share_used("prospect")
+    if share_pct >= 0.8:
+        return {"can_pull": False,
+                "reason": (f"throttled — prospect at {int(100*share_pct)}% "
+                           f"of {int(_budget.SHARES['prospect']*100)}% share "
+                           f"in {_budget.LOCAL_WINDOW_MINUTES}m"),
+                "depths": depths}
     return {"can_pull": True, "reason": "ready", "depths": depths}
 
 

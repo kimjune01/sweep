@@ -20,8 +20,13 @@ from sweep.system import system_status
 # Two caps per station — queue (backpressure) vs in-flight (concurrency).
 # Humans have deeper queues; LLM actors stay shallow.
 CAPS: dict[str, dict[str, int | None]] = {
+    "prospect":    {"queued": 3, "in_flight": 1},   # cards from triage/heartbeat
     "triaged":     {"queued": 10, "in_flight": 3},  # LLM, fan-out friendly
     "investigate": {"queued": 5, "in_flight": 5},   # LLM, root-causing
+    "immunize":    {"queued": 10, "in_flight": 1},  # anti-AI routing to slop-offer
+    "tissue":      {"queued": 5, "in_flight": 1},   # side-hatch comment drafts
+    "bless":       {"queued": 5, "in_flight": 1},   # response classifier-router
+    "wipe":        {"queued": 5, "in_flight": 1},   # operator-approved posts
     "qa":          {"queued": 5, "in_flight": 5},   # LLM, gates
     "drip":        {"queued": 5, "in_flight": 1},   # LLM, one push at a time
     "respondable": {"queued": 8, "in_flight": 2},   # you — real backlog signal
@@ -31,14 +36,19 @@ CAPS: dict[str, dict[str, int | None]] = {
 # Display names for the compressed flow line above the table. Differs from
 # the table's actor-key column to read closer to the natural pipeline names.
 FLOW_NAMES: dict[str, str] = {
+    "prospect":    "Prospect",
     "triaged":     "Triage",
     "investigate": "Investigate",
+    "immunize":    "Immunize",
+    "tissue":      "Tissue",
+    "bless":       "Bless",
+    "wipe":        "Wipe",
     "qa":          "QA",
     "drip":        "Drip",
     "retro":       "In Review",
     "respondable": "Respondable",
 }
-FLOW_ORDER = ("triaged", "investigate", "qa", "drip", "retro", "respondable")
+FLOW_ORDER = ("prospect", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "retro", "respondable")
 
 def register(app: typer.Typer) -> None:
     """Attach the cockpit command to a top-level Typer app."""
@@ -109,7 +119,7 @@ def _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode) 
 
 
 def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
-    actionable = ["triaged", "investigate", "qa", "drip", "respondable"]
+    actionable = ["prospect", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "respondable"]
     if include_wait:
         actionable = actionable + ["retro"]
 
@@ -139,17 +149,14 @@ def _knob_line() -> str:
     it as one misleads.
     """
     from sweep.activities.prospect import (
-        BIG_REPO_STAR_THRESHOLD, _min_complexity,
+        _min_complexity, _search_limit, _min_issue_age_minutes,
+        _warm_org_fan_out_cap, _warm_org_issue_limit,
     )
-    floor = _min_complexity()
-    stars = BIG_REPO_STAR_THRESHOLD
-    # Depth cap lives in skills/investigate.md prose, not an imported
-    # constant. Hardcode the current value here; bump together when
-    # the cap changes (rare enough to be fine).
-    depth_cap = 15
     return (
-        f"floor = {floor}    ·    stars ≤ {stars // 1000}k    ·    "
-        f"depth = {depth_cap}"
+        f"floor = {_min_complexity()}    ·    "
+        f"search = {_search_limit()}    ·    "
+        f"warm = {_warm_org_fan_out_cap()}×{_warm_org_issue_limit()}    ·    "
+        f"age ≥ {_min_issue_age_minutes()}m"
     )
 
 
@@ -206,65 +213,44 @@ def _claude_sub_chip() -> str | None:
 
 
 def _prospect_info() -> dict:
-    """Query the puller for {state, age, empty_streak} as a dict.
-    `state`: 'ready' / 'firing' / 'blocked: <reason>'.
-    `age`: human-compact time since last fire ('4m', '12s', '2h'), or
-           '' if the puller hasn't fired yet.
-    Best-effort — returns empty dict on any error so cockpit stays
-    renderable even when temporal/puller is unavailable."""
-    import asyncio
+    """Cockpit chip for the prospect actor. Returns {state, age}.
+    `state`: 'empty ×N' streak label, or '' when streak is zero.
+    `age`: human-compact time since the actor's most recent activity,
+           sourced from the prospect inbox file mtime.
+
+    No temporal query: prospect is now a SkillActor and its empty-streak
+    counter lives in `~/.sweep/state/prospect_actor.json` (file-backed
+    across restarts). Andon/pause state already has its own banner, so
+    the chip stops trying to duplicate it — bare 'ready' was noise."""
     import datetime as dt
+    import json
+    from pathlib import Path
 
-    async def fetch() -> dict:
+    state_path = Path.home() / ".sweep" / "state" / "prospect_actor.json"
+    inbox_path = Path.home() / ".sweep" / "inbox" / "prospect.jsonl"
+
+    streak = 0
+    if state_path.exists():
         try:
-            from temporalio.client import Client
-            from sweep.cli._common import PROSPECT_PULLER_ID
-            from sweep.system import TEMPORAL_ADDR
+            streak = int(json.loads(state_path.read_text()).get("empty_streak", 0))
+        except (json.JSONDecodeError, OSError, ValueError):
+            streak = 0
+    base = f"empty ×{streak}" if streak > 0 else ""
 
-            # Short timeouts — a missing/slow Temporal server should not
-            # stall the cockpit (the rest of the view is local).
-            c = await asyncio.wait_for(Client.connect(TEMPORAL_ADDR), timeout=0.5)
-            state = await asyncio.wait_for(
-                c.get_workflow_handle(PROSPECT_PULLER_ID).query("state"),
-                timeout=1.0,
-            )
-        except Exception:
-            return {}
-        raw = state.get("last_state") or ""
-        streak = int(state.get("empty_streak") or 0)
-        # "firing" and bare "ready" are noise — they just mean "the
-        # puller is doing its job." The interesting cases are: blocked
-        # (name the obstacle) and ready-with-streak (filters rejected
-        # everything). Drop the rest; the (age) chip alone carries the
-        # activity signal.
-        if raw.startswith("blocked"):
-            base = raw
-            if streak > 0:
-                base += f"  (empty ×{streak})"
-        elif streak > 0:
-            base = f"empty ×{streak}"
-        else:
-            base = ""
-        age = ""
-        iso = state.get("last_fire_iso", "")
-        if iso:
-            try:
-                target = dt.datetime.fromisoformat(iso)
-                secs = int((dt.datetime.now(target.tzinfo) - target).total_seconds())
-                if secs < 60:
-                    age = f"{secs}s"
-                elif secs < 3600:
-                    age = f"{secs // 60}m"
-                else:
-                    age = f"{secs // 3600}h"
-            except (ValueError, AttributeError):
-                pass
-        return {"state": base, "age": age}
+    age = ""
+    if inbox_path.exists():
+        try:
+            secs = int(dt.datetime.now().timestamp() - inbox_path.stat().st_mtime)
+            if secs < 60:
+                age = f"{secs}s"
+            elif secs < 3600:
+                age = f"{secs // 60}m"
+            else:
+                age = f"{secs // 3600}h"
+        except OSError:
+            pass
 
-    try:
-        return asyncio.run(fetch())
-    except Exception:
-        return {}
+    return {"state": base, "age": age}
 
 
 def _window_label(spark_minutes: int, spark_buckets: int) -> str:
@@ -408,7 +394,7 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     pinfo = _prospect_info()
     age = f" ({pinfo['age']})" if pinfo.get("age") else ""
     state_chip = f"    ·    {pinfo['state']}" if pinfo.get("state") else ""
-    print(f"🎛   Prospecting{age}:   {_knob_line()}{state_chip}")
+    print(f"🎛   Prospecting Controls{age}:   {_knob_line()}{state_chip}")
     print()
 
     print(f"| Station | Queued | In-flight | Rate | Var | Trend ( {_window_label(spark_minutes, spark_buckets)} ) | Oldest | Status |")
@@ -435,6 +421,16 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     if retro_count:
         print()
         print(f"👀   {retro_count} in review")
+
+    # Operator-toggled holds. Each flag file presence emits one line so
+    # the cockpit reminds the operator that an actor is intentionally
+    # held — easy to forget after the bounce. Add new flags here as
+    # the pattern proliferates.
+    from pathlib import Path as _Path
+    _wipe_flag = _Path.home() / ".sweep" / "control" / "wipe_disabled"
+    if _wipe_flag.exists():
+        print()
+        print("🚧   wipe disabled — `rm ~/.sweep/control/wipe_disabled` to enable")
 
 
 # ---------------------------------------------------------- rich render

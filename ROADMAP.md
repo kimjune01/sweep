@@ -34,9 +34,10 @@ The branch `temporal-pipeline` is 87 commits ahead of `master`. Below is what's 
 
 ### Tests
 
-- `scripts/e2e-haiku.py` — substrate test against live Anthropic API.
-- `scripts/e2e-fixture.py` — full qa pipeline against live GitHub + Haiku.
-- Both green.
+- Production is the test. Real PRs to real repos perturb the substrate
+  harder than any isolated harness — andons, retries, merge politics,
+  CI quirks are the signal. The earlier Haiku harness was disposed of
+  once the live pipeline reliably surfaced its own failures.
 
 ### Operator controls + TUI
 
@@ -107,7 +108,6 @@ Friction we keep hitting and a newcomer would hit harder. README's quick-start c
 
 - 24h user-identity TTL across a mid-day `gh auth login` switch. Acceptable for single-operator use; reconsider for shared/CI deployments.
 - Whitespace-only diff misidentified as empty in qa — exits non-retryable with a misleading message. Edge case; the surrounding guard catches the real failure.
-- `runtest.py` untracked-then-future-tracked collision in `e2e-fixture.py`. No current bug; flag if the fixture evolves.
 - Orphaned `search_issues` cache rows in `gh.db` after the prospect migration. They expire on TTL; cosmetic.
 - `manual-merge` intent: 99.999% won't fire. Renderer carries the glyph anyway.
 

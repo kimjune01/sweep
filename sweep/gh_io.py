@@ -170,11 +170,16 @@ def search_issues(*, labels: list[str] | None = None,
                   archived: bool | None = False,
                   created_after: str | None = None,
                   owner: str | None = None,
+                  extra_qualifiers: list[str] | None = None,
                   sort: str = "updated", order: str = "desc",
                   limit: int = 100, ttl: int = 1800) -> list[dict]:
     """`gh search issues` wrapper, JSON-shaped. gh refuses inline
     qualifiers like `label:bug` in the positional query — those have
-    to be passed as flags (--label bug). Build the arg list flag-form."""
+    to be passed as flags (--label bug). Build the arg list flag-form.
+
+    `extra_qualifiers` (e.g. ['-linked:pr']) are raw GitHub search
+    qualifiers without a gh CLI flag equivalent. They go after `--` so
+    gh stops parsing them as flags and passes them through to the API."""
     args = ["search", "issues"]
     if labels:
         args += ["--label", ",".join(labels)]
@@ -191,6 +196,11 @@ def search_issues(*, labels: list[str] | None = None,
     args += ["--sort", sort, "--order", order,
              "--limit", str(limit),
              "--json", "repository,number,title,labels,url,updatedAt,createdAt,state,body,author,commentsCount,assignees"]
+    if extra_qualifiers:
+        # `--` separator so gh doesn't try to parse e.g. "-linked:pr"
+        # as a flag (`-l` shorthand). Positional args after `--` flow
+        # straight into the search query GitHub receives.
+        args += ["--", *extra_qualifiers]
     result = _cached_json("search_issues", args, ttl)
     return result if isinstance(result, list) else []
 

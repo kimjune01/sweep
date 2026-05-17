@@ -34,9 +34,15 @@ from sweep.types import (
 # workflow class — they're distinguished only by id. QaActor is its
 # own class (concurrent dispatcher, different shape).
 _ACTOR_WORKFLOW_IDS = {
-    "qa":      "qa-actor",
-    "drip":    "drip-actor",
-    "triaged": "triage-actor",
+    "qa":          "qa-actor",
+    "drip":        "drip-actor",
+    "triaged":     "triage-actor",
+    "investigate": "investigate-actor",
+    "prospect":    "prospect-actor",
+    "tissue":      "tissue-actor",
+    "wipe":        "wipe-actor",
+    "immunize":    "immunize-actor",
+    "bless":       "bless-actor",
 }
 
 

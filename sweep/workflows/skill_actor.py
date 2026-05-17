@@ -24,6 +24,7 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
+    from sweep.activities.pause_gate import should_idle
     from sweep.activities.worktree import (
         clear_andon_marker,
         mark_acked,
@@ -100,6 +101,16 @@ class SkillActor:
             await workflow.wait_condition(
                 lambda: bool(self._pending) and not self.halted
             )
+            # Inbox-boundary pause check: refuse to pull the next msg
+            # while paused or while this actor's own budget andon is
+            # held. Polls every 10s so in-flight work is never
+            # interrupted; pause means "no new starts" only.
+            while await workflow.execute_activity(
+                should_idle, args=[activity_name],
+                start_to_close_timeout=timedelta(seconds=5),
+                retry_policy=RetryPolicy(maximum_attempts=2),
+            ):
+                await workflow.sleep(timedelta(seconds=10))
             msg = self._pending.pop(0)
 
             await workflow.execute_activity(

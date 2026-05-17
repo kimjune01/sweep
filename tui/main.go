@@ -245,7 +245,7 @@ var (
 // visible: `tickMsg` fires every refreshEvery, re-stats both flags, and
 // triggers a re-render only if the values changed (cheap, no flicker).
 
-// Views cycle under one `t` key — hacker ergonomic, single-keystroke
+// Views cycle under one `c` key — hacker ergonomic, single-keystroke
 // rotation. Add new views by appending here; the cycle picks them up.
 // Each entry names the sweep subcommand args used to render it.
 var views = []struct {
@@ -257,6 +257,7 @@ var views = []struct {
 	{"📥", "inbox", []string{"inbox"}},
 	{"🛣", "lanes", []string{"lanes"}},
 	{"🗑", "wasteboard", []string{"waste"}},
+	{"🧪", "hygraph", []string{"hygraph"}},
 }
 
 type model struct {
@@ -305,6 +306,23 @@ func fetchView(idx, width int) tea.Cmd {
 			return viewMsg(string(raw))
 		}
 		return viewMsg(colorizeTableHeader(styled))
+	}
+}
+
+// restartWorker shells out `sweep down && sweep up` async so the TUI
+// stays interactive during the ~2s lifecycle bounce. The final
+// statusMsg lands on the bar so the operator sees the outcome.
+func restartWorker() tea.Cmd {
+	return func() tea.Msg {
+		if out, err := exec.Command("sweep", "down").CombinedOutput(); err != nil {
+			return statusMsg(fmt.Sprintf("restart: down failed: %v (%s)",
+				err, strings.TrimSpace(string(out))))
+		}
+		if out, err := exec.Command("sweep", "up").CombinedOutput(); err != nil {
+			return statusMsg(fmt.Sprintf("restart: up failed: %v (%s)",
+				err, strings.TrimSpace(string(out))))
+		}
+		return statusMsg("restarted")
 	}
 }
 
@@ -362,10 +380,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
 		case "r":
-			// Manual refresh. The 5s ticker covers the common case;
-			// `r` is for operators who flipped a flag via CLI and want
-			// to see it immediately.
-			return refresh(m, m.status), nil
+			// Restart the worker so code edits to budget/knobs/activities
+			// take effect. `sweep down && sweep up` is the canonical
+			// lifecycle pair; we shell out async so the TUI stays live.
+			m.status = "restarting…"
+			return m, restartWorker()
 		case "d":
 			if err := setFlag(dryFlag, !m.dryOn); err != nil {
 				m.status = fmt.Sprintf("dry toggle failed: %v", err)
@@ -381,7 +400,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return refresh(m, ""), nil
-		case "t":
+		case "c":
 			// Cycle to next view. Triggers an immediate fetch so the
 			// new view shows up on the next tick at worst, sooner if
 			// the subprocess returns in under a frame.
@@ -422,7 +441,7 @@ func (m model) View() string {
 	dryLabel := fmt.Sprintf("%s %s", keyStyle.Render("d"), modeBadge(m.dryOn, "🌵 DRY", "💧 LIVE"))
 	pauseLabel := fmt.Sprintf("%s %s", keyStyle.Render("p"), modeBadge(m.paused, "🚦 PAUSED", "🟢 RUNNING"))
 	v := views[m.viewIdx]
-	viewLabel := fmt.Sprintf("%s 🔄 cycle", keyStyle.Render("t"))
+	viewLabel := fmt.Sprintf("%s 🔄 cycle", keyStyle.Render("c"))
 
 	bar := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -433,8 +452,8 @@ func (m model) View() string {
 		itemBox.Render(viewLabel),
 	)
 
-	hint := hintStyle.Render(fmt.Sprintf("%s cycle view   %s refresh   %s quit   flags live at %s",
-		keyStyle.Render("t"), keyStyle.Render("r"), keyStyle.Render("q"), controlDirPath))
+	hint := hintStyle.Render(fmt.Sprintf("%s cycle view   %s restart   %s quit   flags live at %s",
+		keyStyle.Render("c"), keyStyle.Render("r"), keyStyle.Render("q"), controlDirPath))
 
 	out := bar + "\n" + hint
 	if m.status != "" {
