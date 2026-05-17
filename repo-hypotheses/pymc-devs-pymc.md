@@ -93,3 +93,17 @@ Branch: fix/discrete-float-observed-warning
 - **Feature requests stall:** help-wanted features from 2022-2023 remain open
 - **Pre-commit required:** ricardoV94 explicitly asks for pre-commit compliance
 - **Test coverage enforced:** Codecov bot comments on every PR
+
+## PR #8285 — CI investigation (2026-05-17)
+
+### H₀ — Failing CI job is a regression from `make_obs_var` change
+- **Perturbation:** Read failing job logs from run 25605818038.
+- **Observation:** Only failure is `tests/distributions/test_timeseries.py::TestGARCH11::test_batched_size[False-alpha_1]` at line 787:
+  `assert not np.any(np.isclose(y_eval[0], y_eval[1]))` — two independent draws of a 5×100 GARCH series happened to share one near-equal value at position [4, 87].
+- **Diff scope:** PR only touches `pymc/model/core.py::make_obs_var` (float-to-int observed-data check) and `tests/model/test_core.py`. No timeseries / GARCH / draw / RNG code paths touched.
+- **Trajectory:** **Divergent against** — the failing assertion is a stochastic non-collision check across unrelated random samples; my diff cannot influence the RNG stream of `draw(y, draws=2, random_seed=800)` for an unrelated GARCH model.
+- **Kill condition:** H₀ killed. The failure is a pre-existing flake in the timeseries test (`np.isclose` with default tol over 500 noise samples is statistically prone to one false near-match). `all_tests` failure is just the aggregator reflecting this single shard.
+- **Edge:** No action needed on the PR for CI. If maintainer asks, rerun the shard. Optionally, flag the flaky test to maintainers as a side note — but it's out of scope for this PR.
+
+### Reasoning mode
+- Deduction (read diff + failing assertion): 95% — the failing test does not exercise `make_obs_var`.

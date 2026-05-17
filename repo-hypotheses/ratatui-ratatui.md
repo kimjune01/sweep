@@ -72,3 +72,19 @@ Generated: 2026-05-09
 1. Open PR via drip queue
 2. If merged: consider #1015 (style tests) or #1402 (TestBackend color assert) as follow-up
 3. Pipeline target: 3 merged PRs before attempting feature contributions
+
+## Post-open follow-up (2026-05-17)
+
+### H3: CI clippy failing on PR #2525
+
+**Observation:** PR is open (no reviews yet, REVIEW_REQUIRED). All CI green except `Check Clippy (stable)` and `Check Clippy (beta)`.
+
+**Perturbation:** Fetched run log. 5 errors, all `clippy::doc_markdown` on test doc comments at layout.rs:2951 and :2986. Items lacking backticks: `Spacing::Overlap`, `Constraint::Ratio`, `SpaceBetween`, `SpaceEvenly`, `SpaceAround`.
+
+**Trajectory:** Divergent — the entire failure is mechanical, one lint, two doc comments, five tokens. Not a logic regression.
+
+**Reasoning mode:** Deduction (compiler output → exact fix). Confidence 99%.
+
+**Fix:** Wrap the five identifiers in backticks. Local edit applied to `/tmp/ratatui-pr2525` working copy. Awaiting human gate to push to `kimjune01:fix/ratio-overlap-spacing`.
+
+**Provenance:** Doc comments were added in the regression tests of the original PR. Ratatui enforces `-D warnings`, so `doc_markdown` is fatal. Codex/Gemini volley in the original review missed it — neither runs clippy.

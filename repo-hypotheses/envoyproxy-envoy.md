@@ -2,8 +2,12 @@
 
 **PR**: https://github.com/envoyproxy/envoy/pull/44981
 **Issue**: https://github.com/envoyproxy/envoy/issues/44111 (filed by @bbassingthwaite, assigned @cpakulski, label `bug`)
-**Reviewer pushback**: @kyessenov 2026-05-13 — "Please fix DCO. I don't think system time is safe to use as a deadline, it's discontinuous."
-**Posture**: code dispute. Verify before capitulating or pushing back. Replaces prior triage notes; PR is now in review-dispute state.
+**Reviewer pushback**:
+- @kyessenov 2026-05-13 — "Please fix DCO. I don't think system time is safe to use as a deadline, it's discontinuous." (general clock objection)
+- @wbpcode 2026-05-15T08:05Z — APPROVED the systemTime fix.
+- @kyessenov 2026-05-15T16:32-33Z (inline at `cookie.cc:23`) — "Why does Envoy use expires when gRPC uses ttl? That would avoid the problem altogether. gRPC just writes ttl={} as-is."
+
+**Posture**: reframe in progress. Initial fix (H0: systemTime) was approved but reviewer surfaced a structurally better path (H4: delete server-side expiry validation).
 
 ---
 
@@ -67,11 +71,42 @@ The bug is mechanically deterministic: `monotonicTime()` epoch is per-process, t
 
 ---
 
-## Recommendation
+## H4 — Drop server-side `expires` validation entirely (kyessenov 2026-05-15 reframe)
 
-**Push back, with evidence.** Acknowledge kyessenov's general principle (correct in the abstract), demonstrate that this specific deadline must be wall-clock because it crosses processes, cite the JWT and OAuth2 precedents in envoy's own tree.
+**Verdict: STRONGER FIX THAN H0. Reframe.**
 
-DCO is a mechanical fix unrelated to the substantive question — handle after the design point is settled, to avoid muddying the thread.
+After @wbpcode (MEMBER) approved the systemTime fix on 2026-05-15T08:05Z, @kyessenov (CONTRIBUTOR) added an inline review at `cookie.cc:23` (2026-05-15T16:32-33Z):
+
+> "Why does Envoy use expires when gRPC uses ttl @wbpcode ? That would avoid the problem altogether."
+> "gRPC just writes `ttl={}` as-is if you look at the code"
+
+The point: server-side `expires` validation is redundant with the browser's `Set-Cookie: Max-Age=<ttl>` (already set by `makeSetCookie` using `factory_.ttl_`). If browser honors Max-Age (it does), envoy never sees an expired cookie. If browser lies, the worst case is routing to a host that may no longer exist — which load balancing already handles via host-health fallback.
+
+**Internal precedent confirms.** `source/extensions/http/stateful_session/header/header.cc:9-19` — the header-based stateful_session variant has NO server-side expiry check whatsoever. It encodes the host, sets the header, and trusts the wire. The cookie variant is the outlier; deleting its `expires` field handling makes it consistent with its sibling.
+
+**Mechanical scope of H4:**
+- `cookie.cc:21-24`: delete the `factory_.ttl_ != 0` block that sets `cookie.set_expires(expiry_time.count())`.
+- `cookie.h:75-83`: delete the `cookie.expires() != 0` block that compares against `time_source_`.
+- Net: two deletions in source, no clock primitive change. `expires` field stays in the proto for backward-compat (parsed-and-ignored on old cookies still in flight).
+
+**Trade-off vs H0:**
+- H0 (current PR): minimal, two-line clock-primitive change, preserves defense-in-depth expiry.
+- H4 (kyessenov's reframe): eliminates the time-source question entirely, matches header-mode behavior, simpler code. Behavior change: cookies past their TTL get routed to the encoded host (which may be stale — LB handles).
+
+**Why this is the reframe:** H0 answers "which clock?" H4 answers "why is there a clock here at all?" The second question dissolves the first.
+
+## Recommendation (updated 2026-05-17)
+
+**Switch to H4.** kyessenov's reframe is correct: dropping server-side `expires` validation is structurally cleaner than picking between clock primitives, matches header-mode's existing behavior, and aligns with the gRPC pattern. The defense-in-depth value of the server-side check is low (browser already enforces Max-Age; stale-host case is LB-handled).
+
+Action:
+1. Replace H0's two-line clock change with H4's two-block deletion in the same PR.
+2. Reply to kyessenov: agree, show header-mode internal precedent, push the revised diff.
+3. wbpcode's prior approval should hold — the change is strictly smaller (deletions) and behaviorally matches header-mode.
+
+H1 (systemTime safety) remains correct as written but becomes moot under H4.
+
+DCO is already passing (2026-05-13T22:41 SUCCESS); the earlier graph note is stale.
 
 ## Provenance
 
