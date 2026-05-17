@@ -78,13 +78,15 @@ def _save_cache(data: dict) -> None:
 
 def _refresh_org(org: str, user: str) -> list[dict]:
     """Pull just this org's open PRs from gh. Scoped query — small
-    response, fast. Returns the PR list (possibly empty)."""
+    response, fast. Returns the PR list (possibly empty). isDraft is
+    captured so the gate can exclude drafts from its count — a parked
+    draft doesn't burn maintainer review attention."""
     try:
         prs = gh_io.search_prs(
             f"author:{user} org:{org}",
             state="open",
             limit=50,
-            fields="repository,number,title,updatedAt,createdAt",
+            fields="repository,number,title,updatedAt,createdAt,isDraft",
             ttl=30,
         )
     except subprocess.CalledProcessError:
@@ -100,6 +102,7 @@ def _refresh_org(org: str, user: str) -> list[dict]:
             "title": pr.get("title", ""),
             "updated_at": pr.get("updatedAt", ""),
             "created_at": pr.get("createdAt", ""),
+            "is_draft": bool(pr.get("isDraft", False)),
         })
     return out
 
@@ -112,7 +115,7 @@ def _refresh_all(user: str) -> dict[str, list[dict]]:
             f"author:{user}",
             state="open",
             limit=200,
-            fields="repository,number,title,updatedAt,createdAt",
+            fields="repository,number,title,updatedAt,createdAt,isDraft",
             ttl=30,
         )
     except subprocess.CalledProcessError:
@@ -129,6 +132,7 @@ def _refresh_all(user: str) -> dict[str, list[dict]]:
             "title": pr.get("title", ""),
             "updated_at": pr.get("updatedAt", ""),
             "created_at": pr.get("createdAt", ""),
+            "is_draft": bool(pr.get("isDraft", False)),
         })
     return out
 
@@ -213,12 +217,20 @@ def state() -> dict:
     }
 
 
+def _ready_prs(prs: list[dict]) -> list[dict]:
+    """Drafts are parked and don't burn maintainer review attention,
+    so they don't count toward the org gate's cap. A repo with one
+    draft and zero ready PRs is at the gate as far as the substrate
+    is concerned — fine to open a new ready PR there."""
+    return [p for p in prs if not p.get("is_draft", False)]
+
+
 def is_org_blocked(org: str, *, max_open_per_org: int = 1) -> bool:
-    """True if the org already has the limit of open authored PRs.
-    Hot path — uses per-org cache only, no fanout."""
+    """True if the org already has the limit of open NON-DRAFT
+    authored PRs. Hot path — uses per-org cache only, no fanout."""
     if not org:
         return False
-    return len(_entry(org)["prs"]) >= max_open_per_org
+    return len(_ready_prs(_entry(org)["prs"])) >= max_open_per_org
 
 
 def org_of(repo: str) -> str:
@@ -227,9 +239,9 @@ def org_of(repo: str) -> str:
 
 
 def blocked_orgs(max_open_per_org: int = 1) -> dict[str, list[dict]]:
-    """All orgs currently at or over the cap, with their open PRs."""
+    """All orgs currently at or over the cap (non-draft PRs only)."""
     return {
-        org: prs
+        org: _ready_prs(prs)
         for org, prs in state()["orgs"].items()
-        if len(prs) >= max_open_per_org
+        if len(_ready_prs(prs)) >= max_open_per_org
     }

@@ -345,12 +345,35 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     try:
         from sweep.attestation_verify import write_attestation_files
         import platform
-        slug = req.branch.removeprefix("fix/").replace("/", "__") or "attestation"
-        attestation_dir = Path(req.worktree) / "attestations" / slug
+        # Directory layout: attestations/<org>-<repo>-<issue#>-<n>/
+        # Flat — all this repo's (and every repo's) attestations sit
+        # under attestations/ at one level, easy to browse. <n> is the
+        # attempt counter so each attestation run is its own dir,
+        # never overwritten; the gate picks the highest-numbered
+        # attempt for the current issue.
+        attestations_root = Path(req.worktree) / "attestations"
+        attestations_root.mkdir(parents=True, exist_ok=True)
+        org_repo = req.repo.replace("/", "-")
+        if req.issue:
+            prefix = f"{org_repo}-{req.issue}-"
+            existing = []
+            for p in attestations_root.iterdir():
+                if p.is_dir() and p.name.startswith(prefix):
+                    try:
+                        existing.append(int(p.name[len(prefix):]))
+                    except ValueError:
+                        pass
+            next_n = (max(existing) + 1) if existing else 1
+            attestation_dir = attestations_root / f"{org_repo}-{req.issue}-{next_n}"
+            expected_test = req.branch.removeprefix("fix/").replace("/", "__").split("__")[-1].replace("_", "-")
+        else:
+            slug = req.branch.removeprefix("fix/").replace("/", "__") or "attestation"
+            attestation_dir = attestations_root / f"{org_repo}-{slug}"
+            expected_test = slug.split("__")[-1].replace("_", "-")
         write_attestation_files(
             attestation_dir,
             test_cmd=req.test_cmd,
-            expected_test_name=slug.split("__")[-1].replace("_", "-"),
+            expected_test_name=expected_test,
             head_sha=_head_sha(req.worktree),
             host=f"{platform.system().lower()}-{platform.machine()}",
             test_env=test_env,
