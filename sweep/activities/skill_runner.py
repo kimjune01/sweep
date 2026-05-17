@@ -171,8 +171,9 @@ def _invalidate_org_state_cache(repo: str) -> None:
     apart because the 5-min cache showed 0 for both checks."""
     try:
         from sweep import org_state, observe
-        org_state.invalidate()
-        observe.event("org_state_invalidated", repo=repo,
+        org = org_state.org_of(repo)
+        org_state.invalidate(org)
+        observe.event("org_state_invalidated", repo=repo, org=org,
                       reason="post-publish")
     except Exception as e:
         # Cache-invalidate failure is best-effort; the gate still
