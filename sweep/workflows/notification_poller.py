@@ -93,7 +93,7 @@ class NotificationPoller:
                     # buried inside the poller's tick.
                     await workflow.execute_activity(
                         kick_remit_card,
-                        args=[repo, pr],
+                        args=[repo, pr, "notification-poller", thread_id],
                         start_to_close_timeout=timedelta(seconds=5),
                         retry_policy=RetryPolicy(maximum_attempts=2),
                     )

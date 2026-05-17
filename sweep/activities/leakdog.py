@@ -159,19 +159,21 @@ async def _refresh_human_inbox() -> dict:
         return {"checked": 0, "acked": 0}
 
     import datetime as _dt
+    from sweep.activities.pr_state import gh_pr_view
     now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
     new_acks: list[str] = []
     for (repo, pr), msg_ids in by_pr.items():
         try:
-            # 5-min TTL so successive leakdog ticks share the cache.
-            data = gh_io.pr_view(repo, pr, ttl=300)
+            # Use the real gh_pr_view (not a stub) so maintainer_question
+            # and maintainer_raised_concern get derived honestly. The stub
+            # `_live_state_from_gh` passed False for those, which caused
+            # leakdog to ack human-bucket cards that were created via the
+            # LLM-judged paths — silently dropping work that still needed
+            # the human. gh_io.pr_view's 5-min cache is shared, so the gh
+            # fetch is still cheap across the tick.
+            live = await gh_pr_view(repo, pr)
         except Exception:
             continue
-        if not data:
-            continue
-        # Build a PrLiveState; classify_one_pr expects this shape.
-        # Mirrors the field extraction in activities.pr_state.gh_pr_view.
-        live = _live_state_from_gh(repo, pr, data)
         if live is None:
             continue
         try:
@@ -191,59 +193,6 @@ async def _refresh_human_inbox() -> dict:
         with open(acks_path, "a") as f:
             f.write("\n".join(new_acks) + "\n")
     return {"checked": len(by_pr), "acked": len(new_acks)}
-
-
-def _live_state_from_gh(repo: str, pr: int, data: dict):
-    """Re-derive a PrLiveState from the cached gh pr_view payload.
-
-    Subset of the logic in activities.pr_state.gh_pr_view — we only
-    need the fields classify_one_pr touches. Reimplemented here to
-    avoid pulling in the activity decorator (which would be a no-op
-    here) and to keep leakdog's dependencies narrow.
-    """
-    import datetime as _dt
-    from sweep.types import PrLiveState
-    try:
-        updated_at = data.get("updatedAt", "")
-        if updated_at:
-            t = _dt.datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
-            activity_h = (_dt.datetime.now(_dt.timezone.utc) - t).total_seconds() / 3600
-        else:
-            activity_h = 0.0
-    except Exception:
-        activity_h = 0.0
-    # ci roll-up — green if all checks pass; failing if any failure;
-    # pending if there are running checks; otherwise unknown. Same
-    # spirit as gh_pr_view but minimal.
-    rollup = data.get("statusCheckRollup") or []
-    ci = "unknown"
-    failing_check = ""
-    if rollup:
-        states = [c.get("state") or c.get("conclusion") or "" for c in rollup]
-        if any(s in ("FAILURE", "ERROR", "TIMED_OUT", "CANCELLED") for s in states):
-            ci = "failing"
-            for c in rollup:
-                s = c.get("state") or c.get("conclusion") or ""
-                if s in ("FAILURE", "ERROR", "TIMED_OUT", "CANCELLED"):
-                    failing_check = c.get("name", "") or c.get("context", "")
-                    break
-        elif any(s in ("IN_PROGRESS", "PENDING", "QUEUED") for s in states):
-            ci = "pending"
-        elif all(s in ("SUCCESS", "NEUTRAL", "SKIPPED", "") for s in states):
-            ci = "green"
-    return PrLiveState(
-        repo=repo, pr=pr,
-        branch=data.get("headRefName", ""),
-        title=data.get("title", ""),
-        url=data.get("url", ""),
-        review_decision=data.get("reviewDecision", "") or "",
-        mergeable=data.get("mergeable", "") or "",
-        ci=ci,
-        activity_h=activity_h,
-        maintainer_question=False,  # conservative; classify_one_pr handles
-        is_draft=bool(data.get("isDraft", False)),
-        failing_check=failing_check,
-    )
 
 
 # ------------------------------------------------------------------- tissue
