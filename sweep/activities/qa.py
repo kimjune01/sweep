@@ -94,6 +94,7 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
 
     worktree = req.worktree
     log: list[str] = []
+    _test_start = time.time()
 
     async def _run(args: list[str]) -> subprocess.CompletedProcess:
         if not args or not args[0]:
@@ -171,6 +172,39 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     body = "\n".join(log) + "\n\n--- master stderr ---\n" + master_run.stderr + "\n--- fix stdout ---\n" + fix_run.stdout
     att = _capture(req.msg_id, "test", body, worktree=req.worktree)
     att.verdict = "pass"
+
+    # Write the committable attestation pair into the worktree's
+    # prework dir. The deterministic verifier (attestation_verify.py)
+    # re-parses fix_run.stdout independently — silent-skip cases that
+    # this code reads as 'pass' get caught at the push gate. The
+    # files ship in the PR branch so the maintainer can verify by
+    # re-running test_cmd themselves and comparing sha256.
+    try:
+        from sweep.attestation_verify import write_attestation_files
+        import platform
+        slug = req.branch.removeprefix("fix/").replace("/", "__") or "attestation"
+        prework_dir = Path(req.worktree) / "prework" / slug
+        # Expected test name: use the slug as a heuristic — the user-
+        # authored test should reference the fix's slug. If a different
+        # convention is needed (e.g. the integration test name differs
+        # from the branch slug), callers can pass it explicitly later.
+        write_attestation_files(
+            prework_dir,
+            test_cmd=req.test_cmd,
+            expected_test_name=slug.split("__")[-1].replace("_", "-"),
+            head_sha=_head_sha(req.worktree),
+            host=f"{platform.system().lower()}-{platform.machine()}",
+            test_env="native",
+            stdout=fix_run.stdout,
+            elapsed_seconds=time.time() - _test_start,
+        )
+    except Exception as e:
+        # Don't fail the test_attestation activity if the writer hits
+        # an issue (e.g. read-only fs) — substrate-private record still
+        # got written via _capture above. Log so leakdog can see it.
+        observe.event("attestation_write_failed", msg_id=req.msg_id,
+                      error_type=type(e).__name__, error=str(e)[:200])
+
     return att
 
 

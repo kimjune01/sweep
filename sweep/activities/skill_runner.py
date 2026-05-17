@@ -111,6 +111,23 @@ async def respond_cycle(msg: Message) -> dict:
     _budget.record_subprocess_estimate("respond")
     intent = msg.intent or "publish"
     flag = _DRIP_FLAG.get(intent, "--check")
+
+    # Attestation gate: any push intent (publish, rebase) needs a
+    # verified attestation in the worktree's prework/ dir. Close
+    # intents don't (no code claim being made). Defense in depth —
+    # submit-actor gates first, but respond-actor catches direct
+    # routings (CHANGES_REQUESTED → respond via remit, which bypasses
+    # submit entirely).
+    if intent in ("publish", "rebase") and msg.branch:
+        from sweep.activities.submit import _attestation_gate
+        ok, reason = await _attestation_gate(msg.repo, msg.branch)
+        if not ok:
+            observe.event("respond_attestation_failed", repo=msg.repo,
+                          branch=msg.branch, pr=msg.pr, intent=intent,
+                          reason=reason, msg_id=msg.msg_id)
+            return {"rc": 1, "pushed": False, "gated": True,
+                    "reason": f"attestation: {reason}"}
+
     result = await _run_skill(["/drip", msg.repo, flag], label="respond")
     # Shim Sonnet over the skill's stdout for a guaranteed outcome
     # dict. Falls back to the stdout-tail heuristics if the shim

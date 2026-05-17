@@ -83,6 +83,34 @@ async def kick_submit_card(repo: str, branch: str, pr: int | None = None,
     return await _signal_actor("submit", msg)
 
 
+async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
+    """Find the worktree's prework dir and run the deterministic
+    verifier. Returns (ok, reason). Refuses push if no attestation
+    file exists, if the verifier rejects it, or if the worktree can't
+    be located."""
+    if not branch:
+        return False, "no branch — can't locate worktree"
+    from sweep.activities.worktree import ensure_worktree
+    from sweep.attestation_verify import gate_push
+    try:
+        worktree = await ensure_worktree(repo, branch)
+    except Exception as e:
+        return False, f"ensure_worktree: {type(e).__name__}: {e}"
+    prework_root = Path(worktree) / "prework"
+    if not prework_root.exists():
+        return False, f"no prework/ dir in worktree {worktree}"
+    # Find any subdir containing test-attestation.json. Multiple is
+    # ambiguous → reject (fail-closed).
+    candidates = [p for p in prework_root.iterdir()
+                  if p.is_dir() and (p / "test-attestation.json").exists()]
+    if not candidates:
+        return False, f"no prework/*/test-attestation.json in {prework_root}"
+    if len(candidates) > 1:
+        names = ", ".join(p.name for p in candidates)
+        return False, f"ambiguous attestation dirs: {names}"
+    return gate_push(candidates[0])
+
+
 async def _final_checks(repo: str, pr: int | None) -> tuple[bool, str]:
     """Cheap re-checks against live state right before push. Returns
     (ok, reason). Order matters: cheapest checks first, so a fast no
@@ -154,6 +182,17 @@ async def submit_cycle(msg: Message) -> dict:
         observe.event("submit_gate_failed", repo=msg.repo, branch=msg.branch,
                       pr=msg.pr, reason=reason, msg_id=msg.msg_id)
         return {"published": False, "gated": True, "reason": reason}
+
+    # Attestation gate: the deterministic verifier re-parses the
+    # committed test-attestation.txt and refuses to push if 0 tests
+    # ran, the expected test isn't present, or any test failed.
+    # No valid attestation → no push. Production-side vibes can't
+    # bypass this.
+    ok, reason = await _attestation_gate(msg.repo, msg.branch)
+    if not ok:
+        observe.event("submit_attestation_failed", repo=msg.repo, branch=msg.branch,
+                      pr=msg.pr, reason=reason, msg_id=msg.msg_id)
+        return {"published": False, "gated": True, "reason": f"attestation: {reason}"}
 
     # Synthesize a respond-shaped message and delegate. respond_cycle
     # records its own subprocess budget and runs /drip --push.
