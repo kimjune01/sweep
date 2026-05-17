@@ -8,7 +8,7 @@ Subcommands:
   tick      walk dep-pool once, qualify candidates, queue passes
   review    list pending candidates in the inbox
   show <N>  print the Nth pending candidate's full rendered body
-  ship <N>  reserved — explicit per-candidate posting (manual `gh issue
+  post <N>  reserved — explicit per-candidate posting (manual `gh issue
             create` from `show` output is the v1 workflow)
 """
 from __future__ import annotations

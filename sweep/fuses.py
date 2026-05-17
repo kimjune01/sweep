@@ -68,7 +68,7 @@ def check_qa_bundle(
     current_head_sha: str,
 ) -> tuple[bool, list[str]]:
     """All four qa gates share the same fuse (PR head SHA). Returns
-    (any_blown, list_of_reasons_per_gate). Use this at ship time."""
+    (any_blown, list_of_reasons_per_gate). Use this at submit time."""
     reasons: list[str] = []
     any_blown = False
     for name, att in [

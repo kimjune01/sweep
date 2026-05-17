@@ -99,7 +99,7 @@ def _render(repo: str, pr: int, data: dict) -> None:
     # Each row is a user-intent label on the left and the resolution on
     # the right. Skip rows whose data side is empty so quiet PRs read
     # tight. "Do now" appears ONLY when something blocks the machine's
-    # automatic flow — attested→drip→ship is routine and silent; humans
+    # automatic flow — attested→drip→submit is routine and silent; humans
     # handle the exceptions.
     rows: list[tuple[str, str]] = []
     do_now = _do_now(url, artifacts, verdict, data)
@@ -209,7 +209,7 @@ MERGE_GLYPHS = {
 def _do_now(url: str, artifacts: list[tuple[str, Path]],
              verdict: str | None, data: dict) -> str:
     """The next move ONLY when something blocks the machine's automatic
-    flow. Attested PRs automatically go attested → drip → ship; nothing
+    flow. Attested PRs automatically go attested → drip → submit; nothing
     for the human to do. Human attention is reserved for exceptions:
     cascade failures, conflicts, maintainer engagement, force-push
     requirements.

@@ -25,9 +25,9 @@ class Message:
     sender side so re-delivery is idempotent."""
 
     msg_id: str
-    sender: str  # e.g. "pr-state"
+    sender: str  # e.g. "remit"
     intent: str  # e.g. "reattest", "respond", "close", "publish", "rebase"
-    repo: str  # owner/repo
+    repo: str | None = None  # owner/repo; None for repo-agnostic cards (rope kicks, leakdog heartbeats)
     pr: int | None = None
     branch: str | None = None
     payload: dict = field(default_factory=dict)
@@ -76,12 +76,12 @@ Bucket = Literal["close", "human", "rebase", "qa", "investigate", "done", "wait"
 
 # Each bucket has a destination inbox + intent verb the receiver consumes.
 #
-# Note: pr-state classifies *existing* open PRs. When a reviewer engages
+# Note: remit classifies *existing* open PRs. When a reviewer engages
 # (comment, changes_requested), the ball comes back to the human — that's
 # the "human" bucket, not "investigate." The investigate.jsonl inbox is
 # reserved for /triage and /actionable to populate with new-issue work
 # for the LLM investigator actor — plus the maintainer-raised-concern
-# path from pr-state (a new in-PR bug routes to investigate, not human).
+# path from remit (a new in-PR bug routes to investigate, not human).
 #
 # Two distinct no-action shapes:
 #   - "done"  (APPROVED + MERGEABLE + green CI): maintainer's court.
@@ -93,10 +93,10 @@ Bucket = Literal["close", "human", "rebase", "qa", "investigate", "done", "wait"
 #             routes; done is not.
 BUCKET_ROUTING: dict[str, tuple[str, str]] = {
     "close":       ("respond",     "close"),
-    "human": ("human", "respond"),
+    "human":       ("human",       "respond"),
     "rebase":      ("respond",     "rebase"),
     "qa":          ("qa",          "reattest"),
-    "investigate": ("investigate",  "diagnose"),
+    "investigate": ("investigate", "diagnose"),
     "wait":        ("retro",       "audit"),
 }
 

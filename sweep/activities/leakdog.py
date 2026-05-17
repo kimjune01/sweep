@@ -1,13 +1,12 @@
 """leakdog activities — periodic sniffing for two kinds of leak.
 
 This module owns the *daemon-side* of leakdog. The view-side
-(`render_leakdog`) lives in `sweep.cli.lanes` next to the swim-lane
-table where it surfaces interface leaks at a glance.
+(`render_leakdog`) lives in `sweep.cli.leakdog` as its own command.
 
 The activity here is what makes leakdog *independent* of any one
 workflow's health: it runs on its own tick (driven by the
 `LeakdogDaemon` workflow) so a wedged actor can't trap the
-API-budget andon in the "set" state. That was [[H21]] — the supervisor
+API-budget andon in the "set" state. That was [[O2]] — the supervisor
 must not be supervised by the thing it supervises.
 """
 
@@ -83,7 +82,7 @@ async def leakdog_tick() -> dict:
     # SkillActor dedupes msg_ids, so a leaked extra card is benign.
     try:
         from sweep.activities.scout import kick_scout_card, SCOUT_INBOX
-        from sweep.activities.sift import SIFT_INBOX
+        from sweep.activities.scout import SIFT_INBOX
         from sweep import inbox_state as _inbox
         sift_q = len(_inbox.inbox_states("sift")["queued"]) \
             if SIFT_INBOX.exists() else 0
@@ -103,7 +102,7 @@ async def leakdog_tick() -> dict:
     # When the operator answers a maintainer's question on GitHub,
     # the PR's bucket flips away from "human" but our inbox entry
     # lingers until either the maintainer replies (notification poller
-    # catches it) or the full pr-state rescan runs. Leakdog closes
+    # catches it) or the seeder rescan runs. Leakdog closes
     # that gap: re-fetch the PR (5min TTL cache, so this batches
     # cheaply across ticks) and ack inbox entries whose precondition
     # no longer holds.
@@ -113,7 +112,85 @@ async def leakdog_tick() -> dict:
     except Exception as e:
         out["human_error"] = f"{type(e).__name__}: {str(e)[:200]}"
 
+    # --- (5) Unclassified-PR seed ---------------------------------
+    # The notification poller is push-shaped — it only sees PRs whose
+    # state changed *while* it was running. A PR that's been sitting
+    # in CHANGES_REQUESTED for days with no fresh notification stays
+    # invisible to the substrate. Leakdog's pull-shaped tick finds
+    # open PRs not currently in any inbox and kicks them into remit
+    # for classify-and-route. Bounded by gh_io.search_prs cache.
+    try:
+        seeded = await _seed_unclassified_prs()
+        out["unclassified_seeded"] = seeded
+    except Exception as e:
+        out["unclassified_seed_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+
     return out
+
+
+async def _seed_unclassified_prs() -> dict:
+    """Find open PRs not in any actor inbox; kick remit to classify.
+    Returns {open, in_inbox, seeded}. Caps seeds per tick to bound
+    remit-queue depth — under typical load (~few stale PRs/day) this
+    drains in one tick; on backfill it spreads across several."""
+    import json
+    from pathlib import Path
+    from sweep import gh_io
+    from sweep.activities.remit import kick_remit_card
+
+    SEED_CAP = 20
+
+    try:
+        prs = gh_io.search_prs("--author=@me", state="open", limit=200)
+    except Exception:
+        prs = []
+    if not prs:
+        return {"open": 0, "in_inbox": 0, "seeded": 0}
+
+    # Build "seen" set from every actor inbox file (queued + acked).
+    # If any past inbox entry exists for (repo, pr), don't re-kick;
+    # remit owns the freshness decision via its own re-fetch.
+    inbox_dir = Path.home() / ".sweep" / "inbox"
+    seen: set[tuple] = set()
+    for p in inbox_dir.glob("*.jsonl"):
+        if p.name.startswith("_") or ".dry." in p.name:
+            continue
+        try:
+            for line in p.read_text().splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    m = json.loads(line)
+                    repo, pr = m.get("repo"), m.get("pr")
+                    if repo and pr:
+                        seen.add((repo, int(pr)))
+                except Exception:
+                    pass
+        except OSError:
+            pass
+
+    seeded = 0
+    for pr_data in prs:
+        if seeded >= SEED_CAP:
+            break
+        url = pr_data.get("url", "")
+        if not url:
+            continue
+        # url shape: https://github.com/owner/repo/pull/123
+        parts = url.replace("https://github.com/", "").split("/")
+        if len(parts) < 4:
+            continue
+        repo = f"{parts[0]}/{parts[1]}"
+        try:
+            pr_num = int(parts[3])
+        except ValueError:
+            continue
+        if (repo, pr_num) in seen:
+            continue
+        await kick_remit_card(repo, pr_num, sender="leakdog-seed")
+        seeded += 1
+
+    return {"open": len(prs), "in_inbox": len(seen), "seeded": seeded}
 
 
 async def _refresh_human_inbox() -> dict:

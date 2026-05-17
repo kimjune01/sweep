@@ -32,7 +32,7 @@ REGISTRY: dict[str, ModelInfo] = {
     "opus":   ModelInfo("opus",   "anthropic", "claude-opus-4-7",
                         "judgment-heavy: orchestration, coding, adversarial fallback"),
     "sonnet": ModelInfo("sonnet", "anthropic", "claude-sonnet-4-6",
-                        "default for work-shuffling: pr-state, classify, route"),
+                        "default for work-shuffling: remit, classify, route"),
     "haiku":  ModelInfo("haiku",  "anthropic", "claude-haiku-4-5-20251001",
                         "test scaffolding only — high variance is the point"),
     # OpenAI

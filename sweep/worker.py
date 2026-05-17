@@ -36,12 +36,12 @@ from sweep.activities.notifications import (
 )
 from sweep.activities.skill_runner import respond_cycle, investigate_cycle, triage_cycle
 from sweep.activities.remit import kick_remit_card, remit_cycle
-from sweep.activities.ship import kick_ship_card, ship_cycle
+from sweep.activities.submit import kick_submit_card, submit_cycle
 from sweep.activities.compose import compose_cycle, kick_compose_card
 from sweep.activities.rope import kick_rope_card, rope_cycle
 from sweep.activities.bless import bless_cycle
 from sweep.activities.immunize import immunize_cycle
-from sweep.activities.tissue import tissue_cycle, wipe_cycle
+from sweep.activities.tissue import tissue_cycle, post_cycle
 from sweep.activities.usage_probe import probe_claude_usage
 from sweep.activities.qa import (
     codex_review,
@@ -59,7 +59,6 @@ from sweep.activities.leakdog import leakdog_tick
 from sweep.activities.pause_gate import should_idle
 from sweep.workflows.leakdog import LeakdogDaemon
 from sweep.workflows.notification_poller import NotificationPoller
-from sweep.workflows.pr_state_workflow import PrStateWorkflow
 from sweep.workflows.qa_actor import QaActor
 from sweep.workflows.skill_actor import SkillActor
 from sweep.workflows.usage_poller import UsagePoller
@@ -73,7 +72,7 @@ async def _amain() -> None:
     worker = Worker(
         client,
         task_queue=SWEEP_TASK_QUEUE,
-        workflows=[QaActor, SkillActor, PrStateWorkflow, UsagePoller, NotificationPoller, LeakdogDaemon],
+        workflows=[QaActor, SkillActor, UsagePoller, NotificationPoller, LeakdogDaemon],
         activities=[
             # qa
             test_attestation, codex_review, gemini_review,
@@ -84,13 +83,13 @@ async def _amain() -> None:
             # remit — router for raw PR-state cards. Adapter activity
             # around classify_one_pr + deliver_to_inbox; pulls the
             # classify-and-route loop out of NotificationPoller into
-            # a first-class actor on the post-ship engagement cycle.
+            # a first-class actor on the post-submit engagement cycle.
             remit_cycle, kick_remit_card,
-            # ship — new-PR-create gate. Dry-mode hold lives at
-            # pause_gate (cards pile in ship.jsonl while dry is on).
+            # submit — new-PR-create gate. Dry-mode hold lives at
+            # pause_gate (cards pile in submit.jsonl while dry is on).
             # Skeleton: trusts upstream prep, delegates push to respond.
-            ship_cycle, kick_ship_card,
-            # compose — PR message writer between qa and ship.
+            submit_cycle, kick_submit_card,
+            # compose — PR message writer between qa and submit.
             # Skeleton passthrough today; /compose skill upgrade lands
             # separately. First-class actor so the responsibility for
             # PR text is visible instead of buried in /drip --push.
@@ -101,11 +100,11 @@ async def _amain() -> None:
             # shaped: target is operator-tunable via
             # ~/.sweep/control/rope_target.
             rope_cycle, kick_rope_card,
-            # tissue (drafts) + wipe (posts) — side-hatch on no-fix
-            # investigations. tissue drafts, wipe posts; separation of
+            # tissue (drafts) + post (posts) — side-hatch on no-fix
+            # investigations. tissue drafts, post posts; separation of
             # concerns means LLM hiccups and gh hiccups don't share an
             # andon.
-            tissue_cycle, wipe_cycle,
+            tissue_cycle, post_cycle,
             # immunize — anti-AI repo routing (worth-pursuing decider
             # for slop-offer candidates). Receives from sift (two
             # branches) and triage.
@@ -126,10 +125,10 @@ async def _amain() -> None:
             # worktree + cockpit view-layer markers
             ensure_worktree, mark_started, mark_acked,
             record_andon, clear_andon_marker,
-            # pr-state
+            # remit-classify (PR-state classifier library used by remit)
             gh_search_open_authored, gh_pr_view, classify_one_pr,
             deposit_classified, route_classified, deliver_to_inbox,
-            # notifications (push-shaped pr-state freshness)
+            # notifications (push-shaped remit freshness)
             poll_github_notifications, mark_thread_read,
             # leakdog daemon (independent watchdog for resource leaks)
             leakdog_tick,

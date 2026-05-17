@@ -37,7 +37,7 @@ async def kick_remit_card(repo: str, pr: int,
                           thread_id: str | None = None) -> str | None:
     """Deposit one raw PR-state-changed card on remit.jsonl and signal
     remit-actor. Used by NotificationPoller (steady-state) and the
-    manual `sweep pr-state run` path (escape hatch).
+    leakdog's `_seed_unclassified_prs` tick (safety-net rescan).
 
     Caller passes (repo, pr); remit-actor fetches live state and
     classifies. The card carries no classification — that's deliberate,
@@ -96,7 +96,7 @@ async def remit_cycle(msg: Message) -> dict:
     state = await gh_pr_view(msg.repo, int(msg.pr))
     classified = await classify_one_pr(state)
     delivered = await deliver_to_inbox(classified)
-    observe.event("remit_classified", repo=msg.repo, pr=msg.pr,
+    observe.event("remit_delivered", repo=msg.repo, pr=msg.pr,
                   bucket=classified.bucket,
                   delivered_to=delivered,
                   reason=classified.reason[:200])

@@ -1,25 +1,25 @@
-"""Ship — the new-PR-create gate.
+"""Submit — the new-PR-create gate.
 
 Sits between qa's verified fix (eventually via compose-actor) and
 respond's push. Single job: gate the new-public-commitment moment.
 
-Three things ship does that no upstream actor does:
+Three things submit does that no upstream actor does:
 
   1. Honors dry mode. Dry is narrowly scoped — it means "no new public
-     commitments" — and ship is the only actor that gates on it. The
+     commitments" — and submit is the only actor that gates on it. The
      gating happens at the inbox-pull point (pause_gate.should_idle) so
-     cards pile in ship.jsonl while dry is on; `sweep dry off` drains.
+     cards pile in submit.jsonl while dry is on; `sweep dry off` drains.
 
   2. Final-bastion re-verify. Attestation hash + repo eviction + AI
      policy + still-mergeable. Cheap re-checks against live state right
      before the push, in case the world moved while the card waited.
      (Full battery lands in a follow-up; this skeleton trusts upstream.)
 
-  3. Delegates the actual push. Once gates pass, ship hands off to
+  3. Delegates the actual push. Once gates pass, submit hands off to
      respond-actor with intent="publish" — respond owns the /drip
      subprocess and the budget attribution for the gh calls.
 
-The split lets ship stay small and auditable (a list of gates) while
+The split lets submit stay small and auditable (a list of gates) while
 respond stays mechanical (push verbs). Different concerns, different
 actors.
 """
@@ -36,27 +36,27 @@ from temporalio.exceptions import ApplicationError
 
 from sweep.types import Message
 
-SHIP_INBOX = Path.home() / ".sweep" / "inbox" / "ship.jsonl"
+SUBMIT_INBOX = Path.home() / ".sweep" / "inbox" / "submit.jsonl"
 
 
 @activity.defn
-async def kick_ship_card(repo: str, branch: str, pr: int | None = None,
-                         sender: str = "qa",
-                         attestation_hash: str | None = None) -> str | None:
-    """Deposit a ready-to-publish card on ship.jsonl and signal
-    ship-actor. Called by qa (eventually compose) when a fix is
+async def kick_submit_card(repo: str, branch: str, pr: int | None = None,
+                           sender: str = "qa",
+                           attestation_hash: str | None = None) -> str | None:
+    """Deposit a ready-to-publish card on submit.jsonl and signal
+    submit-actor. Called by qa (eventually compose) when a fix is
     verified and ready to land as a new PR or push.
 
     Card carries the publish-time inputs: repo, branch, optional pr
     number (rebase to existing PR vs. new), and attestation hash for
-    ship's re-verify step."""
+    submit's re-verify step."""
     from sweep import observe
     from sweep.activities.pr_state import _signal_actor
 
     ts = dt.datetime.now(dt.timezone.utc)
     slug = repo.replace("/", "-")
     pr_part = pr if pr is not None else "new"
-    msg_id = f"ship-{ts.strftime('%Y%m%dT%H%M%S')}-{slug}-{pr_part}"
+    msg_id = f"submit-{ts.strftime('%Y%m%dT%H%M%S')}-{slug}-{pr_part}"
     payload = {}
     if attestation_hash:
         payload["attestation_hash"] = attestation_hash
@@ -70,17 +70,17 @@ async def kick_ship_card(repo: str, branch: str, pr: int | None = None,
         payload=payload,
         ts=ts.isoformat(),
     )
-    SHIP_INBOX.parent.mkdir(parents=True, exist_ok=True)
+    SUBMIT_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(SHIP_INBOX, "a") as f:
+        with open(SUBMIT_INBOX, "a") as f:
             f.write(json.dumps(asdict(msg)) + "\n")
     except Exception as e:
-        observe.event("ship_card_write_failed", repo=repo, branch=branch,
+        observe.event("submit_card_write_failed", repo=repo, branch=branch,
                       error_type=type(e).__name__, error=str(e)[:200])
         return None
-    observe.event("ship_card_deposited", repo=repo, branch=branch,
+    observe.event("submit_card_deposited", repo=repo, branch=branch,
                   pr=pr, sender=sender, msg_id=msg_id)
-    return await _signal_actor("ship", msg)
+    return await _signal_actor("submit", msg)
 
 
 async def _final_checks(repo: str, pr: int | None) -> tuple[bool, str]:
@@ -110,12 +110,8 @@ async def _final_checks(repo: str, pr: int | None) -> tuple[bool, str]:
         if gh_io.repo_ai_policy(repo) == "hostile":
             return False, "repo AI policy went hostile"
     except Exception as e:
-        # Don't fail-closed on a transient gh hiccup — log and continue.
-        # The policy check is belt-and-suspenders; sift filters most of
-        # these out at the front, and a stale check shouldn't block a
-        # ready push.
         from sweep import observe
-        observe.event("ship_policy_check_error", repo=repo,
+        observe.event("submit_policy_check_error", repo=repo,
                       error_type=type(e).__name__, error=str(e)[:200])
     if pr is not None:
         try:
@@ -126,14 +122,14 @@ async def _final_checks(repo: str, pr: int | None) -> tuple[bool, str]:
                 return False, "PR became conflicting since prep"
         except Exception as e:
             from sweep import observe
-            observe.event("ship_mergeable_check_error",
+            observe.event("submit_mergeable_check_error",
                           repo=repo, pr=pr,
                           error_type=type(e).__name__, error=str(e)[:200])
     return True, "ok"
 
 
 @activity.defn
-async def ship_cycle(msg: Message) -> dict:
+async def submit_cycle(msg: Message) -> dict:
     """Gate one publish card and delegate the push to respond.
 
     Dry-mode hold lives upstream at pause_gate (the actor doesn't even
@@ -142,20 +138,20 @@ async def ship_cycle(msg: Message) -> dict:
     the doer.
 
     On gate failure: ack the card (returns rather than raises) and emit
-    ship_gate_failed. The card is consumed — re-evaluating it would
+    submit_gate_failed. The card is consumed — re-evaluating it would
     likely fail the same way, and the upstream signal that produced it
     (qa-converged) will fire again on the next pass if conditions
     change. Operator can re-kick manually if intended.
     """
     if not msg.repo or not msg.branch:
-        raise ApplicationError("ship: repo + branch required",
+        raise ApplicationError("submit: repo + branch required",
                                non_retryable=True)
     from sweep import observe
     from sweep.activities.skill_runner import respond_cycle
 
     ok, reason = await _final_checks(msg.repo, msg.pr)
     if not ok:
-        observe.event("ship_gate_failed", repo=msg.repo, branch=msg.branch,
+        observe.event("submit_gate_failed", repo=msg.repo, branch=msg.branch,
                       pr=msg.pr, reason=reason, msg_id=msg.msg_id)
         return {"published": False, "gated": True, "reason": reason}
 
@@ -163,7 +159,7 @@ async def ship_cycle(msg: Message) -> dict:
     # records its own subprocess budget and runs /drip --push.
     publish_msg = Message(
         msg_id=f"{msg.msg_id}-publish",
-        sender="ship",
+        sender="submit",
         intent="publish",
         repo=msg.repo,
         pr=msg.pr,
@@ -172,7 +168,7 @@ async def ship_cycle(msg: Message) -> dict:
         ts=dt.datetime.now(dt.timezone.utc).isoformat(),
     )
     result = await respond_cycle(publish_msg)
-    observe.event("ship_published", repo=msg.repo, branch=msg.branch,
+    observe.event("submit_published", repo=msg.repo, branch=msg.branch,
                   pr=msg.pr, rc=result.get("rc", 0),
                   msg_id=msg.msg_id)
     return {"published": True, "respond_result": result}

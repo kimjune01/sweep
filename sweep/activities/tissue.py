@@ -39,7 +39,7 @@ from sweep.types import Message
 
 TISSUE_DRAFTS = Path.home() / ".sweep" / "inbox" / "tissue-drafts.jsonl"
 TISSUE_INBOX = Path.home() / ".sweep" / "inbox" / "tissue.jsonl"
-WIPE_INBOX = Path.home() / ".sweep" / "inbox" / "wipe.jsonl"
+POST_INBOX = Path.home() / ".sweep" / "inbox" / "post.jsonl"
 TISSUE_POSTED_STATE = Path.home() / ".sweep" / "state" / "tissue_posted.json"
 HYPOTHESES_DIR = Path("/Users/junekim/Documents/sweep/repo-hypotheses")
 
@@ -283,8 +283,8 @@ async def tissue_cycle(msg: Message) -> dict:
     }
 
 
-# ---------------------------------------------------------------- wipe
-# Posting is a separate actor (`wipe`) — separation of concerns from
+# ---------------------------------------------------------------- post
+# Posting is a separate actor (`post`) — separation of concerns from
 # drafting. Drafting is LLM-shaped (slow, can hallucinate). Posting is
 # gh-API-shaped (fast, can rate-limit, has external side-effect).
 # Different failure modes deserve different actors, different budget
@@ -292,15 +292,15 @@ async def tissue_cycle(msg: Message) -> dict:
 # queue between them.
 
 
-async def enqueue_wipe(draft: dict) -> str | None:
-    """Operator-side: deposit a card on the wipe inbox carrying the
+async def enqueue_post(draft: dict) -> str | None:
+    """Operator-side: deposit a card on the post inbox carrying the
     approved draft. Called from `sweep tissue approve <draft_id>`.
-    Signals wipe-actor on success; jsonl is the durable record."""
+    Signals post-actor on success; jsonl is the durable record."""
     from sweep.activities.pr_state import _signal_actor
     ts = dt.datetime.now(dt.timezone.utc)
-    draft_id = draft.get("draft_id") or f"wipe-{ts.strftime('%Y%m%dT%H%M%S')}"
+    draft_id = draft.get("draft_id") or f"post-{ts.strftime('%Y%m%dT%H%M%S')}"
     msg = Message(
-        msg_id=f"wipe-{draft_id}",
+        msg_id=f"post-{draft_id}",
         sender="tissue-approve",
         intent="post",
         repo=draft.get("repo", ""),
@@ -314,29 +314,29 @@ async def enqueue_wipe(draft: dict) -> str | None:
         },
         ts=ts.isoformat(),
     )
-    WIPE_INBOX.parent.mkdir(parents=True, exist_ok=True)
+    POST_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(WIPE_INBOX, "a") as f:
+        with open(POST_INBOX, "a") as f:
             f.write(json.dumps(asdict(msg)) + "\n")
     except OSError as e:
-        observe.event("wipe_card_write_failed",
+        observe.event("post_card_write_failed",
                       draft_id=draft_id,
                       error_type=type(e).__name__, error=str(e)[:200])
         return None
-    return await _signal_actor("wipe", msg)
+    return await _signal_actor("post", msg)
 
 
-WIPE_DISABLED_FLAG = Path.home() / ".sweep" / "control" / "wipe_disabled"
+POST_DISABLED_FLAG = Path.home() / ".sweep" / "control" / "post_disabled"
 
 
 @activity.defn
-async def wipe_cycle(msg: Message) -> dict:
+async def post_cycle(msg: Message) -> dict:
     """Post one approved tissue draft to GitHub via `gh issue comment`.
     Emits exactly one terminal event:
       - tissue_posted (comment_url) — comment landed
       - tissue_post_failed (reason) — gh call failed; leakdog will
-        see the unbalanced wipe→post row
-      - tissue_skipped (reason) — operator hold (wipe_disabled flag)
+        see the unbalanced draft→post row
+      - tissue_skipped (reason) — operator hold (post_disabled flag)
         or dry mode
 
     State side-effect on success: records the post into
@@ -345,7 +345,7 @@ async def wipe_cycle(msg: Message) -> dict:
     """
     from sweep import budget as _budget, control_state
     if not msg.repo or not msg.pr:
-        raise ApplicationError("wipe: repo + issue required",
+        raise ApplicationError("post: repo + issue required",
                                non_retryable=True)
     repo, issue = msg.repo, int(msg.pr)
     comment = (msg.payload or {}).get("comment", "")
@@ -354,14 +354,14 @@ async def wipe_cycle(msg: Message) -> dict:
         observe.event("tissue_post_failed", repo=repo, issue=issue,
                       draft_id=draft_id, reason="empty_comment")
         return {"skipped": "empty_comment"}
-    # Wipe-specific kill switch: operator can hold posting without
+    # Post-specific kill switch: operator can hold posting without
     # blocking the rest of the pipeline. Independent of `sweep dry`
-    # and `sweep pause`. Cleared by `rm ~/.sweep/control/wipe_disabled`.
-    if WIPE_DISABLED_FLAG.exists():
+    # and `sweep pause`. Cleared by `rm ~/.sweep/control/post_disabled`.
+    if POST_DISABLED_FLAG.exists():
         observe.event("tissue_skipped", repo=repo, issue=issue,
-                      draft_id=draft_id, reason="wipe_disabled",
-                      stage="wipe")
-        return {"skipped": "wipe_disabled", "draft_id": draft_id}
+                      draft_id=draft_id, reason="post_disabled",
+                      stage="post")
+        return {"skipped": "post_disabled", "draft_id": draft_id}
     _budget.record_subprocess_estimate("respond")  # similar cost class (1 gh call)
 
     # Dry mode: write to a dry log instead of hitting gh. Same acked-
@@ -377,7 +377,7 @@ async def wipe_cycle(msg: Message) -> dict:
                 "posted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                 "dry":       True,
             }) + "\n")
-        observe.event("dry_skip", site="wipe_cycle",
+        observe.event("dry_skip", site="post_cycle",
                       draft_id=draft_id, repo=repo, issue=issue)
         return {"posted": False, "dry": True, "draft_id": draft_id}
 

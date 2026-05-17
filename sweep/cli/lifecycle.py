@@ -109,8 +109,8 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         RESPOND_ACTOR_ID, INVESTIGATE_ACTOR_ID, LEAKDOG_DAEMON_ID,
         NOTIFICATION_POLLER_ID, SIFT_ACTOR_ID, QA_ACTOR_ID,
         BLESS_ACTOR_ID, IMMUNIZE_ACTOR_ID, SCOUT_ACTOR_ID, SWEEP_TASK_QUEUE,
-        TISSUE_ACTOR_ID, TRIAGE_ACTOR_ID, USAGE_POLLER_ID, WIPE_ACTOR_ID,
-        REMIT_ACTOR_ID, SHIP_ACTOR_ID, COMPOSE_ACTOR_ID, ROPE_ACTOR_ID,
+        TISSUE_ACTOR_ID, TRIAGE_ACTOR_ID, USAGE_POLLER_ID, POST_ACTOR_ID,
+        REMIT_ACTOR_ID, SUBMIT_ACTOR_ID, COMPOSE_ACTOR_ID, ROPE_ACTOR_ID,
     )
     from sweep.system import TEMPORAL_ADDR
     from sweep.workflows.leakdog import LeakdogDaemon
@@ -140,7 +140,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (QA_ACTOR_ID,           QaActor.run,        ()),
         (RESPOND_ACTOR_ID,         SkillActor.run,     ("respond_cycle",)),
         (REMIT_ACTOR_ID,           SkillActor.run,     ("remit_cycle",)),
-        (SHIP_ACTOR_ID,            SkillActor.run,     ("ship_cycle",)),
+        (SUBMIT_ACTOR_ID,          SkillActor.run,     ("submit_cycle",)),
         (COMPOSE_ACTOR_ID,         SkillActor.run,     ("compose_cycle",)),
         (ROPE_ACTOR_ID,            SkillActor.run,     ("rope_cycle",)),
         (TRIAGE_ACTOR_ID,       SkillActor.run,     ("triage_cycle",)),
@@ -148,7 +148,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (SIFT_ACTOR_ID,        SkillActor.run,     ("sift_cycle",)),
         (SCOUT_ACTOR_ID,        SkillActor.run,     ("scout_cycle",)),
         (TISSUE_ACTOR_ID,       SkillActor.run,     ("tissue_cycle",)),
-        (WIPE_ACTOR_ID,         SkillActor.run,     ("wipe_cycle",)),
+        (POST_ACTOR_ID,         SkillActor.run,     ("post_cycle",)),
         (IMMUNIZE_ACTOR_ID,     SkillActor.run,     ("immunize_cycle",)),
         (BLESS_ACTOR_ID,        SkillActor.run,     ("bless_cycle",)),
         (USAGE_POLLER_ID,       UsagePoller.run,    ()),
@@ -181,9 +181,9 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "remit", SkillActor.deliver, REMIT_ACTOR_ID)
     if drained:
         anomalies.append(f"{REMIT_ACTOR_ID}: drained {drained} pending")
-    drained = await _drain_inbox(client, "ship", SkillActor.deliver, SHIP_ACTOR_ID)
+    drained = await _drain_inbox(client, "submit", SkillActor.deliver, SUBMIT_ACTOR_ID)
     if drained:
-        anomalies.append(f"{SHIP_ACTOR_ID}: drained {drained} pending")
+        anomalies.append(f"{SUBMIT_ACTOR_ID}: drained {drained} pending")
     drained = await _drain_inbox(client, "compose", SkillActor.deliver, COMPOSE_ACTOR_ID)
     if drained:
         anomalies.append(f"{COMPOSE_ACTOR_ID}: drained {drained} pending")
@@ -205,9 +205,9 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "tissue", SkillActor.deliver, TISSUE_ACTOR_ID)
     if drained:
         anomalies.append(f"{TISSUE_ACTOR_ID}: drained {drained} pending")
-    drained = await _drain_inbox(client, "wipe", SkillActor.deliver, WIPE_ACTOR_ID)
+    drained = await _drain_inbox(client, "post", SkillActor.deliver, POST_ACTOR_ID)
     if drained:
-        anomalies.append(f"{WIPE_ACTOR_ID}: drained {drained} pending")
+        anomalies.append(f"{POST_ACTOR_ID}: drained {drained} pending")
     drained = await _drain_inbox(client, "immunize", SkillActor.deliver, IMMUNIZE_ACTOR_ID)
     if drained:
         anomalies.append(f"{IMMUNIZE_ACTOR_ID}: drained {drained} pending")

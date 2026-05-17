@@ -152,7 +152,7 @@ class QaActor:
                     ),
                 )
                 # Test command: routed messages have an empty test_cmd
-                # because pr-state has no idea what the repo's convention
+                # because remit has no idea what the repo's convention
                 # is. infer_test_cmd asks the orchestrate LLM, then caches
                 # in retro_params so future cycles for the same repo skip
                 # the round-trip.

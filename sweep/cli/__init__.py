@@ -2,13 +2,13 @@
 
 Each subgroup lives in its own module:
   cli/qa.py        — qa test/codex/gemini/full, qa actor signal/status/clear
-  cli/pr_state.py  — pr-state classify / run / scan / route / workflow
   cli/sift.py      — sift sweep + cursor (legacy escape hatch)
   cli/inbox.py     — inbox inspector
   cli/attest.py    — attestation log + gh-cache stats
   cli/observe.py   — counters, events, cursor for retro
   cli/cockpit.py   — factory-floor cockpit (status + flow + table)
   cli/lanes.py     — swim lanes (per-station PR detail)
+  cli/leakdog.py   — funnel-balance accounting across station interfaces
   cli/drip.py      — drip queue list + enqueue
   cli/missing.py   — `sweep missing` wishlist (unknown-call log)
 
@@ -27,6 +27,7 @@ from sweep import missing_calls, models as _models
 from sweep.cli import cockpit as _cockpit
 from sweep.cli import hygraph as _hygraph
 from sweep.cli import lanes as _lanes
+from sweep.cli import leakdog as _leakdog
 from sweep.cli import claim as _claim
 from sweep.cli import investigate as _investigate
 from sweep.cli import missing as _missing
@@ -41,7 +42,6 @@ from sweep.cli.lifecycle import down_app, status_app, up_app
 from sweep.cli.drip import drip_app
 from sweep.cli.inbox import inbox_app
 from sweep.cli.observe import observe_app
-from sweep.cli.pr_state import pr_state_app
 from sweep.cli.sift import sift_app
 from sweep.cli.qa import qa_app
 from sweep.cli.retro import retro_app
@@ -56,7 +56,6 @@ app = typer.Typer(
 )
 app.add_typer(andon_app, name="andon")
 app.add_typer(qa_app, name="qa")
-app.add_typer(pr_state_app, name="pr-state")
 app.add_typer(sift_app, name="sift")
 app.add_typer(inbox_app, name="inbox")
 app.add_typer(attest_app, name="attest")
@@ -73,6 +72,7 @@ app.add_typer(status_app, name="status")
 _cockpit.register(app)
 _hygraph.register(app)
 _lanes.register(app)
+_leakdog.register(app)
 _pr.register(app)
 _claim.register(app)
 _investigate.register(app)

@@ -15,7 +15,7 @@ matches and stop calling LLM. The actor's cost asymptotically tends to
 "thanks, closing" / "you're right" / similar low-information replies.
 
 Auto and template outputs share the same downstream: draft → tissue-
-drafts queue → operator approves → wipe posts. Human outputs go to a
+drafts queue → operator approves → post posts. Human outputs go to a
 separate human-issues queue that the operator handles directly,
 no automated reply.
 """

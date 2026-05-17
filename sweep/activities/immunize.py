@@ -13,7 +13,7 @@ activity does not investigate, comment, or otherwise contact the repo
 — it only re-seeds the slop-offer pipeline (which already exists as
 the deliberate-outreach surface for these repos, human-gated).
 
-Per [[H24]]: this actor's job is to be boring. If it never fires,
+Per [[O4]]: this actor's job is to be boring. If it never fires,
 sift's gate is doing its job. If it fires often, sift's gate
 is broken and should be tightened upstream — fix the gate, don't lean
 on the safety net.
@@ -128,7 +128,7 @@ async def immunize_cycle(msg: Message) -> dict:
 
     # Two output paths based on whether we have a specific issue:
     #   - issue-level (triage source): draft a deferential
-    #     acknowledgement, route through tissue-drafts → wipe so the
+    #     acknowledgement, route through tissue-drafts → post so the
     #     operator approval gate applies the same way as tissue.
     #   - repo-level (sift source, no issue): append to the
     #     legacy slop_offer_seeds file. The existing `sweep slop-offer`
@@ -165,7 +165,7 @@ def _draft_acknowledgement_to_tissue(*, repo: str, issue: int,
                                       source: str, policy: str) -> str:
     """Draft a templated deferential acknowledgement and write it to
     tissue-drafts. The operator approves via the same `sweep tissue`
-    CLI; wipe posts. Template-only for the first batch — the message
+    CLI; post posts. Template-only for the first batch — the message
     is simple enough that variance doesn't help, and a uniform tone
     across slop-offer outreach reads as a coherent policy rather than
     a per-repo improvisation.

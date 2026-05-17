@@ -118,13 +118,13 @@ def _find_draft(draft_id: str) -> dict | None:
 def tissue_approve(
     draft_id: str = typer.Argument(..., help="Draft id from `sweep tissue list`"),
 ) -> None:
-    """Approve a draft: deposit it on the wipe inbox + signal wipe-actor.
-    Posting itself happens in `wipe_cycle` — the CLI's job is just the
+    """Approve a draft: deposit it on the post inbox + signal post-actor.
+    Posting itself happens in `post_cycle` — the CLI's job is just the
     human gate. Separation of concerns: drafting (tissue) and posting
-    (wipe) are different actors with different failure modes, different
+    (post) are different actors with different failure modes, different
     blast radius. The CLI doesn't touch gh."""
     import asyncio
-    from sweep.activities.tissue import enqueue_wipe
+    from sweep.activities.tissue import enqueue_post
 
     acked = _load_acked_ids()
     if draft_id in acked:
@@ -137,7 +137,7 @@ def tissue_approve(
     repo = draft.get("repo", "")
     issue = int(draft.get("issue", 0))
     try:
-        wf_id = asyncio.run(enqueue_wipe(draft))
+        wf_id = asyncio.run(enqueue_post(draft))
     except Exception as e:
         typer.echo(f"enqueue failed: {e}", err=True)
         raise typer.Exit(1)
@@ -145,11 +145,11 @@ def tissue_approve(
                   repo=repo, issue=issue,
                   draft_chars=len(draft.get("comment", "")))
     _ack(draft_id, "approved", repo=repo, issue=issue,
-         wipe_signal=str(wf_id))
+         post_signal=str(wf_id))
     if wf_id:
-        typer.echo(f"approved {draft_id} → enqueued to wipe-actor")
+        typer.echo(f"approved {draft_id} → enqueued to post-actor")
     else:
-        typer.echo(f"approved {draft_id} → enqueued to wipe inbox "
+        typer.echo(f"approved {draft_id} → enqueued to post inbox "
                    f"(signal pending — actor will catch on next drain)")
 
 

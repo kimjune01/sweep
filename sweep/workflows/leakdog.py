@@ -4,7 +4,7 @@ other workflow's health.
 Today's job: clear the API-budget andon when projected utilization
 has actually recovered. This logic also lives inside the sift
 puller's gate, but a wedged puller can't recover its own andon —
-hence the independent tick. See [[H21]].
+hence the independent tick. See [[O2]].
 
 Future: this daemon is the natural place to surface interface
 leakdog warnings as events when the funnel imbalance crosses a

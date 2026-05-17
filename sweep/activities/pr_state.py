@@ -29,7 +29,7 @@ from sweep.types import (
 # actor → workflow id mapping. Add new entries here when actors get wired.
 # Routing writes to inbox jsonl AND signals the matching Temporal actor.
 # Missing entry → jsonl-only (legacy behavior, no actor consumes it).
-# Routing table: actor name (matches inbox file basename and pr-state
+# Routing table: actor name (matches inbox file basename and remit
 # bucket) → temporal workflow id. SkillActor instances share a single
 # workflow class — they're distinguished only by id. QaActor is its
 # own class (concurrent dispatcher, different shape).
@@ -40,13 +40,14 @@ _ACTOR_WORKFLOW_IDS = {
     "investigate": "investigate-actor",
     "sift":        "sift-actor",
     "tissue":      "tissue-actor",
-    "wipe":        "wipe-actor",
+    "post":        "post-actor",
     "immunize":    "immunize-actor",
     "bless":       "bless-actor",
     "remit":       "remit-actor",
-    "ship":        "ship-actor",
+    "submit":      "submit-actor",
     "compose":     "compose-actor",
     "rope":        "rope-actor",
+    "scout":       "scout-actor",
 }
 
 
@@ -93,7 +94,7 @@ async def gh_search_open_authored(limit: int = 50) -> list[dict]:
     """List my open PRs across GitHub. Returns minimal fields; callers fetch
     detail per PR via gh_pr_view."""
     from sweep import budget
-    budget.set_caller("pr-state")
+    budget.set_caller("remit")
     # Use gh_io.api with a 24h cache instead of a fresh subprocess —
     # identity doesn't change in practice. Same TTL the rest of the
     # codebase uses for `gh api user`. Saves ~1 call per workflow tick.
@@ -117,7 +118,7 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     if "/" not in repo:
         raise ApplicationError("repo must be owner/repo", non_retryable=True)
     from sweep import budget
-    budget.set_caller("pr-state")
+    budget.set_caller("remit")
     try:
         from sweep.cache_policy import PR_STATE_TTL
         data = gh_io.pr_view(repo, pr, ttl=PR_STATE_TTL)
@@ -453,7 +454,7 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
         bucket = "wait"
         reasons.append("no action signal")
 
-    observe.incr(f"pr_state_bucket:{bucket}")
+    observe.incr(f"remit_bucket:{bucket}")
     # Log the classification as an event so retro can read the
     # distribution and pattern-match misclassifications. Counters tell
     # us "n PRs went to bucket X"; the event stream tells us "this
@@ -461,7 +462,7 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     # the level retro needs to spot drift (qa actor looping on the
     # same check, classifier flipping a PR between buckets, etc.).
     observe.event(
-        "pr_state_classified",
+        "remit_classified",
         repo=state.repo,
         pr=state.pr,
         bucket=bucket,
@@ -557,20 +558,21 @@ async def route_classified() -> dict:
         # merge. Ack, observe, drop. Distinct from "wait" which still
         # routes to retro for audit.
         if bucket == "done":
-            observe.event("pr_state_done", repo=repo, pr=pr,
+            observe.event("remit_done", repo=repo, pr=pr,
                           reason=r.get("reason", ""))
             routed["done"] = routed.get("done", 0) + 1
             continue
         actor, intent = BUCKET_ROUTING.get(bucket, ("retro", "audit"))
-        # Stable msg_id from the classification record itself, not call time:
-        # otherwise every cron firing of route_classified produces a new id
-        # for the same (repo, pr) and the actor inbox accumulates duplicates.
-        # The classification's `ts` is the watermark.
-        record_ts = r.get("ts", "")
-        ts_minute = record_ts[:16].replace(":", "-") if record_ts else "unknown"
+        # Stable msg_id per (repo, pr, bucket) — NO timestamp. Without
+        # this, every cron firing of route_classified for the same PR
+        # mints a fresh id and the actor inbox accumulates duplicates
+        # (was 142 rows for one PR in retro before we noticed). The
+        # bucket is part of the key so bucket transitions get their own
+        # id, and downstream inbox_states dedupe naturally collapses
+        # repeated re-routes into one entry.
         slug = repo.replace("/", "-")
         msg = Message(
-            msg_id=f"router-{ts_minute}-{slug}-{pr}",
+            msg_id=f"router-{slug}-{pr}-{bucket}",
             sender="router",
             intent=intent,
             repo=repo,
@@ -587,7 +589,7 @@ async def route_classified() -> dict:
         # commitments" — once a PR is out there, the maintainer is on
         # real-world time and we owe them a response regardless of
         # operator pause/dry state. The only actor that gates on dry is
-        # ship-actor (new-PR-create), enforced at pause_gate.should_idle.
+        # submit-actor (new-PR-create), enforced at pause_gate.should_idle.
         inbox = INBOX_DIR / f"{actor}.jsonl"
         with open(inbox, "a") as f:
             f.write(json.dumps(asdict(msg)) + "\n")
@@ -603,11 +605,11 @@ async def route_classified() -> dict:
 async def deliver_to_inbox(result: PrStateResult) -> str:
     """Append one message to the bucket's destination inbox. Returns the path
     written. Direct synchronous routing — kept for the one-shot CLI path
-    (sweep pr-state run). Prefer deposit_classified + route_classified for
+    (legacy). Prefer deposit_classified + route_classified for
     the Temporal/cron flow.
     """
     if result.bucket == "done":
-        observe.event("pr_state_done", repo=result.repo, pr=result.pr,
+        observe.event("remit_done", repo=result.repo, pr=result.pr,
                       reason=result.reason)
         return f"(done — no inbox; {result.reason})"
     actor, intent = BUCKET_ROUTING[result.bucket]
@@ -615,7 +617,7 @@ async def deliver_to_inbox(result: PrStateResult) -> str:
 
     msg = Message(
         msg_id=_msg_id(result.repo, result.pr, result.bucket),
-        sender="pr-state",
+        sender="remit",
         intent=intent,
         repo=result.repo,
         pr=result.pr,
@@ -631,7 +633,7 @@ async def deliver_to_inbox(result: PrStateResult) -> str:
     INBOX_DIR.mkdir(parents=True, exist_ok=True)
     line = json.dumps(asdict(msg)) + "\n"
     # Dry mode is NOT checked here. Dry means "no new public
-    # commitments" — only ship-actor gates on it (at pause_gate). Once
+    # commitments" — only submit-actor gates on it (at pause_gate). Once
     # a PR exists, the maintainer is on real-world time and we owe them
     # a response regardless of operator pause/dry state.
     inbox = INBOX_DIR / f"{actor}.jsonl"

@@ -96,9 +96,9 @@ async def _run_skill(slash_argv: list[str], label: str,
 # path, not a push.
 #
 # Note: `publish` is the only new-public-commitment intent and is
-# normally consumed by ship-actor (which adds the dry-mode hold and
+# normally consumed by submit-actor (which adds the dry-mode hold and
 # final pre-push checks). respond_cycle is the underlying activity for
-# the push mechanism — ship-actor delegates to it, and respond-actor
+# the push mechanism — submit-actor delegates to it, and respond-actor
 # itself receives publish only on legacy direct routing.
 _DRIP_FLAG = {"publish": "--push", "rebase": "--push", "close": "--check"}
 
@@ -348,7 +348,7 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
             # is exactly the case where tissue earns its keep. Skip
             # for human_gated (the operator is the decider) and shipped
             # (PR speaks for itself). Activity-owned routing — same
-            # pattern as [[H20]]: the wrapper decides, not the skill.
+            # pattern as [[O1]]: the wrapper decides, not the skill.
             if classified["no_fix"] and classified.get("summary"):
                 from sweep.activities.tissue import kick_tissue_card
                 try:

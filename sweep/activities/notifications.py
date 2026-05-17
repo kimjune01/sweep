@@ -3,7 +3,7 @@ every open PR on a cadence.
 
 GitHub's unread bit is the cross-restart watermark. `poll_github_notifications`
 fetches unread threads; `mark_thread_read` is the ack — only called after the
-downstream pr-state classify+deliver succeeds. If the pipe is down or wedged,
+downstream remit classify+deliver succeeds. If the pipe is down or wedged,
 threads stay unread; next poll re-fetches them. Idempotent by construction.
 
 We don't persist a `since` cursor on disk: correctness comes from
@@ -53,7 +53,7 @@ async def poll_github_notifications(since_iso: str | None = None) -> dict:
     """Fetch unread PR notifications. Returns a dict with `threads`
     (list of {thread_id, repo, pr, updated_at, reason}) and
     `poll_interval_s`. Only PullRequest threads; issues/discussions/
-    releases are dropped here (pr-state is PR-only).
+    releases are dropped here (remit is PR-only).
 
     `since_iso` is an optimization: GitHub returns threads updated at or
     after this timestamp. Omit on cold start — GitHub returns all unread.

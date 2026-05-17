@@ -7,11 +7,11 @@ direct fs manipulation) are interchangeable because they all bottom out
 on the same files.
 
 - dry: "no new public commitments / no new work." Narrowly scoped —
-  only ship-actor honors it (at pause_gate.should_idle, the inbox-pull
+  only submit-actor honors it (at pause_gate.should_idle, the inbox-pull
   boundary). Other actors (respond, qa, investigate, etc.) keep
   flowing because once a PR is out there, the maintainer is on
   real-world time and we owe them a response regardless of operator
-  pause/dry state. Cards pile in ship.jsonl while dry is on; `sweep
+  pause/dry state. Cards pile in submit.jsonl while dry is on; `sweep
   dry off` drains. No special code paths — dry is just *time*.
 - paused: forward-pass actors no-op at takt entry; in-flight work
   completes normally. Blanket gate (every actor's main loop calls

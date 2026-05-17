@@ -51,17 +51,17 @@ LOCAL_WINDOW_MINUTES = 15
 # Per-actor share of the hourly limit. Sum > 1.0 by design — these are
 # caps, not reservations; one actor's slack doesn't pass to others.
 SHARES: dict[str, float] = {
-    # Rebalanced 2026-05-16: pr-state is a manual escape hatch
-    # (`sweep pr-state run`), notifications auto-runs every 60s and
-    # is the real PR querier in steady state. Original 40/10 split
-    # was inverted relative to actual traffic.
+    # Notifications auto-runs every 60s and is the real PR querier in
+    # steady state. `remit` covers leakdog's periodic full-scan seeder
+    # (`_seed_unclassified_prs`) — formerly the `pr-state` escape-hatch
+    # share, retired with the CLI in favor of the autonomous tick.
     "notifications": 0.25,
     "sift":          0.18,   # per-issue cycle: cached meta + sometimes issue_events
     "scout":         0.02,   # one search per cycle, alternating sources
     "qa":            0.15,
     "investigate":   0.15,
     "respond":       0.10,
-    "pr-state":      0.10,
+    "remit":         0.10,
 }
 
 # Estimated cost-per-invocation for subprocess actors that bypass

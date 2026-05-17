@@ -11,7 +11,7 @@ Originally lived in `sweep/activities/sift.py`; extracted so both
 the puller (check_pull_conditions) and leakdog daemon can import from
 one place without dragging in sift's full surface.
 
-Per [[H21]], the auto-clear path runs from leakdog's independent tick,
+Per [[O2]], the auto-clear path runs from leakdog's independent tick,
 not just the puller's loop — a wedged puller can't recover its own
 andon. The clear function here is the shared mechanism; the daemon
 calling it is what makes it survive wedge conditions.
@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 # Sift's share of the GitHub core rate limit. Conservative on
-# purpose: pr-state polls every open PR on every cycle, drip does
+# purpose: remit polls every open PR on every cycle, drip does
 # pushes, qa pulls reviews — they all share the same hourly bucket and
 # their loads scale with the number of open PRs, not the operator's
 # tempo. 20% leaves ~4000 calls/hr (5000 × 0.80) for everything

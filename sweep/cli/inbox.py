@@ -68,24 +68,24 @@ def operator_inbox_lines() -> list[str]:
 _ARCHITECTURE_DIAGRAM = """\
 ```
  production
-   rope ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ compose ▸ ship ▸ push
+   rope ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ compose ▸ submit ▸ push
     ▲              └──┬──┘          │
     │                 ▼             ▼
-    │              immunize ▸ tissue ▸ wipe
+    │              immunize ▸ tissue ▸ post
     │
     └── idle signals from investigate / qa (rope regulates scout depth)
 
- engagement (post-ship)
+ engagement (post-submit)
    notifs ▸ remit ┬▸ respond      auto: rebase / close / clarify
                   ├▸ qa           re-attest on CI flip
                   ├▸ investigate  maintainer raised a new in-PR concern
                   └▸ human        you — the manual peer to respond
 
  side-channels
-   leakdog ▸ bless ┬▸ tissue-drafts ▸ wipe
+   leakdog ▸ bless ┬▸ tissue-drafts ▸ post
                    └▸ human-issues
 
-   · dry holds at ship · everything else flows on real-world time
+   · dry holds at submit · everything else flows on real-world time
 ```
 """
 

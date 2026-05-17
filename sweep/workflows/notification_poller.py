@@ -1,16 +1,17 @@
 """NotificationPoller — push-shaped replacement for periodic full PR scans.
 
 Polls GitHub's notifications endpoint every POLL_INTERVAL_S. For each
-unread PR thread, reuses the existing pr-state activities
+unread PR thread, reuses the existing remit classify+route activities
 (`gh_pr_view` → `classify_one_pr` → `deliver_to_inbox`) and then
 acks via `mark_thread_read`. Marking-read is the watermark; if a tick
 fails partway through, the unprocessed threads stay unread and the
 next poll re-fetches them.
 
-Tradeoff vs. PrStateWorkflow's full-scan: this only touches PRs whose
-state actually changed (review_requested, mention, state_change, etc.),
-so it's ~20x cheaper than rescanning all open authored PRs on a cadence.
-PrStateWorkflow stays as a manual escape hatch (`sweep pr-state run`).
+Tradeoff vs. a full-scan: this only touches PRs whose state actually
+changed (review_requested, mention, state_change, etc.), so it's ~20x
+cheaper than rescanning all open authored PRs on a cadence. Leakdog's
+`_seed_unclassified_prs` tick covers the safety-net rescan for PRs no
+notification ever fired for.
 """
 
 from __future__ import annotations
@@ -89,7 +90,7 @@ class NotificationPoller:
                     # the classify-and-route policy now; the poller is a
                     # dumb emitter (its only job: turn GitHub
                     # notifications into local cards). This keeps the
-                    # post-ship engagement loop first-class instead of
+                    # post-submit engagement loop first-class instead of
                     # buried inside the poller's tick.
                     await workflow.execute_activity(
                         kick_remit_card,
