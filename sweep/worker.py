@@ -26,7 +26,7 @@ from sweep.activities.sift import (
     auto_evict_stale_repos,
     loosen_floor,
     sift_cycle,
-    prospect_one_pass,
+    sift_one_pass,
     should_triage_issue,
 )
 from sweep.activities.scout import scout_cycle
@@ -98,7 +98,7 @@ async def _amain() -> None:
             scout_cycle,
             sift_cycle, should_triage_issue,
             loosen_floor, auto_evict_stale_repos,
-            prospect_one_pass,  # legacy star-cursor path, kept as escape hatch
+            sift_one_pass,  # legacy star-cursor path, kept as escape hatch
             # worktree + cockpit view-layer markers
             ensure_worktree, mark_started, mark_acked,
             record_andon, clear_andon_marker,

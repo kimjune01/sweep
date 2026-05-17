@@ -1,10 +1,10 @@
 """Sift — per-issue screen. The live actor is `sift_cycle` (one
 card = one issue, filter inline, ≤1 fresh gh call). This module also
-still hosts the legacy star-cursor `prospect_one_pass` path used by
+still hosts the legacy star-cursor `sift_one_pass` path used by
 `sweep sift run` as an escape hatch. Cursor doc below describes that
 legacy path.
 
-The star cursor moves at whatever rate it moves. Each `prospect_one_pass` invocation
+The star cursor moves at whatever rate it moves. Each `sift_one_pass` invocation
 walks a budget-bounded chunk of repos below the current star cursor, filters
 out the ones that don't pass auxiliary checks, scrapes actionable issues from
 the remaining repos, dedupes against ~/.sweep/seen/issues.txt, and deposits
@@ -33,7 +33,7 @@ from sweep.io_safe import atomic_write_text
 from sweep.types import Message
 
 
-CURSOR_FILE = Path.home() / ".sweep" / "cursors" / "prospect.json"
+CURSOR_FILE = Path.home() / ".sweep" / "cursors" / "sift_legacy.json"
 TRIAGED_INBOX = Path.home() / ".sweep" / "inbox" / "triaged.jsonl"
 DEFAULT_CEILING = 10**9   # First lap starts from "any stars."
 FLOOR = 100               # Below this, lap is over; next call resets.
@@ -43,7 +43,7 @@ FLOOR = 100               # Below this, lap is over; next call resets.
 
 
 @dataclass
-class ProspectRunRequest:
+class SiftRunRequest:
     # Recency-first: issues are the origin. Each pass searches
     # GitHub for issues created in the last `days` window, dedupes
     # against the seen set, runs them through the deterministic
@@ -83,7 +83,7 @@ class IssueCandidate:
 
 
 @dataclass
-class ProspectPassResult:
+class SiftPassResult:
     repos_visited: int
     repos_processed: int
     issues_found: int
@@ -135,7 +135,7 @@ async def gh_search_repos_below_stars(stars_ceiling: int, limit: int,
                                        languages: list[str]) -> list[RepoCandidate]:
     """Fetch the next `limit` repos with stars < ceiling, descending stars."""
     from sweep import budget as _budget
-    _budget.set_caller("prospect")
+    _budget.set_caller("sift")
     if stars_ceiling <= 0:
         return []
     q_parts = [f"stars:<{stars_ceiling}", "is:public", "archived:false"]
@@ -177,7 +177,7 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
         (jellyfin-tui cascade, ytmusic-deleter, immich, etc.)
       • H2a — big repos (>5k stars) gate contributors on standing; if we
         have no warmth in the org, our PRs die in review. Skip them at
-        prospect time instead of paying triage tokens to discover that.
+        sift time instead of paying triage tokens to discover that.
     """
     if repo.is_archived:
         return False
@@ -216,7 +216,7 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
             import asyncio as _asyncio
             from sweep.activities.immunize import kick_immunize_card
             _asyncio.create_task(kick_immunize_card(
-                repo.name_with_owner, None, source="prospect-lightweight",
+                repo.name_with_owner, None, source="sift-lightweight",
             ))
         except Exception:
             pass
@@ -233,8 +233,8 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
 BIG_REPO_STAR_THRESHOLD = 10000
 
 
-_KILL_LIST_PATH = Path.home() / ".sweep" / "control" / "prospect_kill_list.txt"
-_EVICTED_PATH = Path.home() / ".sweep" / "control" / "prospect_evicted.txt"
+_KILL_LIST_PATH = Path.home() / ".sweep" / "control" / "sift_kill_list.txt"
+_EVICTED_PATH = Path.home() / ".sweep" / "control" / "sift_evicted.txt"
 
 # Auto-eviction threshold: this many consecutive losses (closed-unmerged
 # OR open-and-hanging-past-TTL) in one repo → evict. Three is the
@@ -296,10 +296,10 @@ async def gh_search_actionable_issues(repo: str, limit: int) -> list[IssueCandid
     """Open issues with maintainer-intent labels, no assignee, with no
     PR (any state) referencing them.
 
-    Dedup is a feature of prospecting: never surface an issue that has any
+    Dedup is a feature of sifting: never surface an issue that has any
     related PR alive or dead. A live PR means someone's working on it; a
     dead PR (closed/merged) means it's already been addressed or was
-    explicitly rejected. Either way, prospect's job is to find work nobody
+    explicitly rejected. Either way, sift's job is to find work nobody
     has touched.
 
     Why we hit /search/issues directly instead of `gh search issues`:
@@ -312,7 +312,7 @@ async def gh_search_actionable_issues(repo: str, limit: int) -> list[IssueCandid
     direct control over the quoting that reaches the search backend.
     """
     from sweep import budget as _budget
-    _budget.set_caller("prospect")
+    _budget.set_caller("sift")
     if "/" not in repo:
         raise ApplicationError("repo must be owner/repo", non_retryable=True)
 
@@ -528,21 +528,21 @@ def _read_int_knob(name: str, default: int, *, lo: int = 1, hi: int = 1000) -> i
 def _search_limit() -> int:
     """Cap on issues returned per pass from the global gh_search. Each
     survivor costs one `issue_events` call downstream — this is the
-    biggest single lever on prospect's hourly gh budget."""
-    return _read_int_knob("prospect_search_limit",
+    biggest single lever on sift's hourly gh budget."""
+    return _read_int_knob("sift_search_limit",
                           PROSPECT_SEARCH_LIMIT_DEFAULT)
 
 
 def _warm_org_fan_out_cap() -> int:
     """Max warm orgs visited per pass. With the cap, _merge_warm_org_issues
     round-robins via the cursor below so coverage amortizes across passes."""
-    return _read_int_knob("prospect_warm_org_fan_out_cap",
+    return _read_int_knob("sift_warm_org_fan_out_cap",
                           PROSPECT_WARM_ORG_FAN_OUT_CAP_DEFAULT, hi=100)
 
 
 def _warm_org_issue_limit() -> int:
     """Per-warm-org issue cap inside _merge_warm_org_issues."""
-    return _read_int_knob("prospect_warm_org_issue_limit",
+    return _read_int_knob("sift_warm_org_issue_limit",
                           PROSPECT_WARM_ORG_ISSUE_LIMIT_DEFAULT, hi=200)
 
 
@@ -554,7 +554,7 @@ def _min_issue_age_minutes() -> int:
     short delay catches most of these for one cheap timestamp check.
     Cedes a small first-mover advantage on issues no maintainer will
     engage with, which is acceptable because that's not our edge anyway."""
-    return _read_int_knob("prospect_min_issue_age_minutes",
+    return _read_int_knob("sift_min_issue_age_minutes",
                           PROSPECT_MIN_ISSUE_AGE_MINUTES_DEFAULT, hi=120)
 
 
@@ -788,7 +788,7 @@ async def auto_evict_stale_repos() -> dict:
     """Walk recent PR outcomes, group by repo, find repos with
     EVICTION_LOSS_THRESHOLD consecutive losses (closed-unmerged or
     open-but-hanging-past-EVICTION_HANGING_DAYS), append to
-    ~/.sweep/control/prospect_evicted.txt. Idempotent — duplicates
+    ~/.sweep/control/sift_evicted.txt. Idempotent — duplicates
     are deduped on read. Returns {evicted_new, evicted_total}.
     """
     import datetime as _dt
@@ -1042,14 +1042,14 @@ async def _screen_one_issue(msg: Message) -> dict:
 
 
 @activity.defn
-async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
+async def sift_one_pass(req: SiftRunRequest) -> SiftPassResult:
     """One sweep step. Descend the star cursor by `budget` repos, surface
     actionable issues from the ones that pass lightweight filters."""
     if retro_state.is_halted():
         # Backpressure from the retro pager. Forward pass stops until the
         # human Attends to at least one of the pending SOAP one-pagers.
         observe.incr("halted_skip:sift")
-        return ProspectPassResult(
+        return SiftPassResult(
             repos_visited=0, repos_processed=0, issues_found=0,
             delivered_msg_ids=[],
             cursor_before=_load_cursor(), cursor_after=_load_cursor(),
@@ -1059,7 +1059,7 @@ async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
         # Operator-initiated soft-pause. Same no-op shape as the retro
         # halt — in-flight work elsewhere keeps running.
         observe.incr("paused_skip:sift")
-        return ProspectPassResult(
+        return SiftPassResult(
             repos_visited=0, repos_processed=0, issues_found=0,
             delivered_msg_ids=[],
             cursor_before=_load_cursor(), cursor_after=_load_cursor(),
@@ -1104,13 +1104,13 @@ async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
     cursor_after = lowest_stars if repos else cursor_before
     _save_cursor(cursor_after, lap_reset=lap_reset)
 
-    observe.incr("prospect_repos_visited", len(repos))
-    observe.incr("prospect_repos_processed", processed)
-    observe.incr("prospect_issues_found", issues_found)
+    observe.incr("sift_repos_visited", len(repos))
+    observe.incr("sift_repos_processed", processed)
+    observe.incr("sift_issues_found", issues_found)
     if lap_reset:
-        observe.incr("prospect_lap_reset")
+        observe.incr("sift_lap_reset")
     observe.event(
-        "prospect_pass",
+        "sift_pass",
         cursor_before=cursor_before,
         cursor_after=cursor_after,
         repos_visited=len(repos),
@@ -1119,7 +1119,7 @@ async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
         lap_reset=lap_reset,
     )
 
-    return ProspectPassResult(
+    return SiftPassResult(
         repos_visited=len(repos),
         repos_processed=processed,
         issues_found=issues_found,

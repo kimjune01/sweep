@@ -48,7 +48,7 @@ _api_budget_cache: dict = {"ts": 0.0, "block_reason": None}
 
 
 def _budget_andon_path() -> Path:
-    return Path.home() / ".sweep" / "control" / "andon" / "prospect_puller.json"
+    return Path.home() / ".sweep" / "control" / "andon" / "api_budget.json"
 
 
 def _record_budget_andon(reason: str) -> None:
@@ -61,7 +61,7 @@ def _record_budget_andon(reason: str) -> None:
     path = _budget_andon_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "actor": "prospect_puller",
+        "actor": "api_budget",
         "msg_id": "(api budget watchdog)",
         "reason": reason[:500],
         "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
@@ -94,7 +94,7 @@ def _api_budget_block() -> str | None:
     GitHub docs), so polling it is free.
 
     Cursor-safe: a `False` from this function makes the puller idle
-    without invoking `prospect_one_pass`, so the stars cursor stays put."""
+    without invoking `sift_one_pass`, so the stars cursor stays put."""
     import json as _json
     import subprocess as _sp
     import time as _time

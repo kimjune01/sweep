@@ -1,7 +1,7 @@
 """`sweep sift …` — legacy star-cursor sweep escape hatch.
 
 The live pipeline is scout (search) → sift (per-issue screen). This
-CLI fires the legacy `prospect_one_pass` star-cursor activity directly,
+CLI fires the legacy `sift_one_pass` star-cursor activity directly,
 useful for one-off backfills and debugging. The actor and the routine
 runbook do not use it."""
 
@@ -16,8 +16,8 @@ import typer
 
 from sweep.activities.sift import (
     CURSOR_FILE,
-    ProspectRunRequest,
-    prospect_one_pass,
+    SiftRunRequest,
+    sift_one_pass,
 )
 
 
@@ -32,13 +32,13 @@ def sift_run(
     floor: int = typer.Option(100, help="Star floor — below this, lap resets"),
 ) -> None:
     """One pass: descend the star cursor, deposit actionable issues into triaged.jsonl."""
-    req = ProspectRunRequest(
+    req = SiftRunRequest(
         budget=budget,
         issue_limit_per_repo=issue_limit,
         languages=list(language),
         floor=floor,
     )
-    result = asyncio.run(prospect_one_pass(req))
+    result = asyncio.run(sift_one_pass(req))
     print(json.dumps(asdict(result), indent=2))
 
 

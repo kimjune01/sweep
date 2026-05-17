@@ -6,7 +6,7 @@ on parse failure: if Claude Code reformats the /usage output, halt
 the poller so the operator notices the staleness within one cycle
 rather than seeing a frozen number for days.
 
-Mirrors the older ProspectPuller shape but is much simpler (no demand
+Mirrors the older actor-puller shape but is much simpler (no demand
 gating — usage info is always wanted while the pipeline is up).
 """
 

@@ -213,8 +213,8 @@ async def kick_scout_card(sender: str) -> str | None:
 
     Fires from leakdog (heartbeat when sift's inbox runs dry) and
     from triage acks (downstream consumed; refill). Mirrors the old
-    kick_prospect_card surface but targets scout — sift no longer
-    has a "schedule a search" card type, only "screen this issue".
+    Sift no longer has a "schedule a search" card type, only
+    "screen this issue" — that scheduling responsibility moved here.
     """
     from sweep.activities.pr_state import _signal_actor
     ts = dt.datetime.now(dt.timezone.utc)
