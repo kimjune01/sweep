@@ -20,37 +20,49 @@ from sweep.system import system_status
 # Two caps per station — queue (backpressure) vs in-flight (concurrency).
 # Humans have deeper queues; LLM actors stay shallow.
 CAPS: dict[str, dict[str, int | None]] = {
-    "scout":       {"queued": 3, "in_flight": 1},   # search cards from triage/heartbeat
-    "sift":        {"queued": 100, "in_flight": 1}, # issue cards from scout (fan-out of one search)
-    "triaged":     {"queued": 10, "in_flight": 3},  # LLM, fan-out friendly
-    "investigate": {"queued": 5, "in_flight": 5},   # LLM, root-causing
-    "immunize":    {"queued": 10, "in_flight": 1},  # anti-AI routing to slop-offer
-    "tissue":      {"queued": 5, "in_flight": 1},   # side-hatch comment drafts
-    "bless":       {"queued": 5, "in_flight": 1},   # response classifier-router
-    "post":        {"queued": 5, "in_flight": 1},   # operator-approved posts
-    "qa":          {"queued": 5, "in_flight": 5},   # LLM, gates
-    "respond":     {"queued": 5, "in_flight": 1},   # auto-responder (rebase/close/publish via /drip)
-    "human": {"queued": 8, "in_flight": 2},   # you — real backlog signal
-    "retro":       {"queued": None, "in_flight": None},  # in-review — geometry, not backlog
+    "scout":         {"queued": 3, "in_flight": 1},   # search cards from triage/heartbeat
+    "sift":          {"queued": 100, "in_flight": 1}, # issue cards from scout (fan-out of one search)
+    "triaged":       {"queued": 10, "in_flight": 3},  # LLM, fan-out friendly
+    "investigate":   {"queued": 5, "in_flight": 5},   # LLM, root-causing (production)
+    "reinvestigate": {"queued": 5, "in_flight": 2},   # engagement-lane investigate
+    "immunize":      {"queued": 10, "in_flight": 1},  # anti-AI routing to slop-offer
+    "tissue":        {"queued": 5, "in_flight": 1},   # side-hatch comment drafts
+    "bless":         {"queued": 5, "in_flight": 1},   # response classifier-router
+    "post":          {"queued": 5, "in_flight": 1},   # operator-approved posts
+    "qa":            {"queued": 5, "in_flight": 5},   # LLM, gates (production)
+    "reqa":          {"queued": 5, "in_flight": 2},   # engagement-lane qa
+    "respond":       {"queued": 5, "in_flight": 1},   # auto-responder (rebase/close/publish via /drip)
+    "human":         {"queued": 8, "in_flight": 2},   # you — real backlog signal
+    "retro":         {"queued": None, "in_flight": None},  # in-review — geometry, not backlog
 }
 
 # Display names for the compressed flow line above the table. Differs from
 # the table's actor-key column to read closer to the natural pipeline names.
+# Engagement-lane actors get re- prefix to mark the sibling relationship.
 FLOW_NAMES: dict[str, str] = {
-    "scout":       "Scout",
-    "sift":        "Sift",
-    "triaged":     "Triage",
-    "investigate": "Investigate",
-    "immunize":    "Immunize",
-    "tissue":      "Tissue",
-    "bless":       "Bless",
-    "post":        "Post",
-    "qa":          "QA",
-    "respond":     "Respond",
-    "retro":       "In Review",
-    "human":       "Human",
+    "scout":         "Scout",
+    "sift":          "Sift",
+    "triaged":       "Triage",
+    "investigate":   "Investigate",
+    "reinvestigate": "Re-investigate",
+    "immunize":      "Immunize",
+    "tissue":        "Tissue",
+    "bless":         "Bless",
+    "post":          "Post",
+    "qa":            "QA",
+    "reqa":          "Re-QA",
+    "respond":       "Respond",
+    "retro":         "In Review",
+    "human":         "Human",
 }
-FLOW_ORDER = ("scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "post", "qa", "respond", "retro", "human")
+# Order interleaves the engagement-lane sibling next to its production
+# counterpart so the operator sees both lanes' state at the same glance
+# (investigate+reinvestigate, qa+reqa). Same skill, different application.
+FLOW_ORDER = ("scout", "sift", "triaged", "immunize",
+              "investigate", "reinvestigate",
+              "tissue", "bless", "post",
+              "qa", "reqa",
+              "respond", "retro", "human")
 
 def register(app: typer.Typer) -> None:
     """Attach the cockpit command to a top-level Typer app."""
@@ -121,7 +133,11 @@ def _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode) 
 
 
 def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
-    actionable = ["scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "post", "qa", "respond", "human"]
+    actionable = ["scout", "sift", "triaged", "immunize",
+                  "investigate", "reinvestigate",
+                  "tissue", "bless", "post",
+                  "qa", "reqa",
+                  "respond", "human"]
     if include_wait:
         actionable = actionable + ["retro"]
 
