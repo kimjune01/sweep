@@ -27,11 +27,7 @@ with workflow.unsafe.imports_passed_through():
         poll_github_notifications,
     )
     from sweep.activities.pause_gate import should_idle
-    from sweep.activities.pr_state import (
-        classify_one_pr,
-        deliver_to_inbox,
-        gh_pr_view,
-    )
+    from sweep.activities.remit import kick_remit_card
 
 
 @workflow.defn
@@ -89,21 +85,17 @@ class NotificationPoller:
                 if not (repo and pr and thread_id):
                     continue
                 try:
-                    state = await workflow.execute_activity(
-                        gh_pr_view,
-                        args=[repo, pr],
-                        start_to_close_timeout=timedelta(seconds=30),
-                        retry_policy=RetryPolicy(maximum_attempts=2),
-                    )
-                    classified = await workflow.execute_activity(
-                        classify_one_pr,
-                        state,
-                        start_to_close_timeout=timedelta(seconds=10),
-                    )
+                    # Emit a raw card to remit-actor's inbox. Remit owns
+                    # the classify-and-route policy now; the poller is a
+                    # dumb emitter (its only job: turn GitHub
+                    # notifications into local cards). This keeps the
+                    # post-ship engagement loop first-class instead of
+                    # buried inside the poller's tick.
                     await workflow.execute_activity(
-                        deliver_to_inbox,
-                        classified,
+                        kick_remit_card,
+                        args=[repo, pr],
                         start_to_close_timeout=timedelta(seconds=5),
+                        retry_policy=RetryPolicy(maximum_attempts=2),
                     )
                 except Exception as e:
                     # Don't ack — thread stays unread, next poll retries.

@@ -43,6 +43,7 @@ _ACTOR_WORKFLOW_IDS = {
     "wipe":        "wipe-actor",
     "immunize":    "immunize-actor",
     "bless":       "bless-actor",
+    "remit":       "remit-actor",
 }
 
 

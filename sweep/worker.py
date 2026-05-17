@@ -35,6 +35,7 @@ from sweep.activities.notifications import (
     poll_github_notifications,
 )
 from sweep.activities.skill_runner import respond_cycle, investigate_cycle, triage_cycle
+from sweep.activities.remit import kick_remit_card, remit_cycle
 from sweep.activities.bless import bless_cycle
 from sweep.activities.immunize import immunize_cycle
 from sweep.activities.tissue import tissue_cycle, wipe_cycle
@@ -77,6 +78,11 @@ async def _amain() -> None:
             infer_test_cmd, claim_issue,
             # skill-shelling actors (respond + triage + investigate via SkillActor)
             respond_cycle, triage_cycle, investigate_cycle,
+            # remit — router for raw PR-state cards. Adapter activity
+            # around classify_one_pr + deliver_to_inbox; pulls the
+            # classify-and-route loop out of NotificationPoller into
+            # a first-class actor on the post-ship engagement cycle.
+            remit_cycle, kick_remit_card,
             # tissue (drafts) + wipe (posts) — side-hatch on no-fix
             # investigations. tissue drafts, wipe posts; separation of
             # concerns means LLM hiccups and gh hiccups don't share an
