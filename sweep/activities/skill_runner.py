@@ -337,6 +337,60 @@ async def investigate_cycle(msg: Message) -> dict:
                           error_type=type(e).__name__, error=str(e)[:200])
 
 
+async def _kick_human_decision(repo: str, pr: int, *,
+                               signal: str, summary: str,
+                               artifact_path: str) -> str | None:
+    """Punt-to-inbox: skill ran, applied its go-with-the-flow heuristic,
+    couldn't pick — operator gets the artifact in their inbox to
+    decide. Last resort, AFTER the skill has already tried. The card
+    carries enough context (hygraph path + summary line) for the
+    operator to open the artifact and pick.
+
+    Routes to the human bucket via the standard router shape; human
+    is view-only, so the jsonl write IS the surface (cockpit's 📥
+    chip + `sweep inbox actor human`)."""
+    import datetime as _dt
+    import json as _json
+    from dataclasses import asdict as _asdict
+    from sweep.types import Message
+    from sweep.activities.pr_state import _signal_actor
+
+    ts = _dt.datetime.now(_dt.timezone.utc)
+    slug = repo.replace("/", "-")
+    msg_id = f"investigate-decision-{slug}-{pr}-{signal}"
+    msg = Message(
+        msg_id=msg_id,
+        sender="investigate",
+        intent="decide",
+        repo=repo,
+        pr=pr,
+        branch=None,
+        payload={
+            "signal": signal,
+            "summary": summary,
+            "artifact_path": artifact_path,
+            "reason": "skill's go-with-the-flow heuristic couldn't pick",
+        },
+        ts=ts.isoformat(),
+    )
+    inbox = Path.home() / ".sweep" / "inbox" / "human.jsonl"
+    inbox.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(inbox, "a") as f:
+            f.write(_json.dumps(_asdict(msg)) + "\n")
+    except Exception as e:
+        from sweep import observe
+        observe.event("human_decision_card_write_failed",
+                      repo=repo, pr=pr,
+                      error_type=type(e).__name__, error=str(e)[:200])
+        return None
+    from sweep import observe
+    observe.event("human_decision_card_deposited",
+                  repo=repo, pr=pr,
+                  signal=signal, summary=summary[:200])
+    return await _signal_actor("human", msg)
+
+
 async def _investigate_cycle_inner(msg: Message) -> dict:
     ref = f"{msg.repo}#{msg.pr}"
     from sweep import budget as _budget, observe, skill_result
@@ -446,6 +500,29 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                                   repo=msg.repo, issue=msg.pr,
                                   error_type=type(e).__name__,
                                   error=str(e)[:200])
+
+            # Ambiguous case: skill ran, classifier returned a signal
+            # but none of the routing branches matched (not no-fix, not
+            # produced-pr, not human-gated — e.g. "three options,
+            # awaiting choice" shape). The substrate's rule: when in
+            # doubt, route to operator inbox so the work is visible.
+            # Punt-to-inbox is the andon for skill-side ambiguity.
+            if (not classified["produced_pr"]
+                    and not classified["no_fix"]
+                    and not classified["human_gated"]
+                    and classified.get("summary")):
+                try:
+                    await _kick_human_decision(
+                        msg.repo, msg.pr,
+                        signal=classified["signal"],
+                        summary=classified["summary"],
+                        artifact_path=str(artifact),
+                    )
+                except Exception as e:
+                    observe.event("kick_human_failed",
+                                  repo=msg.repo, issue=msg.pr,
+                                  error_type=type(e).__name__,
+                                  error=str(e)[:200])
             return result
 
     # Artifact missing or unclassifiable — degraded mode. Try the
@@ -501,10 +578,23 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
 
 
 def _investigate_artifact_path(repo: str, issue: int):
-    """Per-issue hypothesis graph: repo-hypotheses/<owner>__<repo>__<issue>.md"""
+    """Per-issue hypothesis graph: prefer the new
+    repo-hypotheses/<owner>__<repo>__<issue>.md convention. Falls
+    back to the old <owner>-<repo>.md (per-repo, no issue suffix)
+    when the new file doesn't yet exist but the old one does — the
+    wild-linker/wild#1924 case where reinvestigate's classifier
+    couldn't find its own artifact because the file was at the old
+    path. New writes always go to the new convention; this just
+    keeps the read side from missing legacy files."""
     from pathlib import Path
-    slug = repo.replace("/", "__")
-    return Path("/Users/junekim/Documents/sweep/repo-hypotheses") / f"{slug}__{issue}.md"
+    root = Path("/Users/junekim/Documents/sweep/repo-hypotheses")
+    new = root / f"{repo.replace('/', '__')}__{issue}.md"
+    if new.exists():
+        return new
+    old = root / f"{repo.replace('/', '-')}.md"
+    if old.exists():
+        return old
+    return new  # new path is the canonical destination for writes
 
 
 # Vocabulary the /investigate skill actually writes into halt sections.
