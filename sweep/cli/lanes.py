@@ -31,7 +31,7 @@ STATIONS = [
     ("triaged",     "triaged"),
     ("investigate", "investigate"),
     ("qa",          "qa"),
-    ("drip",        "drip"),
+    ("respond",     "respond"),
     ("retro",       "in review"),
     ("respondable", "respondable"),
 ]
@@ -177,7 +177,7 @@ _PROVENANCE_TOKENS: dict[str, callable] = {
     "immunize_skipped":     lambda e: f"💉skip:{(e.get('reason') or '?')[:8]}",
     "pr_state_classified":  lambda e: f"🔀{(e.get('bucket') or '?')[:6]}",
     "qa_converged":         lambda e: f"✅qa:{(e.get('verdict') or '?')[:4]}",
-    "drip_done":            lambda e: ("🚀pushed" if e.get("pushed") else "💧noop"),
+    "respond_done":         lambda e: ("🚀pushed" if e.get("pushed") else "💧noop"),
 }
 
 
@@ -339,25 +339,25 @@ def render_leakdog(hours: int = 24) -> list[str]:
     qa_done = count("qa_converged")
     qa_pending = _inbox_pending("qa") + invest_human_gated
 
-    # qa → drip: PRs that qa passed should hit drip for a push.
+    # qa → respond: PRs that qa passed should hit respond for a push.
     # screened = qa failures (verdict != pass).
     qa_pass = aged("qa_converged", lag_minutes=30,
                    pred=lambda e: e.get("verdict") == "pass")
     qa_fail = count("qa_converged",
                     pred=lambda e: e.get("verdict") != "pass")
-    drip_done = count("drip_done")
-    drip_pending = _inbox_pending("drip")
+    respond_done = count("respond_done")
+    respond_pending = _inbox_pending("respond")
 
-    # drip → ship: pushed drips should result in a PR pr-state can see.
+    # respond → ship: pushed responses should result in a PR pr-state can see.
     # Distinct (repo, pr) pairs in pr_state_classified within the
     # window is the closest proxy we have for "actually shipped".
-    drip_pushed = aged("drip_done", lag_minutes=30,
-                       pred=lambda e: e.get("pushed"))
+    respond_pushed = aged("respond_done", lag_minutes=30,
+                          pred=lambda e: e.get("pushed"))
     shipped_keys = {(e.get("repo"), e.get("pr")) for e in events
                     if e.get("kind") == "pr_state_classified"}
     shipped = len(shipped_keys)
-    drip_not_pushed = count("drip_done",
-                            pred=lambda e: not e.get("pushed"))
+    respond_not_pushed = count("respond_done",
+                               pred=lambda e: not e.get("pushed"))
 
     # side-hatch: investigate → tissue → wipe → post.
     # Three hops, each with its own event balance:
@@ -406,8 +406,8 @@ def render_leakdog(hours: int = 24) -> list[str]:
         ("engagement  → bless",       bless_cards,     bless_routed,   bless_skipped,    bless_pending),
         ("tissue      → wipe",        tissue_drafted,  tissue_approved, tissue_discarded, tissue_drafts_pending),
         ("wipe        → post",        tissue_approved, wipe_posted,    wipe_failed,      wipe_pending),
-        ("qa          → drip",        qa_pass,         drip_done,      qa_fail,          drip_pending),
-        ("drip        → ship",        drip_pushed,     shipped,        drip_not_pushed,  0),
+        ("qa          → respond",     qa_pass,         respond_done,   qa_fail,          respond_pending),
+        ("respond     → ship",        respond_pushed,  shipped,        respond_not_pushed, 0),
     ]
 
     lines = [

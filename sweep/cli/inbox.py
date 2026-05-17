@@ -61,6 +61,45 @@ def operator_inbox_lines() -> list[str]:
     return lines
 
 
+# Static architecture diagram shown when the human inbox is empty.
+# Empty inbox = pipe is humming without needing you, so we use the
+# real estate to explain the shape of the system instead of repeating
+# counts that cockpit/lanes already render.
+_ARCHITECTURE_DIAGRAM = """\
+```
+ production                              defense
+ ══════════                              ═══════
+ ┌────────┐
+ │ scout  │
+ └───┬────┘
+     ▼
+ ┌────────┐  (inline evict gate — drops low-rank PRs)
+ │  sift  │ ──────────────────────────┐
+ └───┬────┘                           │
+     ▼                                ▼
+ ┌────────┐                      ┌──────────┐
+ │ triage │ ────────────────────▶│ immunize │── ack draft ──┐
+ └───┬────┘                      └──────────┘               │
+     ▼                                                      │
+ ┌──────────────┐                ┌──────────┐               │
+ │ investigate  │ ── no fix ────▶│  tissue  │               │
+ └──────┬───────┘                └────┬─────┘               │
+        ▼                             │ operator OK         │
+    ┌────────┐                        ▼                     │
+    │   qa   │                   ┌──────────┐               │
+    └───┬────┘                   │   wipe   │◀──────────────┘
+        ▼                        └──────────┘  post / close
+    ┌────────┐
+    │  drip  │                   ┌──────────┐
+    └───┬────┘       leakdog ───▶│  bless   │  classify reply
+        ▼                        └──────────┘  → tissue-drafts or
+ ┌─────────────┐                                respondable-issues
+ │ respondable │  ← PR work needs you
+ └─────────────┘
+```
+"""
+
+
 @inbox_app.callback(invoke_without_command=True)
 def inbox_default(ctx: typer.Context) -> None:
     """What you owe: actionable retros + respondable PRs."""
@@ -69,6 +108,8 @@ def inbox_default(ctx: typer.Context) -> None:
     lines = operator_inbox_lines()
     print(f"# inbox ({len(lines)})")
     if not lines:
+        print()
+        print(_ARCHITECTURE_DIAGRAM)
         return
     print()
     for line in lines:
@@ -80,7 +121,7 @@ def actor_inspect(
     actor: str = typer.Argument(..., help="triaged | investigate | qa | drip | respondable | retro"),
 ) -> None:
     """Dump one actor's inbox jsonl, dedupe by msg_id, show acked vs unacked."""
-    valid = {"triaged", "investigate", "qa", "drip", "respondable", "retro"}
+    valid = {"triaged", "investigate", "qa", "respond", "respondable", "retro"}
     if actor not in valid:
         raise typer.BadParameter(
             f"unknown actor {actor!r}; pick one of {'|'.join(sorted(valid))}"

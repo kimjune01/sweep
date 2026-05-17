@@ -29,7 +29,7 @@ CAPS: dict[str, dict[str, int | None]] = {
     "bless":       {"queued": 5, "in_flight": 1},   # response classifier-router
     "wipe":        {"queued": 5, "in_flight": 1},   # operator-approved posts
     "qa":          {"queued": 5, "in_flight": 5},   # LLM, gates
-    "drip":        {"queued": 5, "in_flight": 1},   # LLM, one push at a time
+    "respond":     {"queued": 5, "in_flight": 1},   # auto-responder (rebase/close/publish via /drip)
     "respondable": {"queued": 8, "in_flight": 2},   # you — real backlog signal
     "retro":       {"queued": None, "in_flight": None},  # in-review — geometry, not backlog
 }
@@ -46,11 +46,11 @@ FLOW_NAMES: dict[str, str] = {
     "bless":       "Bless",
     "wipe":        "Wipe",
     "qa":          "QA",
-    "drip":        "Drip",
+    "respond":     "Respond",
     "retro":       "In Review",
     "respondable": "Respondable",
 }
-FLOW_ORDER = ("scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "retro", "respondable")
+FLOW_ORDER = ("scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "respond", "retro", "respondable")
 
 def register(app: typer.Typer) -> None:
     """Attach the cockpit command to a top-level Typer app."""
@@ -121,7 +121,7 @@ def _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode) 
 
 
 def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
-    actionable = ["scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "respondable"]
+    actionable = ["scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "respond", "respondable"]
     if include_wait:
         actionable = actionable + ["retro"]
 

@@ -5,7 +5,7 @@ Each "shell out to claude --print '/<skill>'" activity goes through
 shape (FileNotFoundError / TimeoutExpired / non-zero rc → non-retryable
 ApplicationError so SkillActor's andon cord catches them).
 
-Per-skill activities (`drip_cycle`, `triage_cycle`) build their own
+Per-skill activities (`respond_cycle`, `triage_cycle`) build their own
 slash argv from the Message, then delegate. This replaces the older
 per-skill activity modules (sweep/activities/drip.py) which duplicated
 the same scaffold each time.
@@ -90,21 +90,28 @@ async def _run_skill(slash_argv: list[str], label: str,
 
 # ------------------------------------------------------------ drip
 
-# Drip intents map to /drip skill flags. ship/rebase both push (the
-# skill handles the rebase-and-force-push case internally); close is
-# a check-and-comment path, not a push.
-_DRIP_FLAG = {"ship": "--push", "rebase": "--push", "close": "--check"}
+# Drip intents map to /drip skill flags. publish (new PR creation +
+# first push) and rebase both invoke --push (the skill handles the
+# rebase-and-force-push case internally); close is a check-and-comment
+# path, not a push.
+#
+# Note: `publish` is the only new-public-commitment intent and is
+# normally consumed by ship-actor (which adds the dry-mode hold and
+# final pre-push checks). respond_cycle is the underlying activity for
+# the push mechanism — ship-actor delegates to it, and respond-actor
+# itself receives publish only on legacy direct routing.
+_DRIP_FLAG = {"publish": "--push", "rebase": "--push", "close": "--check"}
 
 
 @activity.defn
-async def drip_cycle(msg: Message) -> dict:
+async def respond_cycle(msg: Message) -> dict:
     if not msg.repo:
         raise ApplicationError("drip: repo required", non_retryable=True)
     from sweep import budget as _budget, observe, skill_result
-    _budget.record_subprocess_estimate("drip")
-    intent = msg.intent or "ship"
+    _budget.record_subprocess_estimate("respond")
+    intent = msg.intent or "publish"
     flag = _DRIP_FLAG.get(intent, "--check")
-    result = await _run_skill(["/drip", msg.repo, flag], label="drip")
+    result = await _run_skill(["/drip", msg.repo, flag], label="respond")
     # Shim Sonnet over the skill's stdout for a guaranteed outcome
     # dict. Falls back to the stdout-tail heuristics if the shim
     # can't parse (rollout transition).
@@ -114,7 +121,7 @@ async def drip_cycle(msg: Message) -> dict:
         return result
     if parsed:
         observe.event(
-            "drip_done", repo=msg.repo, pr=msg.pr, intent=intent,
+            "respond_done", repo=msg.repo, pr=msg.pr, intent=intent,
             rc=result.get("rc", 0),
             pushed=bool(parsed.get("pushed")),
             outcome=str(parsed.get("outcome", "")),
@@ -123,11 +130,11 @@ async def drip_cycle(msg: Message) -> dict:
         return result
     # Heuristic fallback.
     tail = (result.get("stdout_tail") or "").lower()
-    pushed = (intent in ("ship", "rebase") and result.get("rc") == 0
+    pushed = (intent in ("publish", "rebase") and result.get("rc") == 0
               and ("pushed" in tail or "opened pr" in tail
                    or "pull/" in tail or "drip-ready" in tail))
     observe.event(
-        "drip_done", repo=msg.repo, pr=msg.pr, intent=intent,
+        "respond_done", repo=msg.repo, pr=msg.pr, intent=intent,
         rc=result.get("rc", 0), pushed=pushed,
         outcome="(heuristic-fallback)",
     )

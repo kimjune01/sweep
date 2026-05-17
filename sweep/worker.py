@@ -34,7 +34,7 @@ from sweep.activities.notifications import (
     mark_thread_read,
     poll_github_notifications,
 )
-from sweep.activities.skill_runner import drip_cycle, investigate_cycle, triage_cycle
+from sweep.activities.skill_runner import respond_cycle, investigate_cycle, triage_cycle
 from sweep.activities.bless import bless_cycle
 from sweep.activities.immunize import immunize_cycle
 from sweep.activities.tissue import tissue_cycle, wipe_cycle
@@ -75,8 +75,8 @@ async def _amain() -> None:
             test_attestation, codex_review, gemini_review,
             # inference + first-mover claim
             infer_test_cmd, claim_issue,
-            # skill-shelling actors (drip + triage + investigate via SkillActor)
-            drip_cycle, triage_cycle, investigate_cycle,
+            # skill-shelling actors (respond + triage + investigate via SkillActor)
+            respond_cycle, triage_cycle, investigate_cycle,
             # tissue (drafts) + wipe (posts) — side-hatch on no-fix
             # investigations. tissue drafts, wipe posts; separation of
             # concerns means LLM hiccups and gh hiccups don't share an

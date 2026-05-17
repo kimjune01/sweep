@@ -60,7 +60,7 @@ SHARES: dict[str, float] = {
     "scout":         0.02,   # one search per cycle, alternating sources
     "qa":            0.15,
     "investigate":   0.15,
-    "drip":          0.10,
+    "respond":       0.10,
     "pr-state":      0.10,
 }
 
@@ -70,7 +70,7 @@ SHARES: dict[str, float] = {
 SUBPROCESS_ESTIMATE: dict[str, int] = {
     "triage":      5,    # /triage typically: search + a few views
     "investigate": 30,   # /investigate fans out; expensive
-    "drip":        10,   # /drip pushes + checks
+    "respond":     10,   # /drip pushes + checks (respond-actor wraps the skill)
     "qa":          8,    # /qa pulls reviews + checks
 }
 

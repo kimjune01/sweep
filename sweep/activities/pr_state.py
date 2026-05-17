@@ -35,7 +35,7 @@ from sweep.types import (
 # own class (concurrent dispatcher, different shape).
 _ACTOR_WORKFLOW_IDS = {
     "qa":          "qa-actor",
-    "drip":        "drip-actor",
+    "respond":     "respond-actor",
     "triaged":     "triage-actor",
     "investigate": "investigate-actor",
     "sift":        "sift-actor",
@@ -354,11 +354,14 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
         else:
             bucket = "investigate"
             reasons.append(f"CI failure (non-mechanical): {state.failing_check or 'unspecified'}")
-    # 5. ship
+    # 5. done — PR is in the maintainer's court. We don't merge; that's
+    # their job. No actor, no audit — out of our rotation until the
+    # maintainer's action fires a notification.
     elif rd == "APPROVED" and merge == "MERGEABLE" and ci == "green":
-        bucket = "ship"
-        reasons.append("approved + mergeable + green CI")
-    # 6. wait (default)
+        bucket = "done"
+        reasons.append("approved + mergeable + green CI — maintainer's court")
+    # 6. wait (default) — no action signal yet, but keep watching.
+    # Wait is an action: routes to retro for periodic audit.
     else:
         bucket = "wait"
         reasons.append("no action signal")
@@ -463,6 +466,14 @@ async def route_classified() -> dict:
     now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
     for (repo, pr), r in latest.items():
         bucket = r.get("bucket", "wait")
+        # "done" is genuinely no-action — maintainer's court, we don't
+        # merge. Ack, observe, drop. Distinct from "wait" which still
+        # routes to retro for audit.
+        if bucket == "done":
+            observe.event("pr_state_done", repo=repo, pr=pr,
+                          reason=r.get("reason", ""))
+            routed["done"] = routed.get("done", 0) + 1
+            continue
         actor, intent = BUCKET_ROUTING.get(bucket, ("retro", "audit"))
         # Stable msg_id from the classification record itself, not call time:
         # otherwise every cron firing of route_classified produces a new id
@@ -511,6 +522,10 @@ async def deliver_to_inbox(result: PrStateResult) -> str:
     (sweep pr-state run). Prefer deposit_classified + route_classified for
     the Temporal/cron flow.
     """
+    if result.bucket == "done":
+        observe.event("pr_state_done", repo=result.repo, pr=result.pr,
+                      reason=result.reason)
+        return f"(done — no inbox; {result.reason})"
     actor, intent = BUCKET_ROUTING[result.bucket]
     ts = dt.datetime.now(dt.timezone.utc)
 

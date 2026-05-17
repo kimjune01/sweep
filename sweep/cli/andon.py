@@ -20,7 +20,7 @@ from pathlib import Path
 import typer
 
 from sweep.cli._common import (
-    DRIP_ACTOR_ID,
+    RESPOND_ACTOR_ID,
     INVESTIGATE_ACTOR_ID,
     QA_ACTOR_ID,
     TRIAGE_ACTOR_ID,
@@ -41,7 +41,7 @@ ANDON_DIR = Path.home() / ".sweep" / "control" / "andon"
 _CLEAR_TARGETS = {
     "qa":                 QA_ACTOR_ID,
     "triage_cycle":       TRIAGE_ACTOR_ID,
-    "drip_cycle":         DRIP_ACTOR_ID,
+    "respond_cycle":      RESPOND_ACTOR_ID,
     "investigate_cycle":  INVESTIGATE_ACTOR_ID,
 }
 

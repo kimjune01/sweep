@@ -31,7 +31,7 @@ waste_app = typer.Typer(help="Real waste in the JIT pipeline — dead slots, bad
                         no_args_is_help=False, invoke_without_command=True)
 
 
-STATIONS = ("triaged", "investigate", "qa", "drip", "respondable", "retro")
+STATIONS = ("triaged", "investigate", "qa", "respond", "respondable", "retro")
 
 # Pipeline epoch — the tinygrad ban (geohot closed PR #16113), which
 # triggered the rebuild of the system into its current form. Pre-epoch

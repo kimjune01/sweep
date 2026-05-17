@@ -1,6 +1,6 @@
 """skill_result — universal contract for "what did this skill decide?"
 
-Each LLM-shelling activity (drip_cycle, triage_cycle, investigate_cycle,
+Each LLM-shelling activity (respond_cycle, triage_cycle, investigate_cycle,
 qa_cycle) ends with a `shim(skill_name, raw_stdout) -> dict` call that
 takes the skill's free-form stdout and returns a guaranteed-schema dict.
 

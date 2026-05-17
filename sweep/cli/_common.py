@@ -11,7 +11,7 @@ from sweep.types import QaOneEntryRequest
 
 SWEEP_TASK_QUEUE = "sweep-tq"
 QA_ACTOR_ID = "qa-actor"
-DRIP_ACTOR_ID = "drip-actor"
+RESPOND_ACTOR_ID = "respond-actor"
 TRIAGE_ACTOR_ID = "triage-actor"
 INVESTIGATE_ACTOR_ID = "investigate-actor"
 SIFT_ACTOR_ID = "sift-actor"

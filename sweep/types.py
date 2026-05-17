@@ -26,7 +26,7 @@ class Message:
 
     msg_id: str
     sender: str  # e.g. "pr-state"
-    intent: str  # e.g. "reattest", "respond", "close", "ship", "rebase"
+    intent: str  # e.g. "reattest", "respond", "close", "publish", "rebase"
     repo: str  # owner/repo
     pr: int | None = None
     branch: str | None = None
@@ -72,7 +72,7 @@ class QaOneEntryRequest:
     issue: int | None = None
 
 
-Bucket = Literal["close", "respondable", "rebase", "qa", "ship", "wait"]
+Bucket = Literal["close", "respondable", "rebase", "qa", "done", "wait"]
 
 # Each bucket has a destination inbox + intent verb the receiver consumes.
 #
@@ -81,13 +81,21 @@ Bucket = Literal["close", "respondable", "rebase", "qa", "ship", "wait"]
 # "respondable," not "investigate." The investigate.jsonl inbox is reserved
 # for /triage and /actionable to populate with new-issue work for the LLM
 # investigator actor.
+#
+# Two distinct no-action shapes:
+#   - "done"  (APPROVED + MERGEABLE + green CI): maintainer's court.
+#             We don't merge. No actor, no audit — ack and forget.
+#             NotificationPoller will see a state change if the maintainer
+#             acts; until then, the PR is *out* of our routing rotation.
+#   - "wait"  (no action signal yet): keep watching. Routes to retro for
+#             periodic audit — wait is an action because it polls and
+#             routes; done is not.
 BUCKET_ROUTING: dict[str, tuple[str, str]] = {
-    "close":       ("drip",        "close"),
+    "close":       ("respond",     "close"),
     "respondable": ("respondable", "respond"),
-    "rebase":      ("drip",        "rebase"),
+    "rebase":      ("respond",     "rebase"),
     "qa":          ("qa",          "reattest"),
     "investigate": ("investigate",  "diagnose"),
-    "ship":        ("drip",        "ship"),
     "wait":        ("retro",       "audit"),
 }
 

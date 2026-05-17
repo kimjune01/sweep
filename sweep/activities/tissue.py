@@ -362,7 +362,7 @@ async def wipe_cycle(msg: Message) -> dict:
                       draft_id=draft_id, reason="wipe_disabled",
                       stage="wipe")
         return {"skipped": "wipe_disabled", "draft_id": draft_id}
-    _budget.record_subprocess_estimate("drip")  # similar cost class (1 gh call)
+    _budget.record_subprocess_estimate("respond")  # similar cost class (1 gh call)
 
     # Dry mode: write to a dry log instead of hitting gh. Same acked-
     # without-side-effect pattern the rest of the pipeline uses.
