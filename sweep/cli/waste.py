@@ -357,11 +357,76 @@ def waste(
             ["resource", "now", "at reset", "resets in"], api_rows,
             aligns=["l", "r", "r", "r"])
 
+    # Disk pressure — worktree clones accumulate forever (no GC today),
+    # so the operator needs a heads-up before the volume fills. Two
+    # numbers: how much the substrate's clones are eating, and how
+    # much room is left on the volume they live on.
+    try:
+        disk_lines = _render_disk_pressure()
+        if disk_lines:
+            lines += disk_lines
+    except Exception:
+        pass
+
     # If nothing showed up, say so
     if len(lines) <= 2:
         lines.append("_no waste detected — kanban full, slots fresh, no stuck WIP_")
 
     print("\n".join(lines).rstrip())
+
+
+def _human_bytes(n: int) -> str:
+    """Render bytes as B / KB / MB / GB. Sticks to one decimal at GB
+    so the eye can compare across reads."""
+    for unit, divisor in (("GB", 1024**3), ("MB", 1024**2), ("KB", 1024)):
+        if n >= divisor:
+            return f"{n / divisor:.1f}{unit}"
+    return f"{n}B"
+
+
+def _du_bytes(path: Path) -> int | None:
+    """Use du -sk for O(stat-cached) directory size. Python's rglob walk
+    is O(file count) which is too slow for 100k-file worktrees."""
+    import subprocess
+    if not path.exists():
+        return 0
+    try:
+        out = subprocess.run(
+            ["du", "-sk", str(path)],
+            capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode != 0:
+            return None
+        return int(out.stdout.split()[0]) * 1024
+    except (subprocess.TimeoutExpired, ValueError, IndexError):
+        return None
+
+
+def _render_disk_pressure() -> list[str]:
+    """Two numbers: worktree-dir bytes used + free bytes on the volume
+    they live on. Anything fancier (per-repo breakdown, GC suggestions)
+    can land later; the floor signal is just 'is this getting close to
+    a problem.'"""
+    import shutil
+    wt_root = Path.home() / ".sweep" / "worktrees"
+    used = _du_bytes(wt_root)
+    if used is None:
+        return []
+    try:
+        total, _, free = shutil.disk_usage(str(wt_root.parent))
+    except OSError:
+        return []
+    pct_free = 100 * free / total if total else 0
+    flag = " ⚠️" if pct_free < 10 else ""
+    return [
+        "## Disk pressure",
+        "",
+        "```",
+        f"worktrees   {_human_bytes(used)}",
+        f"free        {_human_bytes(free)}  ({pct_free:.0f}% of volume){flag}",
+        "```",
+        "",
+    ]
 
 
 def register(app: typer.Typer) -> None:
