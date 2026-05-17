@@ -460,9 +460,15 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     # routing layer). Silent when all dedup-actors are clean.
     drift = inbox_drift_summary()
     if drift:
-        summary = ", ".join(f"{a} (+{n_msgs - n_keys})" for a, n_msgs, n_keys in drift)
+        # Name the leaking producer, not just the inbox. "retro_audit
+        # (+60)" tells you something's wrong; "retro_audit ← pr-state
+        # +55, router +5" tells you where to look.
+        parts: list[str] = []
+        for actor, n_msgs, n_keys, leaks in drift:
+            culprits = ", ".join(f"{s} +{n}" for s, n in leaks) or f"+{n_msgs - n_keys}"
+            parts.append(f"{actor} ← {culprits}")
         print()
-        print(f"📑   inbox drift: {summary}  _| `sweep leakdog`_")
+        print(f"📑   inbox drift: {'; '.join(parts)}  _| `sweep leakdog`_")
 
     # Operator-toggled holds. Each flag file presence emits one line so
     # the cockpit reminds the operator that an actor is intentionally

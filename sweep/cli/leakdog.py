@@ -70,10 +70,16 @@ _DEDUP_ACTORS = ("triaged", "investigate", "qa", "respond", "human",
                  "submit", "remit")
 
 
-def inbox_drift_summary() -> list[tuple[str, int, int]]:
-    """For each dedup actor, return (name, distinct_msg_ids, distinct_repo_pr)
-    tuples ONLY when the two diverge (drift > 0). Empty list = clean."""
-    out: list[tuple[str, int, int]] = []
+def inbox_drift_summary() -> list[tuple[str, int, int, list[tuple[str, int]]]]:
+    """For each dedup actor: (name, distinct_msg_ids, distinct_repo_pr,
+    [(sender, leak_count), ...]) only when overall drift > 0.
+
+    The sender list names *which producer* is minting fresh msg_ids for
+    the same logical (repo, pr) — the actionable piece. The two totals
+    are kept for backward compatibility with the leakdog table.
+    """
+    from collections import defaultdict
+    out: list[tuple[str, int, int, list[tuple[str, int]]]] = []
     for actor in _DEDUP_ACTORS:
         try:
             s = inbox_states(actor)
@@ -82,8 +88,30 @@ def inbox_drift_summary() -> list[tuple[str, int, int]]:
                 continue
             distinct_msgs = len({m.get("msg_id") for m in msgs if m.get("msg_id")})
             distinct_keys = len({(m.get("repo"), m.get("pr")) for m in msgs})
-            if distinct_msgs != distinct_keys:
-                out.append((actor, distinct_msgs, distinct_keys))
+            if distinct_msgs == distinct_keys:
+                continue
+            # Per-sender breakdown: each sender's distinct_msg_ids vs
+            # distinct (repo, pr) in its share. Non-zero only when that
+            # sender is the actual leak source.
+            by_sender: dict[str, list[dict]] = defaultdict(list)
+            for m in msgs:
+                by_sender[m.get("sender") or "?"].append(m)
+            leaks: list[tuple[str, int]] = []
+            for sender, ms in by_sender.items():
+                s_msgs = len({m.get("msg_id") for m in ms if m.get("msg_id")})
+                s_keys = len({(m.get("repo"), m.get("pr")) for m in ms})
+                if s_msgs > s_keys:
+                    leaks.append((sender, s_msgs - s_keys))
+            leaks.sort(key=lambda kv: -kv[1])
+            # Account for cross-sender drift: when two senders both
+            # emit a msg_id for the same (repo, pr), per-sender leaks
+            # under-count by N. The "cross-sender" bucket holds it so
+            # the parts sum to the overall drift.
+            attributed = sum(n for _, n in leaks)
+            cross = (distinct_msgs - distinct_keys) - attributed
+            if cross > 0:
+                leaks.append(("cross-sender", cross))
+            out.append((actor, distinct_msgs, distinct_keys, leaks))
         except Exception:
             continue
     return out
@@ -275,9 +303,10 @@ def render_leakdog(hours: int = 24) -> list[str]:
     drift = inbox_drift_summary()
     if drift:
         lines += ["", "**Inbox drift (msg_ids ≠ distinct (repo, pr)):**", ""]
-        for actor, n_msgs, n_keys in drift:
+        for actor, n_msgs, n_keys, leaks in drift:
+            culprits = ", ".join(f"{s} +{n}" for s, n in leaks) or "unknown"
             lines.append(f"- `{actor}` — {n_msgs} msg_ids / {n_keys} distinct PRs "
-                         f"(drift: {n_msgs - n_keys})")
+                         f"(drift: {n_msgs - n_keys}; from: {culprits})")
     # Rejected jobs — skills that declined the work explicitly. Different
     # from `leak` (silent loss) and `screened` (decided-no). Rejection
     # means "I cannot fulfill this," and the operator should look.
