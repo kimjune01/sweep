@@ -50,6 +50,12 @@ _ACTOR_WORKFLOW_IDS = {
     "scout":       "scout-actor",
 }
 
+# View-only sinks: their inbox jsonl IS the audit trail; no Temporal
+# actor consumes them. Routing still writes the jsonl row, but signaling
+# would emit a spurious signal_failed/unwired_actor — these are not
+# unwired, they're intentionally signal-less.
+_VIEW_ONLY_ACTORS: set[str] = {"retro"}
+
 
 async def _signal_actor(actor: str, msg: "Message") -> str | None:
     """Best-effort signal: tell the Temporal actor it has a new message.
@@ -58,6 +64,8 @@ async def _signal_actor(actor: str, msg: "Message") -> str | None:
     write (the source of truth) stays atomic with the deposit; visibility
     comes via `signal_failed` events so silent stalls don't hide.
     """
+    if actor in _VIEW_ONLY_ACTORS:
+        return None
     wf_id = _ACTOR_WORKFLOW_IDS.get(actor)
     if not wf_id:
         observe.event("signal_failed", actor=actor, msg_id=msg.msg_id,
