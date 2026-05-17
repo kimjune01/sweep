@@ -38,6 +38,9 @@ from sweep.activities.skill_runner import respond_cycle, investigate_cycle, tria
 from sweep.activities.remit import kick_remit_card, remit_cycle
 from sweep.activities.submit import kick_submit_card, submit_cycle
 from sweep.activities.compose import compose_cycle, kick_compose_card
+from sweep.activities.reinvestigate import kick_reinvestigate_card, reinvestigate_cycle
+from sweep.activities.reqa import kick_reqa_card, reqa_cycle
+from sweep.activities.respond import kick_respond_card
 from sweep.activities.rope import kick_rope_card, rope_cycle
 from sweep.activities.bless import bless_cycle
 from sweep.activities.immunize import immunize_cycle
@@ -100,6 +103,16 @@ async def _amain() -> None:
             # shaped: target is operator-tunable via
             # ~/.sweep/control/rope_target.
             rope_cycle, kick_rope_card,
+            # reinvestigate + reqa — engagement-lane parallels to
+            # investigate + qa. Same skills, different upstreams
+            # (remit when maintainer_raised_concern or CI fails on an
+            # existing PR), different downstream (skip compose/submit;
+            # respond pushes to existing branch).
+            reinvestigate_cycle, kick_reinvestigate_card,
+            reqa_cycle, kick_reqa_card,
+            # respond — push verbs. respond_cycle lives in skill_runner;
+            # kick_respond_card is the actor-to-actor handoff helper.
+            kick_respond_card,
             # tissue (drafts) + post (posts) — side-hatch on no-fix
             # investigations. tissue drafts, post posts; separation of
             # concerns means LLM hiccups and gh hiccups don't share an

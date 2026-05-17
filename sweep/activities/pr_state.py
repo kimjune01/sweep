@@ -37,7 +37,9 @@ _ACTOR_WORKFLOW_IDS = {
     "qa":          "qa-actor",
     "respond":     "respond-actor",
     "triaged":     "triage-actor",
-    "investigate": "investigate-actor",
+    "investigate":   "investigate-actor",
+    "reinvestigate": "reinvestigate-actor",
+    "reqa":          "reqa-actor",
     "sift":        "sift-actor",
     "tissue":      "tissue-actor",
     "post":        "post-actor",
@@ -420,13 +422,14 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     #    So close is rarely chosen — that's per the user's "never recommend
     #    closing a stale PR" rule.
 
-    # 2a. investigate — maintainer raised a new bug/concern in-PR that
-    # the author hasn't addressed. Re-investigate before re-responding;
-    # human-bucket is for "you owe a reply," investigate is for "we owe
-    # more diagnostic work." Takes priority over human-bucket so a
-    # concern + question on the same PR routes to investigate.
+    # 2a. reinvestigate — maintainer raised a new bug/concern in-PR that
+    # the author hasn't addressed. Routes to the engagement-lane
+    # reinvestigate-actor (NOT production investigate), so reqa →
+    # respond runs without the new-PR-shaped compose+submit gates.
+    # Takes priority over human-bucket so concern+question on the
+    # same PR routes here.
     if state.maintainer_raised_concern:
-        bucket = "investigate"
+        bucket = "reinvestigate"
         reasons.append("maintainer raised new concern in-PR")
     # 2b. human — reviewer engaged, ball back in human's court
     elif rd == "CHANGES_REQUESTED" or state.maintainer_question:
@@ -438,17 +441,18 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     elif merge == "CONFLICTING":
         bucket = "rebase"
         reasons.append("merge conflicts")
-    # 4. qa vs investigate — split CI failures by whether the failing
-    # check looks like a mechanical fix the qa actor can drive (lint,
+    # 4. reqa vs reinvestigate — split CI failures by whether the failing
+    # check looks like a mechanical fix the reqa actor can drive (lint,
     # format, changelog) versus a real failure that needs reading code.
-    # Pattern match on the check name. Unknown → investigate (cautious:
-    # qa shouldn't burn cycles guessing at things it can't fix).
+    # Pattern match on the check name. Unknown → reinvestigate (cautious:
+    # reqa shouldn't burn cycles guessing at things it can't fix).
+    # Both route to the engagement lane (existing PR; remit-fed).
     elif ci == "failing":
         if _is_mechanical_check(state.failing_check):
-            bucket = "qa"
+            bucket = "reqa"
             reasons.append(f"CI failure: {state.failing_check or 'unspecified'}")
         else:
-            bucket = "investigate"
+            bucket = "reinvestigate"
             reasons.append(f"CI failure (non-mechanical): {state.failing_check or 'unspecified'}")
     # 5. done — PR is in the maintainer's court. We don't merge; that's
     # their job. No actor, no audit — out of our rotation until the

@@ -72,16 +72,21 @@ class QaOneEntryRequest:
     issue: int | None = None
 
 
-Bucket = Literal["close", "human", "rebase", "qa", "investigate", "done", "wait"]
+Bucket = Literal["close", "human", "rebase", "qa", "reqa", "investigate",
+                 "reinvestigate", "done", "wait"]
 
 # Each bucket has a destination inbox + intent verb the receiver consumes.
 #
-# Note: remit classifies *existing* open PRs. When a reviewer engages
-# (comment, changes_requested), the ball comes back to the human — that's
-# the "human" bucket, not "investigate." The investigate.jsonl inbox is
-# reserved for /triage and /actionable to populate with new-issue work
-# for the LLM investigator actor — plus the maintainer-raised-concern
-# path from remit (a new in-PR bug routes to investigate, not human).
+# Two parallel lanes share the /investigate and /qa skills but have
+# different upstreams, downstreams, and entry preconditions:
+#
+#   production:  triaged → investigate   → qa   → compose → submit → respond
+#   engagement:  remit   → reinvestigate → reqa →                    respond
+#
+# investigate/qa enforce msg.pr=None (new-issue); reinvestigate/reqa
+# enforce msg.pr presence (engagement-lane only). The split removes the
+# qa→{compose,respond} conditional at the cost of two extra workflow
+# IDs and inboxes that share their underlying skill code.
 #
 # Two distinct no-action shapes:
 #   - "done"  (APPROVED + MERGEABLE + green CI): maintainer's court.
@@ -92,12 +97,14 @@ Bucket = Literal["close", "human", "rebase", "qa", "investigate", "done", "wait"
 #             periodic audit — wait is an action because it polls and
 #             routes; done is not.
 BUCKET_ROUTING: dict[str, tuple[str, str]] = {
-    "close":       ("respond",     "close"),
-    "human":       ("human",       "respond"),
-    "rebase":      ("respond",     "rebase"),
-    "qa":          ("qa",          "reattest"),
-    "investigate": ("investigate", "diagnose"),
-    "wait":        ("retro",       "audit"),
+    "close":         ("respond",       "close"),
+    "human":         ("human",         "respond"),
+    "rebase":        ("respond",       "rebase"),
+    "qa":            ("qa",            "reattest"),
+    "reqa":          ("reqa",          "reattest-followup"),
+    "investigate":   ("investigate",   "diagnose"),
+    "reinvestigate": ("reinvestigate", "diagnose-followup"),
+    "wait":          ("retro",         "audit"),
 }
 
 
