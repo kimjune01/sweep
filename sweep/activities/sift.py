@@ -845,6 +845,7 @@ async def auto_evict_stale_repos() -> dict:
                 new_evictions.append(repo)
 
     if new_evictions:
+        from sweep.activities.worktree import prune_evicted_worktree
         _EVICTED_PATH.parent.mkdir(parents=True, exist_ok=True)
         with _EVICTED_PATH.open("a") as f:
             for repo in new_evictions:
@@ -853,6 +854,20 @@ async def auto_evict_stale_repos() -> dict:
                         f"({EVICTION_LOSS_THRESHOLD} closed-unmerged in a row)\n")
                 observe.event("repo_evicted", repo=repo,
                               reason=f"{EVICTION_LOSS_THRESHOLD}_closed_in_row")
+                # Reclaim disk: substrate worktree + any Documents/
+                # clone whose remote actually matches this repo. Safety
+                # checks live in prune_evicted_worktree; any failures
+                # surface as a `repo_evict_prune` event for leakdog.
+                try:
+                    pruned = prune_evicted_worktree(repo)
+                    if pruned.get("removed") or pruned.get("skipped"):
+                        observe.event("repo_evict_prune", repo=repo,
+                                      removed=pruned["removed"],
+                                      skipped=pruned["skipped"])
+                except Exception as e:
+                    observe.event("repo_evict_prune_failed", repo=repo,
+                                  error_type=type(e).__name__,
+                                  error=str(e)[:200])
 
     total = 0
     if _EVICTED_PATH.exists():

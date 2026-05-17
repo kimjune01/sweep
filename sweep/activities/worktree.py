@@ -162,6 +162,84 @@ def _ensure_worktree_blocking(repo: str, branch: str) -> str:
     return str(path)
 
 
+def _git_remote_url(path: Path) -> str | None:
+    """Return remote.origin.url for a git dir, or None if not a clean
+    git checkout. Used as a safety check before rm-ing a directory
+    that could plausibly contain user data."""
+    if not (path / ".git").exists():
+        return None
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(path), "config", "--get", "remote.origin.url"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if out.returncode != 0:
+            return None
+        return out.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
+def _matches_repo(url: str, repo: str) -> bool:
+    """Loose match: github URL contains owner/repo (handles https://,
+    git@, .git suffix variants)."""
+    if not url or not repo:
+        return False
+    needle = repo.lower()
+    hay = url.lower().removesuffix(".git")
+    return needle in hay
+
+
+def prune_evicted_worktree(repo: str) -> dict:
+    """Remove the substrate's worktree for an evicted repo AND any
+    matching ~/Documents/ ad-hoc clone, if the clone's origin URL
+    actually matches `repo` (so we never wipe an unrelated dir that
+    happens to share a name).
+
+    Returns a dict listing what was removed, what was skipped, and why
+    — leakdog/cockpit can surface this when curiosity wins."""
+    import shutil
+
+    removed: list[str] = []
+    skipped: list[str] = []
+
+    # 1. Substrate worktree — we own this dir unconditionally, so no
+    # remote-URL safety check is required (the path itself encodes the
+    # repo via _safe_dir's owner__repo convention).
+    wt = _safe_dir(repo)
+    if wt.exists():
+        try:
+            shutil.rmtree(wt)
+            removed.append(str(wt))
+        except OSError as e:
+            skipped.append(f"{wt}: {e}")
+
+    # 2. Ad-hoc Documents/ clones. Operator may have cloned the repo
+    # under one of several naming conventions; check all the plausible
+    # ones but only remove dirs whose remote actually matches.
+    docs = Path.home() / "Documents"
+    slug_short = repo.split("/")[-1]
+    slug_dash = repo.replace("/", "-")
+    slug_under = repo.replace("/", "__")
+    candidates = {docs / slug_short, docs / slug_dash, docs / slug_under,
+                  docs / f"{slug_short}-investigate",
+                  docs / f"{slug_dash}-investigate"}
+    for cand in candidates:
+        if not cand.exists() or not cand.is_dir():
+            continue
+        url = _git_remote_url(cand)
+        if not _matches_repo(url or "", repo):
+            skipped.append(f"{cand}: remote {url!r} does not match {repo}")
+            continue
+        try:
+            shutil.rmtree(cand)
+            removed.append(str(cand))
+        except OSError as e:
+            skipped.append(f"{cand}: {e}")
+
+    return {"repo": repo, "removed": removed, "skipped": skipped}
+
+
 @activity.defn
 async def ensure_worktree(repo: str, branch: str) -> str:
     """Return an absolute path to a working tree with `branch` checked out.
