@@ -9,11 +9,11 @@ allowed-tools: Bash, Read, Write
 
 You were invoked on a single issue. Score it, apply the kill list, emit a structured decision, exit. **No spawning sub-agents, no calling /investigate, no scanning the rest of the repo.** Fast is the contract — target ≤30 seconds.
 
-This skill is the scoring station between prospect (which surfaces candidates) and investigate (which builds the hypothesis graph). The streaming pipeline runs ONE invocation per issue; batching across a repo is a different shape that this skill no longer does.
+This skill is the scoring station between sift (which surfaces candidates) and investigate (which builds the hypothesis graph). The streaming pipeline runs ONE invocation per issue; batching across a repo is a different shape that this skill no longer does.
 
 ## Input
 
-`<repo>#<issue>` — e.g. `pingcap/tidb#68400`. Prospect's deposit already passed cheap filters and the LLM judge; your job is the per-issue context check: maintainer engagement signals, repro quality, kill-list match, scoring against the rubric.
+`<repo>#<issue>` — e.g. `pingcap/tidb#68400`. Sift's deposit already passed cheap filters and the LLM judge; your job is the per-issue context check: maintainer engagement signals, repro quality, kill-list match, scoring against the rubric.
 
 ## What to fetch
 

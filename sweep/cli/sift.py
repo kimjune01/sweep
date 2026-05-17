@@ -1,4 +1,9 @@
-"""`sweep prospect …` — windshield-wiper sweep of GitHub for actionable issues."""
+"""`sweep sift …` — legacy star-cursor sweep escape hatch.
+
+The live pipeline is scout (search) → sift (per-issue screen). This
+CLI fires the legacy `prospect_one_pass` star-cursor activity directly,
+useful for one-off backfills and debugging. The actor and the routine
+runbook do not use it."""
 
 from __future__ import annotations
 
@@ -16,11 +21,11 @@ from sweep.activities.sift import (
 )
 
 
-prospect_app = typer.Typer(help="Prospect — sweep GitHub for actionable issues", no_args_is_help=True)
+sift_app = typer.Typer(help="Sift — sweep GitHub for actionable issues (legacy star-cursor pass)", no_args_is_help=True)
 
 
-@prospect_app.command("run")
-def prospect_run(
+@sift_app.command("run")
+def sift_run(
     budget: int = typer.Option(20, help="Max repos to scan this pass"),
     issue_limit: int = typer.Option(5, help="Max issues to surface per repo"),
     language: list[str] = typer.Option([], help="Filter by language (repeatable)"),
@@ -37,17 +42,17 @@ def prospect_run(
     print(json.dumps(asdict(result), indent=2))
 
 
-@prospect_app.command("cursor")
-def prospect_cursor() -> None:
-    """Show the current prospect cursor state."""
+@sift_app.command("cursor")
+def sift_cursor() -> None:
+    """Show the current sift cursor state."""
     if not CURSOR_FILE.exists():
         print("# cursor not initialized — first run will start at the top")
         return
     print(CURSOR_FILE.read_text())
 
 
-@prospect_app.command("reset")
-def prospect_reset() -> None:
+@sift_app.command("reset")
+def sift_reset() -> None:
     """Reset the cursor to the top (start a fresh lap)."""
     if CURSOR_FILE.exists():
         CURSOR_FILE.unlink()

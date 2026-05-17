@@ -1,11 +1,11 @@
 ---
-name: prospect
+name: sift
 description: Prospect for work worth doing — fetch issues from appropriate places (GitHub search, blog crawls, repo rosters). Surfaces maintainer-acknowledged problems with producible receipts. Output feeds /triage. Dedupes against ~/.sweep/seen/issues.txt to avoid resurfacing. Renamed from /actionable.
 argument-hint: [--dry-run]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
-# Prospect
+# Sift
 
 Prospect for work worth doing. Start from intent, not repos. Renamed from `/actionable` — same shape, name better describes the role (looking for value worth extracting, may or may not find it, hands off to /triage).
 

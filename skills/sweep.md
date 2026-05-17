@@ -61,14 +61,14 @@ To read current state: parse all lines, key by repo, take last entry. Filter `ac
 
 ### Phase 1: Fan out (concurrent)
 
-Launch everything in parallel. Don't wait for prospect to finish before investigating known repos.
+Launch everything in parallel. Don't wait for sift to finish before investigating known repos.
 
 ```
-# Agent 1: prospect (background)
+# Agent 1: sift (background)
 Agent({
   subagent_type: "general-purpose",
   run_in_background: true,
-  prompt: "Run /prospect. Find new repos, update repos.jsonl.
+  prompt: "Run /sift. Find new repos, update repos.jsonl.
            For each new repo, run /review-schema.
            Report additions when done."
 })
@@ -109,7 +109,7 @@ Orchestration is token-cheap but judgment-heavy. Opus picks better issues and un
 
 Steps 4b and 4d are **hard blocks**. A branch without codex implementation + gemini gate is a half-finished artifact. Do not queue it.
 
-Prospect searches for new work while triage agents investigate and implement on existing repos. When prospect finishes and adds new repos, spawn triage agents for them into the same pool.
+Sift searches for new work while triage agents investigate and implement on existing repos. When sift finishes and adds new repos, spawn triage agents for them into the same pool.
 
 ### Phase 2: Cross-reference (post-hoc)
 
@@ -249,7 +249,7 @@ Slow tick matching review cadence. Checks external state.
 
 ## Eviction (runs on `--monitor` tick)
 
-The roster grows via `/prospect`. Sweep prunes it. Check every heartbeat tick, before launching triage agents.
+The roster grows via `/sift`. Sweep prunes it. Check every heartbeat tick, before launching triage agents.
 
 | Trigger | Action |
 |---------|--------|
@@ -264,7 +264,7 @@ The roster grows via `/prospect`. Sweep prunes it. Check every heartbeat tick, b
 
 **Competing-PR eviction:** If the only actionable issue on a repo has a competing open PR, and the repo has no other items, demote to `monitoring`. Don't evict — the competing PR might stall.
 
-**Apply now.** On each `--monitor` tick, scan `repos.jsonl` for eviction triggers before doing anything else. Log evictions to `~/.sweep/prospect/candidates.jsonl`.
+**Apply now.** On each `--monitor` tick, scan `repos.jsonl` for eviction triggers before doing anything else. Log evictions to `~/.sweep/sift/candidates.jsonl`.
 
 ## Rules
 

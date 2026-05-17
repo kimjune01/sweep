@@ -3,7 +3,7 @@
 Each subgroup lives in its own module:
   cli/qa.py        — qa test/codex/gemini/full, qa actor signal/status/clear
   cli/pr_state.py  — pr-state classify / run / scan / route / workflow
-  cli/prospect.py  — prospect sweep + cursor
+  cli/sift.py      — sift sweep + cursor (legacy escape hatch)
   cli/inbox.py     — inbox inspector
   cli/attest.py    — attestation log + gh-cache stats
   cli/observe.py   — counters, events, cursor for retro
@@ -42,7 +42,7 @@ from sweep.cli.drip import drip_app
 from sweep.cli.inbox import inbox_app
 from sweep.cli.observe import observe_app
 from sweep.cli.pr_state import pr_state_app
-from sweep.cli.prospect import prospect_app
+from sweep.cli.sift import sift_app
 from sweep.cli.qa import qa_app
 from sweep.cli.retro import retro_app
 from sweep.cli.slop_offer import slop_offer_app
@@ -57,7 +57,7 @@ app = typer.Typer(
 app.add_typer(andon_app, name="andon")
 app.add_typer(qa_app, name="qa")
 app.add_typer(pr_state_app, name="pr-state")
-app.add_typer(prospect_app, name="prospect")
+app.add_typer(sift_app, name="sift")
 app.add_typer(inbox_app, name="inbox")
 app.add_typer(attest_app, name="attest")
 app.add_typer(observe_app, name="observe")
