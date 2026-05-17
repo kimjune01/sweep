@@ -1,7 +1,7 @@
-"""Scout — searches GitHub for actionable issues, emits one prospect
+"""Scout — searches GitHub for actionable issues, emits one sift
 card per raw candidate. Pace: one card from upstream drives ONE gh
-search call. Splitting search away from prospect is what tames the
-old 100-call burst: prospect now sees one issue per card with the
+search call. Splitting search away from sift is what tames the old
+100-call burst: sift now sees one issue per card with the
 SkillActor's should_idle gate between them.
 
 The scout has an inbox cursor that alternates between two sources:
@@ -75,8 +75,8 @@ def _read_days_knob() -> int:
     return max(1, min(_DAYS_MAX, v))
 
 
-async def _emit_prospect_card(raw: dict, source: str) -> bool:
-    """Write one card to prospect.jsonl + signal the actor. Returns
+async def _emit_sift_card(raw: dict, source: str) -> bool:
+    """Write one card to sift.jsonl + signal the actor. Returns
     False on malformed input."""
     repo_obj = raw.get("repository") or {}
     repo = repo_obj.get("nameWithOwner") or repo_obj.get("name_with_owner") or ""
@@ -119,7 +119,7 @@ async def _emit_prospect_card(raw: dict, source: str) -> bool:
 @activity.defn
 async def scout_cycle(msg: Message) -> dict:
     """One gh search, alternating global ↔ warm-org via the cursor.
-    Emits one prospect card per raw issue.
+    Emits one sift card per raw issue.
 
     Payload is unused — the card is just the trigger. What to do is
     fixed (advance one position on the source-cursor and search).
@@ -200,7 +200,7 @@ async def scout_cycle(msg: Message) -> dict:
 
     emitted = 0
     for it in raw:
-        if await _emit_prospect_card(it, source):
+        if await _emit_sift_card(it, source):
             emitted += 1
 
     observe.event("scout_cycle", source=source, raw=len(raw),

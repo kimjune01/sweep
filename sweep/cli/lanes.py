@@ -156,7 +156,7 @@ def _events_for_pr(repo: str, pr: int, *, hours: int = 168) -> list[dict]:
 # to a short token (verbs in present tense, lowercase). Order matters
 # in the rendered chain because earliest event is leftmost.
 _PROVENANCE_TOKENS: dict[str, callable] = {
-    "prospect_deposited":   lambda e: "📥prospect",
+    "sift_deposited":       lambda e: "📥sift",
     "triage_decision":      lambda e: f"🔬triage→{(e.get('decision') or '?')[:4]}",
     "investigate_done":     lambda e: ("🛠ship" if e.get("produced_pr")
                                        else ("🤝gated" if e.get("human_gated")
@@ -291,7 +291,7 @@ def render_leakdog(hours: int = 24) -> list[str]:
     """Funnel-balance table over the last `hours`. Returns markdown lines.
 
     Interfaces:
-      prospect    → triage       (deposit → triage_decision)
+      sift        → triage       (deposit → triage_decision)
       triage      → investigate  (triage_decision=investigate → investigate_done)
       investigate → drip         (investigate_done(produced_pr) → pr_state_classified)
       pr-state    → qa           (pr_state_classified(bucket=qa) → qa_converged)
@@ -311,8 +311,8 @@ def render_leakdog(hours: int = 24) -> list[str]:
     def count(kind: str, pred=lambda e: True) -> int:
         return sum(1 for e in events if e.get("kind") == kind and pred(e))
 
-    # prospect → triage: every deposit should trigger a triage_decision
-    deposits = aged("prospect_deposited", lag_minutes=15)
+    # sift → triage: every deposit should trigger a triage_decision
+    deposits = aged("sift_deposited", lag_minutes=15)
     triaged_total = count("triage_decision")
     triaged_pending = _inbox_pending("triaged")
 
@@ -398,7 +398,7 @@ def render_leakdog(hours: int = 24) -> list[str]:
 
     # rows: (label, in, out, screened, pending)
     rows = [
-        ("prospect    → triage",      deposits,        triaged_total,  0,                triaged_pending),
+        ("sift        → triage",      deposits,        triaged_total,  0,                triaged_pending),
         ("triage      → investigate", triaged_invest,  invest_done,    triaged_other,    invest_pending),
         ("(prosp|tri) → immunize",    immunize_cards,  immunize_pursued, immunize_skipped, immunize_pending),
         ("investigate → qa",          invest_with_pr,  qa_done,        invest_no_fix,    qa_pending),

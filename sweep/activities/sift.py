@@ -1,6 +1,10 @@
-"""Prospect — windshield-wiper sweep through GitHub repos by descending stars.
+"""Sift — per-issue screen. The live actor is `sift_cycle` (one
+card = one issue, filter inline, ≤1 fresh gh call). This module also
+still hosts the legacy star-cursor `prospect_one_pass` path used by
+`sweep sift run` as an escape hatch. Cursor doc below describes that
+legacy path.
 
-The cursor moves at whatever rate it moves. Each `prospect_one_pass` invocation
+The star cursor moves at whatever rate it moves. Each `prospect_one_pass` invocation
 walks a budget-bounded chunk of repos below the current star cursor, filters
 out the ones that don't pass auxiliary checks, scrapes actionable issues from
 the remaining repos, dedupes against ~/.sweep/seen/issues.txt, and deposits
@@ -387,7 +391,7 @@ async def deposit_issue_to_triaged(issue: IssueCandidate,
     # retries crossing a minute boundary created phantom duplicates.
     digest = hashlib.sha256(f"{issue.repo}/{issue.number}".encode()).hexdigest()[:8]
     msg = Message(
-        msg_id=f"prospect-{slug}-{issue.number}-{digest}",
+        msg_id=f"sift-{slug}-{issue.number}-{digest}",
         sender="sift",
         intent="investigate",
         repo=issue.repo,
@@ -408,7 +412,7 @@ async def deposit_issue_to_triaged(issue: IssueCandidate,
         dry_path = TRIAGED_INBOX.parent / "triaged.dry.jsonl"
         with open(dry_path, "a") as f:
             f.write(json.dumps(asdict(msg)) + "\n")
-        observe.event("dry_skip", site="prospect_deliver",
+        observe.event("dry_skip", site="sift_deliver",
                       actor="triaged", msg_id=msg.msg_id,
                       repo=issue.repo, pr=issue.number)
         # Don't mark_seen under dry — the operator should be able to clear
@@ -417,7 +421,7 @@ async def deposit_issue_to_triaged(issue: IssueCandidate,
     with open(TRIAGED_INBOX, "a") as f:
         f.write(json.dumps(asdict(msg)) + "\n")
     seen.mark_seen(key)
-    observe.event("prospect_deposited", msg_id=msg.msg_id,
+    observe.event("sift_deposited", msg_id=msg.msg_id,
                   repo=issue.repo, issue=issue.number,
                   complexity=complexity)
     # Best-effort signal — same gap as the qa path before: writing

@@ -1,13 +1,13 @@
 ---
 name: sift
-description: Prospect for work worth doing — fetch issues from appropriate places (GitHub search, blog crawls, repo rosters). Surfaces maintainer-acknowledged problems with producible receipts. Output feeds /triage. Dedupes against ~/.sweep/seen/issues.txt to avoid resurfacing. Renamed from /actionable.
+description: Sift through candidates surfaced by /scout — fetch issues, screen for receipts, deposit survivors into /triage's inbox. Dedupes against ~/.sweep/seen/issues.txt to avoid resurfacing. Renamed from /prospect (and earlier /actionable).
 argument-hint: [--dry-run]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
 # Sift
 
-Prospect for work worth doing. Start from intent, not repos. Renamed from `/actionable` — same shape, name better describes the role (looking for value worth extracting, may or may not find it, hands off to /triage).
+Sift through scout's candidates for work worth doing. Start from intent, not repos. Renamed from `/prospect` (and earlier `/actionable`) — same shape, name better describes the role (filter through noise to find value worth extracting, hand off to /triage).
 
 Work worth doing is anything the maintainer wants done — bugs are a subset. The full space is **desirable improvements**: bugs, planned features, roadmap items, conformance gaps, performance targets, doc holes. The common thread is maintainer pre-commitment: they signaled they want this, nobody's doing it, and the acceptance criteria are readable.
 
