@@ -40,6 +40,7 @@ _ACTOR_WORKFLOW_IDS = {
     "investigate":   "investigate-actor",
     "reinvestigate": "reinvestigate-actor",
     "reqa":          "reqa-actor",
+    "attest":        "attest-actor",
     "sift":        "sift-actor",
     "tissue":      "tissue-actor",
     "post":        "post-actor",

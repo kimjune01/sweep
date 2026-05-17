@@ -32,6 +32,11 @@ class Message:
     branch: str | None = None
     payload: dict = field(default_factory=dict)
     ts: str = ""  # ISO 8601 UTC
+    # Sender trail. When an actor forwards a card, set new.path to
+    # incoming.path + [incoming.sender]. Lets receivers count prior
+    # hops (e.g. attest: path.count("attest") >= 1 → second look,
+    # escalate to human). Default [] for origin cards (pr-state, scout).
+    path: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------- qa types

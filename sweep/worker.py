@@ -40,6 +40,7 @@ from sweep.activities.submit import kick_submit_card, submit_cycle
 from sweep.activities.compose import compose_cycle, kick_compose_card
 from sweep.activities.reinvestigate import kick_reinvestigate_card, reinvestigate_cycle
 from sweep.activities.reqa import kick_reqa_card, reqa_cycle
+from sweep.activities.attest import attest_cycle, kick_attest_card
 from sweep.activities.respond import kick_respond_card
 from sweep.activities.rope import kick_rope_card, rope_cycle
 from sweep.activities.bless import bless_cycle
@@ -110,6 +111,12 @@ async def _amain() -> None:
             # respond pushes to existing branch).
             reinvestigate_cycle, kick_reinvestigate_card,
             reqa_cycle, kick_reqa_card,
+            # attest — behavioral gate split out of qa. Owns the
+            # test_attestation step so qa's adversarial-review identity
+            # doesn't tangle with "did the fix actually pass?" — same
+            # principle as hiding the attestation from the producer.
+            # Routes: pass→qa, fail+1st→investigate, fail+2nd→human.
+            attest_cycle, kick_attest_card,
             # respond — push verbs. respond_cycle lives in skill_runner;
             # kick_respond_card is the actor-to-actor handoff helper.
             kick_respond_card,
