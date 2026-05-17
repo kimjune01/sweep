@@ -112,10 +112,12 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         TISSUE_ACTOR_ID, TRIAGE_ACTOR_ID, USAGE_POLLER_ID, POST_ACTOR_ID,
         REMIT_ACTOR_ID, SUBMIT_ACTOR_ID, COMPOSE_ACTOR_ID, ROPE_ACTOR_ID,
         REINVESTIGATE_ACTOR_ID, REQA_ACTOR_ID, ATTEST_ACTOR_ID,
+        METRONOME_ACTOR_ID, RETRO_ACTOR_ID,
     )
     from sweep.system import TEMPORAL_ADDR
     from sweep.workflows.leakdog import LeakdogDaemon
     from sweep.workflows.notification_poller import NotificationPoller
+    from sweep.workflows.metronome_actor import MetronomeActor
     from sweep.workflows.qa_actor import QaActor
     from sweep.workflows.skill_actor import SkillActor
     from sweep.workflows.usage_poller import UsagePoller
@@ -149,6 +151,8 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (REINVESTIGATE_ACTOR_ID, SkillActor.run,    ("reinvestigate_cycle",)),
         (REQA_ACTOR_ID,         SkillActor.run,     ("reqa_cycle",)),
         (ATTEST_ACTOR_ID,       SkillActor.run,     ("attest_cycle",)),
+        (METRONOME_ACTOR_ID,    MetronomeActor.run, ()),
+        (RETRO_ACTOR_ID,        SkillActor.run,     ("retro_cycle",)),
         (SIFT_ACTOR_ID,        SkillActor.run,     ("sift_cycle",)),
         (SCOUT_ACTOR_ID,        SkillActor.run,     ("scout_cycle",)),
         (TISSUE_ACTOR_ID,       SkillActor.run,     ("tissue_cycle",)),
@@ -209,6 +213,12 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "attest", SkillActor.deliver, ATTEST_ACTOR_ID)
     if drained:
         anomalies.append(f"{ATTEST_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "metronome", MetronomeActor.deliver, METRONOME_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{METRONOME_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "retro", SkillActor.deliver, RETRO_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{RETRO_ACTOR_ID}: drained {drained} pending")
     drained = await _drain_inbox(client, "sift", SkillActor.deliver, SIFT_ACTOR_ID)
     if drained:
         anomalies.append(f"{SIFT_ACTOR_ID}: drained {drained} pending")

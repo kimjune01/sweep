@@ -41,6 +41,8 @@ from sweep.activities.compose import compose_cycle, kick_compose_card
 from sweep.activities.reinvestigate import kick_reinvestigate_card, reinvestigate_cycle
 from sweep.activities.reqa import kick_reqa_card, reqa_cycle
 from sweep.activities.attest import attest_cycle, kick_attest_card
+from sweep.activities.metronome import metronome_tick, kick_metronome_card
+from sweep.activities.retro import retro_cycle, kick_retro_card
 from sweep.activities.respond import kick_respond_card
 from sweep.activities.rope import kick_rope_card, rope_cycle
 from sweep.activities.bless import bless_cycle
@@ -63,6 +65,7 @@ from sweep.activities.leakdog import leakdog_tick
 from sweep.activities.pause_gate import should_idle
 from sweep.workflows.leakdog import LeakdogDaemon
 from sweep.workflows.notification_poller import NotificationPoller
+from sweep.workflows.metronome_actor import MetronomeActor
 from sweep.workflows.qa_actor import QaActor
 from sweep.workflows.skill_actor import SkillActor
 from sweep.workflows.usage_poller import UsagePoller
@@ -76,7 +79,7 @@ async def _amain() -> None:
     worker = Worker(
         client,
         task_queue=SWEEP_TASK_QUEUE,
-        workflows=[QaActor, SkillActor, UsagePoller, NotificationPoller, LeakdogDaemon],
+        workflows=[QaActor, SkillActor, MetronomeActor, UsagePoller, NotificationPoller, LeakdogDaemon],
         activities=[
             # qa
             test_attestation, codex_review, gemini_review,
@@ -117,6 +120,14 @@ async def _amain() -> None:
             # principle as hiding the attestation from the producer.
             # Routes: pass→qa, fail+1st→investigate, fail+2nd→human.
             attest_cycle, kick_attest_card,
+            # metronome — cadence kicker. Self-timing actor (not a
+            # daemon) that fires kick_<target>_card on schedule. retro
+            # is the first cadence-driven target.
+            metronome_tick, kick_metronome_card,
+            # retro — backward pass. Triggered by metronome on cadence;
+            # makes obvious fixes on its own and emits a human card per
+            # pass summarizing auto_fixes + human_attended items.
+            retro_cycle, kick_retro_card,
             # respond — push verbs. respond_cycle lives in skill_runner;
             # kick_respond_card is the actor-to-actor handoff helper.
             kick_respond_card,

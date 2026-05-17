@@ -41,6 +41,8 @@ _ACTOR_WORKFLOW_IDS = {
     "reinvestigate": "reinvestigate-actor",
     "reqa":          "reqa-actor",
     "attest":        "attest-actor",
+    "metronome":     "metronome-actor",
+    "retro":         "retro-actor",
     "sift":        "sift-actor",
     "tissue":      "tissue-actor",
     "post":        "post-actor",
@@ -59,7 +61,7 @@ _ACTOR_WORKFLOW_IDS = {
 # are not unwired, they're intentionally signal-less. retro is the
 # wait-bucket audit trail; human is the operator inbox (you are the
 # consumer, surfaced via cockpit's 📥 chip and `sweep inbox actor human`).
-_VIEW_ONLY_ACTORS: set[str] = {"retro", "human"}
+_VIEW_ONLY_ACTORS: set[str] = {"human", "retro_audit"}
 
 
 async def _signal_actor(actor: str, msg: "Message") -> str | None:
