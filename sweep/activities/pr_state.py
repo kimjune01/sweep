@@ -181,9 +181,16 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     # false positives — flagging PRs as respondable even after the author
     # had replied at length.
     comments = data.get("comments") or []
+    author_login = (data.get("author") or {}).get("login", "")
     maintainer_question = await _open_maintainer_question(
         comments,
-        author_login=(data.get("author") or {}).get("login", ""),
+        author_login=author_login,
+        repo=repo,
+        pr=pr,
+    )
+    maintainer_raised_concern = await _open_maintainer_concern(
+        comments,
+        author_login=author_login,
         repo=repo,
         pr=pr,
     )
@@ -201,6 +208,7 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
         maintainer_question=maintainer_question,
         is_draft=bool(data.get("isDraft")),
         failing_check=failing,
+        maintainer_raised_concern=maintainer_raised_concern,
     )
 
 
@@ -242,6 +250,73 @@ async def _open_maintainer_question(
         return True
     return not await _author_addressed(last_q.get("body") or "", latest_reply,
                                        repo=repo, pr=pr)
+
+
+async def _open_maintainer_concern(comments: list[dict], *,
+                                   author_login: str,
+                                   repo: str, pr: int) -> bool:
+    """True iff a maintainer raised a NEW bug/issue in an in-PR comment
+    that the author hasn't addressed. Distinct from maintainer_question:
+    question = "you owe an answer" (→ respondable); concern = "we owe
+    another investigation pass" (→ investigate).
+
+    Default False on parse error or empty input — the cautious side
+    here is the opposite of maintainer_question. False positive routes
+    you into a re-investigate cycle (costly, LLM time); missing one
+    means the operator sees the comment as respondable instead, which
+    is still a real signal — they can re-route manually.
+    """
+    # Look at the latest maintainer comment after the author's latest
+    # reply. If the author has the last word, no open concern.
+    maint_comments = [
+        c for c in comments
+        if c.get("authorAssociation") in ("MEMBER", "OWNER", "COLLABORATOR")
+        and (c.get("body") or "").strip()
+    ]
+    if not maint_comments:
+        return False
+    last_maint = maint_comments[-1]
+    last_maint_ts = last_maint.get("createdAt", "")
+    author_replies_after = [
+        c for c in comments
+        if (c.get("author") or {}).get("login") == author_login
+        and (c.get("createdAt", "") > last_maint_ts)
+    ]
+    if author_replies_after:
+        return False  # author had the last word; no open concern
+    body = (last_maint.get("body") or "").strip()
+    if len(body) < 20:
+        return False  # too short to be a substantive new concern
+
+    system = (
+        "You judge whether a maintainer's comment on a GitHub pull "
+        "request raises a NEW bug, missing case, or technical concern "
+        "that requires the contributor to re-investigate or do more "
+        "diagnostic work. "
+        "Answer with one word: YES or NO. "
+        "YES only when the comment names a specific problem, missing "
+        "case, broken scenario, or technical gap that goes beyond what "
+        "the PR addressed. "
+        "NO covers: approvals, style nits, simple questions, requests "
+        "for clarification, requests for tests/docs without naming a "
+        "specific failure, off-topic discussion, and any case where you "
+        "are unsure. "
+        "If the input is malformed or you cannot evaluate, output "
+        "nothing. Empty is a legal answer; do not guess."
+    )
+    user = (
+        f"Maintainer comment:\n{body[:2000]}\n\n"
+        "Does this raise a new bug or technical concern requiring "
+        "more investigation? YES or NO."
+    )
+    try:
+        out = await asyncio.to_thread(llm_cli.call, system, user, timeout_s=60)
+        return out.strip().upper().startswith("YES")
+    except Exception as e:
+        observe.event("llm_judge_failed", site="open_maintainer_concern",
+                      repo=repo, pr=pr,
+                      error_type=type(e).__name__, error=str(e)[:300])
+        return False  # cautious: don't over-route to investigate
 
 
 async def _author_addressed(question: str, reply: str, *,
@@ -336,8 +411,16 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     #    So close is rarely chosen — that's per the user's "never recommend
     #    closing a stale PR" rule.
 
-    # 2. respondable — reviewer engaged, ball back in human's court
-    if rd == "CHANGES_REQUESTED" or state.maintainer_question:
+    # 2a. investigate — maintainer raised a new bug/concern in-PR that
+    # the author hasn't addressed. Re-investigate before re-responding;
+    # respondable is for "you owe a reply," investigate is for "we owe
+    # more diagnostic work." Takes priority over respondable so a
+    # concern + question on the same PR routes to investigate.
+    if state.maintainer_raised_concern:
+        bucket = "investigate"
+        reasons.append("maintainer raised new concern in-PR")
+    # 2b. respondable — reviewer engaged, ball back in human's court
+    elif rd == "CHANGES_REQUESTED" or state.maintainer_question:
         bucket = "respondable"
         reasons.append(
             "changes_requested" if rd == "CHANGES_REQUESTED" else "maintainer asked"

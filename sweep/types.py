@@ -116,6 +116,11 @@ class PrLiveState:
     maintainer_question: bool
     is_draft: bool
     failing_check: str = ""  # name of one failing check, for reason
+    # maintainer_raised_concern: maintainer flagged a NEW bug/issue in an
+    # in-PR comment that the author hasn't addressed. Different from
+    # maintainer_question (which is "you owe an answer"); this is "we owe
+    # another investigation pass." Routes to investigate, not respondable.
+    maintainer_raised_concern: bool = False
 
 
 @dataclass
