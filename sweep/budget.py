@@ -56,7 +56,8 @@ SHARES: dict[str, float] = {
     # is the real PR querier in steady state. Original 40/10 split
     # was inverted relative to actual traffic.
     "notifications": 0.25,
-    "prospect":      0.20,
+    "prospect":      0.18,   # per-issue cycle: cached meta + sometimes issue_events
+    "scout":         0.02,   # one search per cycle, alternating sources
     "qa":            0.15,
     "investigate":   0.15,
     "drip":          0.10,

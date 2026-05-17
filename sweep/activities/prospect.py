@@ -554,28 +554,6 @@ def _min_issue_age_minutes() -> int:
                           PROSPECT_MIN_ISSUE_AGE_MINUTES_DEFAULT, hi=120)
 
 
-_WARM_ORG_CURSOR_PATH = Path.home() / ".sweep" / "cursors" / "prospect_warm_org.json"
-
-
-def _warm_org_cursor_advance(total: int, step: int) -> int:
-    """Round-robin cursor for warm-org fan-out. Returns the starting
-    index for this pass and advances by `step` for next time. Wraps
-    modulo `total`. Returns 0 if total <= 0."""
-    if total <= 0:
-        return 0
-    start = 0
-    try:
-        if _WARM_ORG_CURSOR_PATH.exists():
-            start = int(json.loads(_WARM_ORG_CURSOR_PATH.read_text()).get("idx", 0)) % total
-    except (OSError, json.JSONDecodeError, ValueError):
-        start = 0
-    next_idx = (start + step) % total
-    try:
-        _WARM_ORG_CURSOR_PATH.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(_WARM_ORG_CURSOR_PATH, json.dumps({"idx": next_idx}))
-    except OSError:
-        pass
-    return start
 
 
 @activity.defn
@@ -638,184 +616,6 @@ async def should_triage_issue(issue_payload: dict) -> dict:
                 "reason": f"llm error: {e}"}
 
 
-@activity.defn
-async def prospect_recency_window(req: ProspectRunRequest) -> dict:
-    """Recency-first prospect: issues are the origin, repos are
-    attributes on issues. The competitive logic: freshly-filed
-    actionable issues haven't been seen by other contributors yet.
-    Getting in early means no racing PR, no rebase against an
-    in-progress fix, maintainer eyes still warm on the bug context.
-    First-mover position on the merge race.
-
-    Two-tier funnel (LLM judgment moved to /triage):
-
-      1. Deterministic gates — kill list, star, AI-policy, cheap
-         per-issue patterns. All sub-millisecond per check.
-      2. Deposit survivors to triaged.jsonl. /triage (per-issue) does
-         the LLM judgment as its own decision station, where one-at-a-
-         time queueing keeps cost predictable.
-
-    The seen set is the only cursor: each call asks for the last N
-    days, dedupes against what we've already processed. Repeating an
-    overlapping window costs one gh_search + a set lookup per issue.
-
-    Empty cycles (considered>0 but deposited=0) are expected and not
-    a failure mode — they mean the filters did their job and nothing
-    in the recent window survived. The puller will keep firing as
-    long as triage has slack; the system naturally waits until valid
-    work appears, no retry logic needed.
-    """
-    from sweep import budget as _budget
-    _budget.set_caller("prospect")
-    if retro_state.is_halted():
-        observe.incr("halted_skip:prospect")
-        return {"considered": 0, "deposited": 0, "filtered": {}, "halted": True}
-    if control_state.is_paused():
-        observe.incr("paused_skip:prospect")
-        return {"considered": 0, "deposited": 0, "filtered": {}, "paused": True}
-
-    # Cap deposits at whatever triage can currently hold. Demand-pull
-    # all the way: prospect only surfaces what downstream can absorb,
-    # not a fixed-number-per-tick. Read triage's current depth + cap
-    # at the start of each pass.
-    from sweep import inbox_state as _inbox
-    TRIAGE_CAP = 10  # mirrors cockpit's CAPS["triaged"]["queued"]
-    triage_q = len(_inbox.inbox_states("triaged")["queued"])
-    free_slots = max(0, TRIAGE_CAP - triage_q)
-    effective_cap = min(req.deposit_limit, free_slots)
-    if effective_cap <= 0:
-        return {"considered": 0, "deposited": 0, "filtered": {"triage_full": 1}}
-
-    now_utc = dt.datetime.now(dt.timezone.utc)
-    cutoff = now_utc - dt.timedelta(days=req.days)
-    search_limit = min(req.search_limit, _search_limit())
-    # Push every cheap filter into the gh search query so GitHub does
-    # the work, not us. Each qualifier here eliminates a post-fetch
-    # reject and the per-survivor API calls those rejects would have
-    # incurred.
-    age_floor = now_utc - dt.timedelta(minutes=_min_issue_age_minutes())
-    mechanical = [
-        "-linked:pr",                                # was _has_related_pr
-        f"created:<{age_floor.strftime('%Y-%m-%dT%H:%M:%SZ')}",   # was too_fresh
-        "comments:<20",                              # was saturated_thread
-    ]
-    try:
-        # Don't pass archived=False — gh CLI returns 0 hits when that
-        # flag is combined with --label/--created. The per-issue
-        # _passes_deterministic_issue check catches archived repos.
-        raw = gh_io.search_issues(
-            labels=["bug", "help-wanted"],
-            state="open", no_assignee=True, archived=None,
-            created_after=cutoff.strftime('%Y-%m-%d'),
-            extra_qualifiers=mechanical,
-            sort="created", order="desc",
-            limit=search_limit,
-        )
-    except subprocess.CalledProcessError as e:
-        raise ApplicationError(
-            f"gh search issues failed: {(e.stderr or '')[:300]}",
-            non_retryable=False,
-        )
-
-    # Always consider new issues from warm orgs (where we have
-    # standing). These get a wider recency window — warmth means
-    # the merge race is less brutal, so older issues there are
-    # still in play. Merge into the candidate set, dedupe by URL.
-    raw = _merge_warm_org_issues(raw, base_cutoff_days=req.days)
-
-    filtered: dict[str, int] = {}
-    survivors: list[tuple[int, "IssueCandidate", str, str]] = []  # (rank, ic, complexity, key)
-    now = dt.datetime.now(dt.timezone.utc)
-    complexity_rank = {"deep": 3, "medium": 2, "shallow": 1, "unknown": 0}
-
-    for it in raw:
-        repo_obj = it.get("repository") or {}
-        repo = repo_obj.get("nameWithOwner") or repo_obj.get("name_with_owner") or ""
-        number = it.get("number")
-        if not repo or not number:
-            filtered["malformed"] = filtered.get("malformed", 0) + 1
-            continue
-        key = seen.issue_key(repo, number)
-        if seen.has_seen(key):
-            filtered["seen"] = filtered.get("seen", 0) + 1
-            continue
-        # Min-age gate: give the maintainer N minutes to assign or open
-        # their own PR before we burn /investigate cycles on the bug.
-        # Don't seen-mark: the next pass should re-evaluate once aged in.
-        created_iso = it.get("createdAt") or it.get("created_at") or ""
-        if created_iso:
-            try:
-                t_created = dt.datetime.fromisoformat(
-                    created_iso.replace("Z", "+00:00"))
-                age_min = (now - t_created).total_seconds() / 60.0
-                if age_min < _min_issue_age_minutes():
-                    filtered["too_fresh"] = filtered.get("too_fresh", 0) + 1
-                    continue
-            except (ValueError, AttributeError):
-                pass
-        # Skip if this issue has a related PR (any state).
-        if _has_related_pr(repo, number):
-            filtered["has_pr"] = filtered.get("has_pr", 0) + 1
-            seen.mark_seen(key)
-            continue
-        # Tier 1a: cheap per-issue gates — title patterns, body
-        # length, comment count, leverage signals. Don't seen-mark
-        # on rejection: filter patterns can change (loosened regex,
-        # new leverage signals) and a previously-rejected issue
-        # should re-evaluate against the current rules.
-        cheap_reason = _cheap_issue_skip(it)
-        if cheap_reason:
-            filtered[f"cheap_{cheap_reason}"] = filtered.get(f"cheap_{cheap_reason}", 0) + 1
-            continue
-        # Tier 1b: deterministic gates. Same logic — kill list, star
-        # gate, AI policy can all change; don't seen-mark on rejection.
-        repo_meta = _fetch_repo_meta_cheap(repo)
-        if not _passes_deterministic_issue(repo, repo_meta):
-            filtered["deterministic"] = filtered.get("deterministic", 0) + 1
-            continue
-        # Survivor — no LLM call here. The per-issue LLM judgment
-        # belongs in /triage (TriageActor's job). Prospect's role is
-        # ingest + cheap deterministic filter. Keeping it that way
-        # keeps prospect sub-second per fire and pushes LLM cost into
-        # a queue where it can be one-at-a-time, not burst per fire.
-        labels = [l.get("name", "") for l in it.get("labels") or []]
-        ic = IssueCandidate(
-            repo=repo, number=int(number),
-            title=it.get("title", ""),
-            url=it.get("url", ""),
-            labels=labels,
-            updated_at=it.get("updatedAt", "") or "",
-        )
-        # No complexity tag at this stage — /triage assigns it via its
-        # decision. Default to "unknown" so downstream events can join.
-        survivors.append((0, ic, "unknown", key))
-
-    # No deepest-first sort here either (we don't know depth yet).
-    # Take in search order (recency for global; sort order from gh
-    # for warm-org). /triage will decide and emit complexity.
-
-    deposited = 0
-    deposited_ids: list[str] = []
-    for _, ic, complexity, _key in survivors[:effective_cap]:
-        msg_id = await deposit_issue_to_triaged(ic, complexity=complexity)
-        deposited_ids.append(msg_id)
-        deposited += 1
-    # Any survivors beyond the cap stay unseen so the next pass can
-    # re-evaluate and possibly deposit them when there's slack.
-    for _, _ic, _c, _key in survivors[effective_cap:]:
-        filtered["over_cap"] = filtered.get("over_cap", 0) + 1
-
-    observe.event(
-        "prospect_window",
-        considered=len(raw), deposited=deposited, filtered=filtered,
-        window_days=req.days,
-    )
-    return {
-        "considered": len(raw),
-        "deposited": deposited,
-        "deposited_msg_ids": deposited_ids,
-        "filtered": filtered,
-    }
 
 
 import re
@@ -861,68 +661,6 @@ def _cheap_issue_skip(item: dict) -> str | None:
     return None
 
 
-def _merge_warm_org_issues(global_results: list[dict], *,
-                            base_cutoff_days: int) -> list[dict]:
-    """Add warm-org issues to the candidate set, deduped by URL.
-
-    Warm orgs are where the operator has merge history — the standing
-    gate doesn't apply, the merge race is less brutal, and the
-    maintainer is more likely to engage on a contribution. So we
-    always sweep them, with a wider recency window than the global
-    search. The global search captures the recency-first / first-mover
-    advantage; this captures the standing-leveraged opportunities the
-    global search might miss.
-
-    Per-org searches are cached 30min in gh_io, so this costs N gh
-    calls per cache window where N = warm-org count.
-    """
-    warm_cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
-        days=max(90, base_cutoff_days * 3)
-    )
-    warm_cutoff_iso = warm_cutoff.strftime('%Y-%m-%d')
-    try:
-        warm_state = warm_orgs.state()
-        warm_org_list = list((warm_state.get("orgs") or {}).keys())
-    except Exception:
-        return global_results
-    # Cap fan-out per pass; round-robin via cursor so all warm orgs
-    # get covered over consecutive passes instead of always hitting
-    # the first N. With cap=3 and 9 warm orgs, each gets visited
-    # every 3rd pass.
-    fan_out_cap = _warm_org_fan_out_cap()
-    per_org_limit = _warm_org_issue_limit()
-    if warm_org_list and fan_out_cap < len(warm_org_list):
-        start = _warm_org_cursor_advance(len(warm_org_list), fan_out_cap)
-        rotated = warm_org_list[start:] + warm_org_list[:start]
-        warm_org_list = rotated[:fan_out_cap]
-    seen_urls = {(it.get("url") or "") for it in global_results}
-    merged = list(global_results)
-    for org in warm_org_list:
-        if not org:
-            continue
-        try:
-            # No label filter on warm orgs — we have standing here,
-            # any open issue is plausibly engageable. The label gate
-            # was a cheap proxy for "actionable" against the global
-            # firehose; for warm orgs, let the LLM judge sort it out.
-            org_results = gh_io.search_issues(
-                state="open", no_assignee=True, archived=None,
-                created_after=warm_cutoff_iso,
-                owner=org,
-                extra_qualifiers=["-linked:pr", "comments:<20"],
-                sort="created", order="desc",
-                limit=per_org_limit,
-            )
-        except Exception as e:
-            observe.event("warm_org_search_failed", org=org,
-                          error_type=type(e).__name__, error=str(e)[:200])
-            continue
-        for it in org_results:
-            url = it.get("url") or ""
-            if url and url not in seen_urls:
-                seen_urls.add(url)
-                merged.append(it)
-    return merged
 
 
 def _fetch_repo_meta_cheap(repo: str) -> dict:
@@ -1120,74 +858,7 @@ async def auto_evict_stale_repos() -> dict:
             "new_repos": new_evictions}
 
 
-@activity.defn
-async def reset_floor() -> dict:
-    """AIMD recovery: snap min_complexity back to min_complexity_target.
-    Called by the puller when triage utilization is high enough that
-    we no longer need the loosened filter to keep work flowing.
-    Idempotent — if current already equals target, no-op."""
-    path = Path.home() / ".sweep" / "control" / "min_complexity"
-    current = _min_complexity()
-    target = _target_complexity()
-    if current == target:
-        return {"floor": current, "changed": False}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(target + "\n")
-    observe.event("floor_reset", from_floor=current, to=target,
-                  reason="utilization_recovered")
-    return {"floor": target, "changed": True}
 
-
-# API budget watchdog (threshold/andon/recover thresholds, hysteresis,
-# marker file path) lives in sweep.api_budget. Re-exported here so the
-# pre-existing imports from sweep.activities.prospect keep working
-# without surface change for callers (leakdog, tests, REPL).
-from sweep.api_budget import (
-    _API_BUDGET_THRESHOLD,
-    _API_BUDGET_ANDON,
-    _API_BUDGET_RECOVER,
-    _api_budget_cache,
-    _api_budget_block,
-    _clear_budget_andon_if_held,
-    _record_budget_andon,
-)
-
-
-PROSPECT_INBOX = Path.home() / ".sweep" / "inbox" / "prospect.jsonl"
-
-
-async def kick_prospect_card(sender: str) -> str | None:
-    """Pull-signal: deposit one card on prospect's inbox and signal the
-    actor. Called from triage's ack path (each triaged item drops a card)
-    and from the leakdog heartbeat (safety net when the inbox goes empty).
-
-    Idempotency: the actor dedupes by msg_id; we mint a fresh id per
-    call so each card is a distinct unit of demand. Best-effort — jsonl
-    write is the durable record; signal failure logs an event but
-    doesn't raise (leakdog will catch the strand on the next tick).
-    """
-    from sweep.activities.pr_state import _signal_actor
-    ts = dt.datetime.now(dt.timezone.utc)
-    # repo is typed `str` (not Optional) on Message — Temporal's strict
-    # dataclass deserialization rejects None even though dataclasses
-    # would tolerate it. Use empty string as the no-repo sentinel.
-    msg = Message(
-        msg_id=f"prospect-card-{sender}-{ts.strftime('%Y%m%dT%H%M%S%f')}",
-        sender=sender,
-        intent="card",
-        repo="", pr=None, branch=None,
-        payload={"reason": f"pull from {sender}"},
-        ts=ts.isoformat(),
-    )
-    PROSPECT_INBOX.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(PROSPECT_INBOX, "a") as f:
-            f.write(json.dumps(asdict(msg)) + "\n")
-    except OSError as e:
-        observe.event("prospect_card_write_failed",
-                      error_type=type(e).__name__, error=str(e)[:200])
-        return None
-    return await _signal_actor("prospect", msg)
 
 
 _PROSPECT_STATE_PATH = Path.home() / ".sweep" / "state" / "prospect_actor.json"
@@ -1212,52 +883,73 @@ def _save_prospect_state(state: dict) -> None:
         pass
 
 
+# How often the per-card cycle runs the eviction sweep. With per-issue
+# cards firing dozens of times per scout result, 100 keeps the cadence
+# roughly in line with the old per-pass `every-10-fires` rhythm.
+PROSPECT_EVICT_EVERY_CARDS = 100
+
+# After N consecutive cards rejected by the filter pipeline, ask the
+# floor to loosen. Cards that find no work (no raw payload, malformed)
+# don't count — only cards where we considered the issue and rejected.
+PROSPECT_LOOSEN_EMPTY_STREAK_CARDS = 50
+
+
 @activity.defn
 async def prospect_cycle(msg: Message) -> dict:
-    """One prospect pass triggered by a card from downstream (typically
-    triage's ack handler, with a leakdog heartbeat as fallback). Wraps
-    `prospect_recency_window` plus the periodic side-effects that used
-    to live in the bespoke `ProspectPuller` loop (floor loosening on
-    empty streaks, eviction sweep every N fires). State persists in
-    `_PROSPECT_STATE_PATH` so it survives restarts and is independent
-    of any one workflow instance.
+    """Process ONE issue card from scout. The card payload carries the
+    raw gh search result; this activity filters it inline, makes at
+    most one fresh gh call (issue_events to detect related PRs, and
+    only if cheaper checks pass), and deposits a triaged-inbox entry
+    if the issue survives. All pacing between cards happens at the
+    SkillActor's should_idle boundary, so the per-card cost is bounded
+    and the budget gate has one-call resolution.
 
-    The msg payload is unused — the card itself is the trigger; what
-    to do is fixed (one pass). Kept for the SkillActor interface."""
-    # Throttle gate at entry: refuse to fire if the budget gate would
-    # block. The pause_gate.should_idle already covered this at the
-    # SkillActor's pull boundary, but a fresh check here protects
-    # against races (state changed between idle-check and activity start).
+    Compare the old per-pass `prospect_cycle`: that one ran an entire
+    100-issue sweep inside a single activity invocation, bursting
+    through the per-actor rate cap before the gate could see it. This
+    refactor moves the loop up to scout (one search per card) and the
+    per-issue work down to one prospect cycle per issue.
+    """
     from sweep import budget as _budget
+    _budget.set_caller("prospect")
     if _budget.is_blocked("prospect"):
-        observe.event("prospect_cycle_skipped", reason="budget_andon")
-        return {"considered": 0, "deposited": 0, "skipped": "budget_andon"}
+        observe.event("prospect_cycle_skipped", reason="budget_andon",
+                      msg_id=msg.msg_id)
+        return {"skipped": "budget_andon"}
+    if retro_state.is_halted():
+        observe.incr("halted_skip:prospect")
+        return {"skipped": "halted"}
+    if control_state.is_paused():
+        observe.incr("paused_skip:prospect")
+        return {"skipped": "paused"}
 
     state = _load_prospect_state()
     state["fires_total"] = int(state.get("fires_total", 0)) + 1
 
-    req = ProspectRunRequest()  # defaults; knobs apply inside
-    result = await prospect_recency_window(req)
+    outcome = await _screen_one_issue(msg)
 
-    considered = int(result.get("considered", 0)) if isinstance(result, dict) else 0
-    deposited = int(result.get("deposited", 0)) if isinstance(result, dict) else 0
+    # Empty-streak floor loosening — count only cards we actually
+    # considered (filtered out an issue). Skipped-for-pause /
+    # malformed / triage-full don't move the streak.
+    counted = outcome.get("considered", False)
+    deposited = bool(outcome.get("deposited"))
+    if counted:
+        if deposited:
+            state["empty_streak"] = 0
+        else:
+            state["empty_streak"] = int(state.get("empty_streak", 0)) + 1
+            if state["empty_streak"] >= PROSPECT_LOOSEN_EMPTY_STREAK_CARDS:
+                try:
+                    r = await loosen_floor()
+                    if r.get("changed"):
+                        state["empty_streak"] = 0
+                except Exception as e:
+                    observe.event("loosen_floor_failed",
+                                  error_type=type(e).__name__,
+                                  error=str(e)[:200])
 
-    # Empty-streak floor loosening (was inside ProspectPuller).
-    if deposited > 0:
-        state["empty_streak"] = 0
-    elif considered > 0:
-        state["empty_streak"] = int(state.get("empty_streak", 0)) + 1
-        if state["empty_streak"] >= PROSPECT_LOOSEN_EMPTY_STREAK:
-            try:
-                r = await loosen_floor()
-                if r.get("changed"):
-                    state["empty_streak"] = 0
-            except Exception as e:
-                observe.event("loosen_floor_failed",
-                              error_type=type(e).__name__, error=str(e)[:200])
-
-    # Periodic eviction sweep (was inside ProspectPuller).
-    if state["fires_total"] % PROSPECT_EVICT_EVERY == 0:
+    # Periodic eviction sweep.
+    if state["fires_total"] % PROSPECT_EVICT_EVERY_CARDS == 0:
         try:
             await auto_evict_stale_repos()
         except Exception as e:
@@ -1265,59 +957,84 @@ async def prospect_cycle(msg: Message) -> dict:
                           error_type=type(e).__name__, error=str(e)[:200])
 
     _save_prospect_state(state)
-    return {
-        "considered": considered,
-        "deposited": deposited,
-        "fires_total": state["fires_total"],
-        "empty_streak": state["empty_streak"],
-    }
+    outcome["fires_total"] = state["fires_total"]
+    outcome["empty_streak"] = state["empty_streak"]
+    return outcome
 
 
-@activity.defn
-async def check_pull_conditions() -> dict:
-    """Snapshot of every gate ProspectPuller respects. Returns
-    `{can_pull: bool, reason: str, depths: {...}}`. Cheap — pure
-    filesystem reads plus a cached rate-limit peek."""
+async def _screen_one_issue(msg: Message) -> dict:
+    """The per-card filter pipeline. Pure helper — `prospect_cycle`
+    wraps it with state bookkeeping and andon-clear logic. Returns a
+    dict with `considered`, `deposited`, and a `reason`/`status` for
+    observability."""
+    payload = msg.payload or {}
+    raw = payload.get("raw") or {}
+    repo = msg.repo
+    number = msg.pr
+    if not repo or number is None:
+        return {"considered": False, "status": "malformed",
+                "repo": repo, "issue": number}
+
+    key = seen.issue_key(repo, int(number))
+    if seen.has_seen(key):
+        return {"considered": False, "status": "seen",
+                "repo": repo, "issue": int(number)}
+
+    # Capacity check — don't take the gh hit if the deposit will be
+    # refused anyway. Leave unseen so a future card can re-evaluate
+    # once triage drains.
     from sweep import inbox_state as _inbox
+    if len(_inbox.inbox_states("triaged")["queued"]) >= 10:
+        return {"considered": False, "status": "triage_full",
+                "repo": repo, "issue": int(number)}
 
-    paused = control_state.is_paused()
-    halted = retro_state.is_halted()
-    states = {a: _inbox.inbox_states(a) for a in ("triaged", "investigate")}
-    depths = {a: len(s["queued"]) for a, s in states.items()}
-    # Caps lifted from cockpit.py; importing the dict directly would
-    # cycle, so we inline. Bump here if cockpit's CAPS change.
-    caps = {"triaged": 10, "investigate": 5}
+    # Min-age gate — give the maintainer a few minutes to assign or
+    # open their own PR before we burn investigate cycles. Don't
+    # seen-mark: the next pass should re-evaluate once aged in.
+    now = dt.datetime.now(dt.timezone.utc)
+    created_iso = raw.get("createdAt") or raw.get("created_at") or ""
+    if created_iso:
+        try:
+            t_created = dt.datetime.fromisoformat(
+                created_iso.replace("Z", "+00:00"))
+            age_min = (now - t_created).total_seconds() / 60.0
+            if age_min < _min_issue_age_minutes():
+                return {"considered": False, "status": "too_fresh",
+                        "repo": repo, "issue": int(number)}
+        except (ValueError, AttributeError):
+            pass
 
-    if paused:
-        return {"can_pull": False, "reason": "paused", "depths": depths}
-    if halted:
-        return {"can_pull": False, "reason": "retro halted", "depths": depths}
-    if depths["triaged"] >= caps["triaged"]:
-        return {"can_pull": False,
-                "reason": f"triage full ({depths['triaged']}/{caps['triaged']})",
-                "depths": depths}
-    if depths["investigate"] >= caps["investigate"]:
-        return {"can_pull": False,
-                "reason": f"investigate full ({depths['investigate']}/{caps['investigate']})",
-                "depths": depths}
-    budget_reason = _api_budget_block()
-    if budget_reason:
-        return {"can_pull": False, "reason": budget_reason, "depths": depths}
-    # Per-actor throttle: block at 80% of the 15m share so a single
-    # ~50-call fire doesn't bust cap. Same mechanism as the andon
-    # (budget.share_used) just one step earlier in the escalation —
-    # throttle here, andon at +10 overshoot if a fire still slips past.
-    # Replaces the puller-side 180s takt sleep with a unified
-    # budget-driven gate. Cap = HOURLY_LIMIT × share × 15/60.
-    from sweep import budget as _budget
-    share_pct = _budget.share_used("prospect")
-    if share_pct >= 0.8:
-        return {"can_pull": False,
-                "reason": (f"throttled — prospect at {int(100*share_pct)}% "
-                           f"of {int(_budget.SHARES['prospect']*100)}% share "
-                           f"in {_budget.LOCAL_WINDOW_MINUTES}m"),
-                "depths": depths}
-    return {"can_pull": True, "reason": "ready", "depths": depths}
+    cheap_reason = _cheap_issue_skip(raw)
+    if cheap_reason:
+        return {"considered": True, "status": f"cheap_{cheap_reason}",
+                "deposited": False, "repo": repo, "issue": int(number)}
+
+    meta = _fetch_repo_meta_cheap(repo)  # cached 24h; free after warmup
+    if not _passes_deterministic_issue(repo, meta):
+        return {"considered": True, "status": "deterministic",
+                "deposited": False, "repo": repo, "issue": int(number)}
+
+    # The one always-fresh-ish gh call: cross-reference check. 5min
+    # TTL upstream, so consecutive cards on the same issue dedupe.
+    if _has_related_pr(repo, int(number)):
+        seen.mark_seen(key)
+        return {"considered": True, "status": "has_pr",
+                "deposited": False, "repo": repo, "issue": int(number)}
+
+    labels = [l.get("name", "") for l in raw.get("labels") or []]
+    ic = IssueCandidate(
+        repo=repo, number=int(number),
+        title=raw.get("title", ""),
+        url=raw.get("url", ""),
+        labels=labels,
+        updated_at=raw.get("updatedAt", "") or raw.get("updated_at", "") or "",
+    )
+    msg_id = await deposit_issue_to_triaged(ic, complexity="unknown")
+    return {"considered": True, "status": "deposited",
+            "deposited": bool(msg_id), "msg_id": msg_id,
+            "repo": repo, "issue": int(number)}
+
+
 
 
 @activity.defn

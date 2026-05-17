@@ -24,14 +24,12 @@ from sweep.activities.claim import claim_issue
 from sweep.activities.infer import infer_test_cmd
 from sweep.activities.prospect import (
     auto_evict_stale_repos,
-    check_pull_conditions,
     loosen_floor,
     prospect_cycle,
     prospect_one_pass,
-    prospect_recency_window,
-    reset_floor,
     should_triage_issue,
 )
+from sweep.activities.scout import scout_cycle
 from sweep.activities.notifications import (
     mark_thread_read,
     poll_github_notifications,
@@ -93,10 +91,13 @@ async def _amain() -> None:
             bless_cycle,
             # usage probe
             probe_claude_usage,
-            # prospect actor (recency-first three-tier funnel, card-driven)
-            prospect_cycle, prospect_recency_window, should_triage_issue,
-            check_pull_conditions,
-            loosen_floor, reset_floor, auto_evict_stale_repos,
+            # scout (one search per card) + prospect (one issue per card).
+            # Per-card pacing replaces the old burst-per-pass model:
+            # scout writes one prospect card per raw issue; prospect
+            # screens one issue per fire, with should_idle between cards.
+            scout_cycle,
+            prospect_cycle, should_triage_issue,
+            loosen_floor, auto_evict_stale_repos,
             prospect_one_pass,  # legacy star-cursor path, kept as escape hatch
             # worktree + cockpit view-layer markers
             ensure_worktree, mark_started, mark_acked,

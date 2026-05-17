@@ -153,7 +153,7 @@ async def triage_cycle(msg: Message) -> dict:
                                non_retryable=True)
     from sweep import observe, gh_io
     from sweep import budget as _budget
-    from sweep.activities.prospect import kick_prospect_card
+    from sweep.activities.scout import kick_scout_card
     _budget.record_subprocess_estimate("triage")
     # Front-of-cycle gate: if the repo is hostile to AI contributions,
     # route to immunize and short-circuit. Catches what prospect's 24h
@@ -221,13 +221,15 @@ async def triage_cycle(msg: Message) -> dict:
                       issue=msg.pr, rc=result.get("rc", 0))
         return result
     finally:
-        # Pull signal: every triage cycle emits one card on exit,
-        # regardless of outcome. Bounded by prospect_recency_window's
-        # free_slots check (cheap noop when triage queue is full).
+        # Pull signal: every triage cycle emits one scout card on
+        # exit, regardless of outcome. Scout's gh share is small
+        # (0.02) and one card per ack is the natural pacing — the
+        # SkillActor's should_idle gate throttles when scout's burst
+        # would overshoot.
         try:
-            await kick_prospect_card("triage")
+            await kick_scout_card("triage")
         except Exception as e:
-            observe.event("kick_prospect_failed", site="triage_cycle",
+            observe.event("kick_scout_failed", site="triage_cycle",
                           error_type=type(e).__name__, error=str(e)[:200])
 
 

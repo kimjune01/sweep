@@ -16,6 +16,7 @@ TRIAGE_ACTOR_ID = "triage-actor"
 INVESTIGATE_ACTOR_ID = "investigate-actor"
 PROSPECT_PULLER_ID = "prospect-puller"  # legacy; replaced by PROSPECT_ACTOR_ID
 PROSPECT_ACTOR_ID = "prospect-actor"
+SCOUT_ACTOR_ID = "scout-actor"
 TISSUE_ACTOR_ID = "tissue-actor"
 WIPE_ACTOR_ID = "wipe-actor"
 IMMUNIZE_ACTOR_ID = "immunize-actor"
