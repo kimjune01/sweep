@@ -77,6 +77,8 @@ def _now() -> dt.datetime:
 
 
 def _cache_get(key: str) -> str | None:
+    """Fresh hit only — returns None if the row exists but expired.
+    Use _cache_get_any to read stale rows for stale-while-revalidate."""
     now = _now().isoformat()
     with _conn() as conn:
         row = conn.execute(
@@ -84,6 +86,22 @@ def _cache_get(key: str) -> str | None:
             (key, now),
         ).fetchone()
     return row[0] if row else None
+
+
+def _cache_get_any(key: str) -> tuple[str | None, bool]:
+    """Returns (response, fresh) for any cached row regardless of TTL.
+    Lets readers serve stale data instantly while a background warmer
+    refreshes. (None, False) means no row at all — caller must fetch
+    synchronously."""
+    now = _now().isoformat()
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT response, expires_at FROM gh_cache WHERE key = ?",
+            (key,),
+        ).fetchone()
+    if not row:
+        return None, False
+    return row[0], row[1] > now
 
 
 def _cache_put(key: str, endpoint: str, args: list[str],
@@ -121,18 +139,35 @@ def _gh(args: list[str]) -> str:
 
 
 def _cached_json(endpoint: str, args: list[str], ttl: int) -> list | dict:
+    """Stale-while-revalidate. Hot path NEVER blocks if the cache has
+    ever seen this key:
+
+      - Fresh hit: return cached.
+      - Stale hit (TTL expired but row exists): return cached AND kick
+        a detached background subprocess to refetch. Next call sees
+        fresh data.
+      - No row at all (first-ever call): blocking fetch + cache.
+
+    If callers want strict freshness they can clear the row first.
+    Stale data is fine when the cache is hit often enough that the
+    background refresh catches up before the staleness matters —
+    operator displays cycle every few seconds, the warmer takes
+    one gh call (~1s)."""
     from sweep import observe  # local import — observe imports nothing from gh_io
 
     key = _key(endpoint, args)
-    hit = _cache_get(key)
-    if hit is not None:
+    raw_cached, fresh = _cache_get_any(key)
+    if raw_cached is not None:
         try:
-            parsed = json.loads(hit)
+            parsed = json.loads(raw_cached)
         except json.JSONDecodeError:
-            parsed = None  # corrupt cache row — fall through to refetch
+            parsed = None
         if parsed is not None:
-            observe.incr(f"gh_hit:{endpoint}")
+            observe.incr(f"gh_hit:{endpoint}" if fresh else f"gh_stale:{endpoint}")
+            if not fresh:
+                _spawn_warmer(endpoint, args, ttl, key)
             return parsed
+
     observe.incr(f"gh_miss:{endpoint}")
     raw = _gh(args)
     try:
@@ -141,6 +176,56 @@ def _cached_json(endpoint: str, args: list[str], ttl: int) -> list | dict:
         parsed = []
     _cache_put(key, endpoint, args, json.dumps(parsed), ttl)
     return parsed
+
+
+def _spawn_warmer(endpoint: str, args: list[str], ttl: int, key: str) -> None:
+    """Fire-and-forget background refresh. Lockfile-gated per cache
+    key so multiple stale reads in quick succession don't fan out."""
+    import sys
+    lock_dir = DB_PATH.parent / "warmers"
+    lock = lock_dir / f"{key}.lock"
+    if lock.exists():
+        try:
+            if _now().timestamp() - lock.stat().st_mtime < 300:
+                return
+        except OSError:
+            pass
+    try:
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock.touch()
+    except OSError:
+        pass
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "sweep.gh_io", "warm",
+             endpoint, str(ttl), json.dumps(args)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, start_new_session=True,
+        )
+    except OSError:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def _warm(endpoint: str, args: list[str], ttl: int) -> None:
+    """Synchronous fetch used by the background warmer subprocess.
+    Writes the cache row and exits."""
+    key = _key(endpoint, args)
+    try:
+        raw = _gh(args)
+        try:
+            parsed = json.loads(raw) if raw.strip() else []
+        except json.JSONDecodeError:
+            parsed = []
+        _cache_put(key, endpoint, args, json.dumps(parsed), ttl)
+    finally:
+        lock = DB_PATH.parent / "warmers" / f"{key}.lock"
+        try:
+            lock.unlink()
+        except OSError:
+            pass
 
 
 # ------------------------------------------------------------ public API
@@ -360,3 +445,14 @@ def purge_expired() -> int:
         cur = conn.execute("DELETE FROM gh_cache WHERE expires_at < ?", (now,))
         conn.commit()
         return cur.rowcount
+
+
+if __name__ == "__main__":
+    # Background warmer entrypoint:
+    #   python -m sweep.gh_io warm <endpoint> <ttl> <json_args>
+    import sys
+    if len(sys.argv) >= 5 and sys.argv[1] == "warm":
+        endpoint = sys.argv[2]
+        ttl = int(sys.argv[3])
+        args = json.loads(sys.argv[4])
+        _warm(endpoint, args, ttl)

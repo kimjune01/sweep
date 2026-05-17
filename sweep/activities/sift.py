@@ -945,6 +945,29 @@ async def sift_cycle(msg: Message) -> dict:
     state = _load_sift_state()
     state["fires_total"] = int(state.get("fires_total", 0)) + 1
 
+    # Background org-state refresher. Reads (state, is_org_blocked)
+    # never refresh; this tick is the only thing that keeps the cache
+    # from drifting past BG_REFRESH_TTL (15 min) when no PRs have
+    # been published to trigger a write-through refresh.
+    try:
+        if org_state.refresh_if_stale():
+            observe.event("org_state_bg_refreshed")
+    except Exception as e:
+        observe.event("org_state_bg_refresh_failed",
+                      error_type=type(e).__name__, error=str(e)[:200])
+
+    # Worker writes the disk-usage stamp; display surfaces (waste,
+    # cockpit) read it. Same decider-writes / display-reads pattern
+    # — du -sk is a few-second subprocess on a multi-GB worktree
+    # tree, way too slow for TUI cycling.
+    try:
+        from sweep import disk_state
+        if disk_state.refresh_if_stale():
+            observe.event("disk_state_bg_refreshed")
+    except Exception as e:
+        observe.event("disk_state_bg_refresh_failed",
+                      error_type=type(e).__name__, error=str(e)[:200])
+
     outcome = await _screen_one_issue(msg)
 
     # Empty-streak floor loosening — count only cards we actually

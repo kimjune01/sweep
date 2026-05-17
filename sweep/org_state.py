@@ -5,17 +5,22 @@ burning standing. This module tracks which orgs are "blocked" (have an
 open PR awaiting review) so sift can skip them at the front of the
 pipe and drip can hold pushes for them at the back.
 
-Cached at ~/.sweep/cache/org_state.json with per-org freshness. Each
-org's entry carries its own `fetched_at`; refresh is per-org via a
-scoped `gh search prs --owner X` call (small, fast — much cheaper
-than refetching all ~150 PRs across all orgs every TTL). After
-publishing to org X we invalidate JUST X's entry; Y and Z keep
-serving from cache.
+Architecture: pure cache reads; writes refresh from gh explicitly.
 
-The full snapshot (`state()`) is still available for display
-surfaces (cockpit / waste) — it iterates known orgs, refreshing any
-stale entries. Bootstrap (empty cache) does one full
-`gh search prs --author=@me` call to learn the set of orgs.
+- All readers (state, is_org_blocked) hit ~/.sweep/cache/org_state.json
+  and never block on network. A stale cache reads as stale; the
+  display surfaces show the cache's age. Reads never trigger refresh.
+- Writers (publishers) call `refresh_org(org)` after they ship a PR,
+  re-fetching that one org via scoped `gh search prs --owner X` and
+  updating the cache atomically. The next gate read sees the new PR
+  immediately — no race window, no TTL to wait out.
+- Cold bootstrap: `refresh_all()` does one big `gh search prs
+  --author=@me` and seeds the cache. Called from sweep startup and
+  on operator demand (`sweep refresh-orgs`).
+
+The TTL field on each entry is informational only — it tells display
+surfaces how old the cache is so the operator can spot bit-rot.
+Reads do not act on it.
 """
 
 from __future__ import annotations
@@ -31,11 +36,11 @@ from sweep.io_safe import atomic_write_text
 
 
 CACHE = Path.home() / ".sweep" / "cache" / "org_state.json"
-# Per-org TTL — short because each refresh is one scoped gh call
-# (small). The gate becomes effectively real-time without bandwidth
-# cost: refetching just org X on a gate miss is bounded by X's PR
-# count (usually <5), not by the substrate's total open PR count.
-ORG_TTL = 30.0
+# How long the background refresher waits before re-fetching the
+# full org set. Reads do NOT consult this — they only read cache.
+# This bounds how stale display surfaces can get when no writes
+# have happened to refresh things naturally.
+BG_REFRESH_TTL = 15 * 60.0
 
 
 def _user() -> str:
@@ -138,9 +143,20 @@ def _refresh_all(user: str) -> dict[str, list[dict]]:
 
 
 def _entry(org: str) -> dict:
-    """Get org X's cache entry, refreshing if stale. Returns
-    {prs: [...], fetched_at: float}. Per-org refresh on miss is the
-    cheap path: one scoped gh call, bounded by X's PR count."""
+    """Read org X's cache entry. Pure cache read — never refreshes.
+    Returns {prs: [], fetched_at: 0.0} if the org isn't cached yet.
+    Callers that need fresh data must call refresh_org() first."""
+    if not org:
+        return {"prs": [], "fetched_at": 0.0}
+    data = _load_cache()
+    return data.get("orgs", {}).get(org, {"prs": [], "fetched_at": 0.0})
+
+
+def refresh_org(org: str) -> dict:
+    """Re-fetch one org from gh and write to cache. Returns the new
+    entry. Call this after publishing a PR so the gate sees the new
+    open PR immediately without a stale-cache race. Per-org refresh
+    is cheap (one scoped gh call, bounded by X's PR count)."""
     if not org:
         return {"prs": [], "fetched_at": time.time()}
     data = _load_cache()
@@ -149,76 +165,61 @@ def _entry(org: str) -> dict:
     user = data["user"]
     if not user:
         return {"prs": [], "fetched_at": time.time()}
-    entry = data["orgs"].get(org, {"prs": [], "fetched_at": 0.0})
-    if time.time() - entry.get("fetched_at", 0.0) < ORG_TTL:
-        return entry
-    # Stale: refresh just this org.
-    entry = {
-        "prs": _refresh_org(org, user),
-        "fetched_at": time.time(),
-    }
+    entry = {"prs": _refresh_org(org, user), "fetched_at": time.time()}
     data["orgs"][org] = entry
     _save_cache(data)
     return entry
 
 
-def invalidate(org: str | None = None) -> None:
-    """Mark an org's cache entry stale so the next read refetches.
-    Called after we create a PR so the gate doesn't approve a second
-    PR to the same org during the TTL window. Passing None
-    invalidates the whole cache (kept for migration compatibility;
-    prefer per-org)."""
+def refresh_if_stale() -> bool:
+    """Called from background tickers (sift). No-op if cache's
+    oldest entry is younger than BG_REFRESH_TTL; otherwise refreshes
+    the full set. Returns True if a refresh ran."""
     data = _load_cache()
-    if org is None:
-        data["orgs"] = {}
-    elif org in data.get("orgs", {}):
-        data["orgs"][org]["fetched_at"] = 0.0
-    _save_cache(data)
+    orgs = data.get("orgs", {})
+    oldest = min((e.get("fetched_at", 0.0) for e in orgs.values()),
+                 default=0.0)
+    if orgs and time.time() - oldest < BG_REFRESH_TTL:
+        return False
+    refresh_all()
+    return True
 
 
-def state(*, refresh: bool = True) -> dict:
-    """Full snapshot.
-
-    `refresh=True` (default, for background callers like sift): refreshes
-    any stale per-org entry by calling `gh search prs`. With ~120 orgs
-    and a 30s TTL, the loop can take 100+ seconds.
-
-    `refresh=False` (for display surfaces like cockpit / waste / TUI
-    cycling): reads whatever is on disk, no network. Returns
-    instantly; the display includes the cache's age so the operator
-    knows the freshness. Display surfaces never need real-time gate
-    accuracy — that's what `is_org_blocked` is for at decision time.
-
-    Return shape stays the same as the legacy snapshot:
-      {orgs: {org_name: [pr_info, ...]}, fetched_at, user}.
-    `fetched_at` is the oldest org's fetch time so callers using it
-    as a global freshness signal get a conservative answer.
-    """
+def refresh_all() -> dict[str, list[dict]]:
+    """One big `gh search prs --author=@me` to learn the full set of
+    orgs and seed the cache. Used at sweep startup and on operator
+    demand (`sweep refresh-orgs`). Returns the new orgs map."""
     data = _load_cache()
     if not data.get("user"):
         data["user"] = _user()
     user = data["user"]
     if not user:
-        return {"orgs": {}, "fetched_at": time.time(), "user": ""}
-    if refresh:
-        if not data["orgs"]:
-            now = time.time()
-            full = _refresh_all(user)
-            data["orgs"] = {org: {"prs": prs, "fetched_at": now}
-                            for org, prs in full.items()}
-            _save_cache(data)
-        else:
-            for org, entry in list(data["orgs"].items()):
-                if time.time() - entry.get("fetched_at", 0.0) >= ORG_TTL:
-                    data["orgs"][org] = {
-                        "prs": _refresh_org(org, user),
-                        "fetched_at": time.time(),
-                    }
-            _save_cache(data)
+        return {}
+    now = time.time()
+    full = _refresh_all(user)
+    data["orgs"] = {org: {"prs": prs, "fetched_at": now}
+                    for org, prs in full.items()}
+    _save_cache(data)
+    return full
+
+
+def state() -> dict:
+    """Pure cache read. Never fetches from gh. Empty until
+    `refresh_all()` seeds it (sweep startup) or `refresh_org()` warms
+    individual entries (post-publish writes).
+
+    Return shape stays the same as the legacy snapshot:
+      {orgs: {org_name: [pr_info, ...]}, fetched_at, user}.
+    `fetched_at` is the oldest org's fetch time so display surfaces
+    can show how stale the cache is.
+    """
+    data = _load_cache()
+    user = data.get("user", "")
+    orgs = data.get("orgs", {})
     return {
-        "orgs": {org: entry["prs"] for org, entry in data["orgs"].items()},
+        "orgs": {org: entry["prs"] for org, entry in orgs.items()},
         "fetched_at": min((e.get("fetched_at", 0.0)
-                          for e in data["orgs"].values()), default=time.time()),
+                          for e in orgs.values()), default=0.0),
         "user": user,
     }
 
@@ -233,7 +234,8 @@ def _ready_prs(prs: list[dict]) -> list[dict]:
 
 def is_org_blocked(org: str, *, max_open_per_org: int = 1) -> bool:
     """True if the org already has the limit of open NON-DRAFT
-    authored PRs. Hot path — uses per-org cache only, no fanout."""
+    authored PRs. Pure cache read. Publishers must refresh_org(org)
+    after creating a PR so the next gate check sees the new state."""
     if not org:
         return False
     return len(_ready_prs(_entry(org)["prs"])) >= max_open_per_org

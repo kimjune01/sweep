@@ -23,36 +23,83 @@ CACHE = Path.home() / ".sweep" / "cache" / "outcomes.json"
 CACHE_TTL = 3600.0
 
 
+def _load_store() -> dict[str, dict]:
+    if not CACHE.exists():
+        return {}
+    try:
+        raw = json.loads(CACHE.read_text())
+        if not isinstance(raw, dict):
+            return {}
+        if "days" in raw and "fetched_at" in raw:
+            return {str(raw["days"]): raw}
+        return {str(k): v for k, v in raw.items() if isinstance(v, dict)}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def outcomes(days: int = 7) -> dict:
-    """Fetch merged + closed-but-not-merged counts per day.
+    """Stale-while-revalidate read: return whatever's cached for this
+    `days` value instantly, and if it's stale, kick a background
+    subprocess to refresh. Next call sees the new value.
 
-    Returns {days, user, start, end, merged, closed, merged_per_day,
-    closed_per_day, fetched_at}.
+    Display surfaces (wasteboard) cycle through this many times per
+    operator session — blocking even once for 7s is the kind of lag
+    that breaks the TUI. By contrast, a slightly-stale outcomes view
+    is invisible: the daily buckets don't move minute-to-minute.
 
-    Cache layout: ~/.sweep/cache/outcomes.json is a dict keyed by the
-    `days` value. The wasteboard calls this twice per render with two
-    different windows (score window + pick-since-epoch), so a
-    single-slot cache made one of the two calls always miss. Old format
-    (top-level keys `days`/`fetched_at`/...) is read once and migrated
-    in place under its `days` key.
+    First-ever call returns an empty result so callers don't have to
+    handle None; the warmer fills in subsequent calls.
     """
-    store: dict[str, dict] = {}
-    if CACHE.exists():
-        try:
-            raw = json.loads(CACHE.read_text())
-            if isinstance(raw, dict):
-                if "days" in raw and "fetched_at" in raw:
-                    # Legacy single-slot file — fold it into the new shape.
-                    store = {str(raw["days"]): raw}
-                else:
-                    store = {str(k): v for k, v in raw.items()
-                             if isinstance(v, dict)}
-        except (json.JSONDecodeError, OSError):
-            store = {}
+    store = _load_store()
+    end = dt.datetime.now(dt.timezone.utc).date()
+    start = end - dt.timedelta(days=days - 1)
     hit = store.get(str(days))
-    if hit and (time.time() - hit.get("fetched_at", 0)) < CACHE_TTL:
-        return hit
 
+    stale = not hit or (time.time() - hit.get("fetched_at", 0)) >= CACHE_TTL
+    if stale:
+        _spawn_warmer(days)
+
+    if hit:
+        return hit
+    return _empty(days, start, end)
+
+
+def _spawn_warmer(days: int) -> None:
+    """Fire-and-forget background refresh. Detaches from the parent
+    so the CLI / TUI doesn't wait. If a warmer is already running for
+    this `days` (lockfile present), no-op."""
+    import sys
+    lock = CACHE.parent / f".outcomes-warmer-{days}.lock"
+    if lock.exists():
+        # Honor a stale lock after 5 min — otherwise a crashed warmer
+        # would block warming forever.
+        try:
+            if time.time() - lock.stat().st_mtime < 300:
+                return
+        except OSError:
+            pass
+    try:
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.touch()
+    except OSError:
+        pass
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "sweep.outcomes", "warm", str(days)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, start_new_session=True,
+        )
+    except OSError:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def _refresh(days: int) -> dict:
+    """Synchronous refresh — what the background warmer actually runs.
+    Holds the lock for the duration; clears it on exit."""
+    store = _load_store()
     end = dt.datetime.now(dt.timezone.utc).date()
     start = end - dt.timedelta(days=days - 1)
 
@@ -155,8 +202,27 @@ def _empty(days: int, start: dt.date, end: dt.date) -> dict:
         "merged": 0, "closed": 0,
         "merged_per_day": [0] * days, "closed_per_day": [0] * days,
         "merged_records": [], "closed_records": [],
-        "fetched_at": time.time(),
+        # fetched_at=0 so the next read treats this placeholder as
+        # stale and re-kicks the warmer (the first kick may have
+        # crashed; don't wedge on a never-warmed slot).
+        "fetched_at": 0.0,
     }
+
+
+if __name__ == "__main__":
+    # Background warmer entrypoint: `python -m sweep.outcomes warm N`.
+    # Holds the lock for its lifetime; clears it on exit.
+    import sys
+    if len(sys.argv) >= 3 and sys.argv[1] == "warm":
+        days = int(sys.argv[2])
+        lock = CACHE.parent / f".outcomes-warmer-{days}.lock"
+        try:
+            _refresh(days)
+        finally:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
 
 
 def recent_merged_records(days: int = 7, *, repo: str | None = None) -> list[dict]:

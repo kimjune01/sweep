@@ -164,23 +164,21 @@ async def respond_cycle(msg: Message) -> dict:
 
 
 def _invalidate_org_state_cache(repo: str) -> None:
-    """After we publish a new PR, force the org_state cache to
-    refetch on the next read so the gate doesn't approve a second
-    PR to the same org during the cache TTL window. The wild #1924
-    era of the substrate let two PRs land in kimjune01/sptlrx 4m25s
-    apart because the 5-min cache showed 0 for both checks."""
+    """After we publish a new PR, refetch this org from gh and write
+    it through to cache. The next gate read sees the new PR
+    immediately with no race. Per-org fetch is one scoped gh call.
+    The wild #1924 era let two PRs land in kimjune01/sptlrx 4m25s
+    apart because the old TTL cache hadn't expired between checks;
+    write-through closes that window structurally."""
     try:
         from sweep import org_state, observe
         org = org_state.org_of(repo)
-        org_state.invalidate(org)
-        observe.event("org_state_invalidated", repo=repo, org=org,
+        org_state.refresh_org(org)
+        observe.event("org_state_refreshed", repo=repo, org=org,
                       reason="post-publish")
     except Exception as e:
-        # Cache-invalidate failure is best-effort; the gate still
-        # works (just with stale data) and the next TTL expiry
-        # fixes the cache on its own.
         from sweep import observe
-        observe.event("org_state_invalidate_failed", repo=repo,
+        observe.event("org_state_refresh_failed", repo=repo,
                       error_type=type(e).__name__, error=str(e)[:200])
 
 
