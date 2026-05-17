@@ -24,7 +24,14 @@ from sweep.io_safe import atomic_write_text
 
 
 CACHE = Path.home() / ".sweep" / "cache" / "org_state.json"
-CACHE_TTL = 300.0  # 5 min
+CACHE_TTL = 30.0  # 30s — must be shorter than the substrate's
+                  # PR-creation cadence, else the org gate becomes
+                  # advisory. The original 5-min TTL let two PRs land
+                  # in kimjune01/sptlrx 4m25s apart (cache showed 0
+                  # at both gate checks because it was stale by
+                  # construction). Combine with invalidate() called
+                  # after we create a PR — write-through closes the
+                  # remaining race within the 30s window.
 
 
 def _refresh() -> dict:
@@ -72,6 +79,19 @@ def _refresh() -> dict:
     except OSError:
         pass
     return result
+
+
+def invalidate() -> None:
+    """Force the next state() call to refetch. Called after we create
+    a PR so the next gate check sees the new state immediately,
+    closing the cache-staleness race window. The gh search itself
+    will see the new PR within a few seconds of `gh pr create`
+    returning."""
+    try:
+        if CACHE.exists():
+            CACHE.unlink()
+    except OSError:
+        pass
 
 
 def state() -> dict:

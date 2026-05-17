@@ -137,13 +137,16 @@ async def respond_cycle(msg: Message) -> dict:
         skill_result.record_rejection("drip", msg.__dict__, parsed)
         return result
     if parsed:
+        pushed_flag = bool(parsed.get("pushed"))
         observe.event(
             "respond_done", repo=msg.repo, pr=msg.pr, intent=intent,
             rc=result.get("rc", 0),
-            pushed=bool(parsed.get("pushed")),
+            pushed=pushed_flag,
             outcome=str(parsed.get("outcome", "")),
             reason=str(parsed.get("reason", ""))[:200],
         )
+        if pushed_flag and intent == "publish":
+            _invalidate_org_state_cache(msg.repo)
         return result
     # Heuristic fallback.
     tail = (result.get("stdout_tail") or "").lower()
@@ -155,7 +158,29 @@ async def respond_cycle(msg: Message) -> dict:
         rc=result.get("rc", 0), pushed=pushed,
         outcome="(heuristic-fallback)",
     )
+    if pushed and intent == "publish":
+        _invalidate_org_state_cache(msg.repo)
     return result
+
+
+def _invalidate_org_state_cache(repo: str) -> None:
+    """After we publish a new PR, force the org_state cache to
+    refetch on the next read so the gate doesn't approve a second
+    PR to the same org during the cache TTL window. The wild #1924
+    era of the substrate let two PRs land in kimjune01/sptlrx 4m25s
+    apart because the 5-min cache showed 0 for both checks."""
+    try:
+        from sweep import org_state, observe
+        org_state.invalidate()
+        observe.event("org_state_invalidated", repo=repo,
+                      reason="post-publish")
+    except Exception as e:
+        # Cache-invalidate failure is best-effort; the gate still
+        # works (just with stale data) and the next TTL expiry
+        # fixes the cache on its own.
+        from sweep import observe
+        observe.event("org_state_invalidate_failed", repo=repo,
+                      error_type=type(e).__name__, error=str(e)[:200])
 
 
 # ------------------------------------------------------------ triage
