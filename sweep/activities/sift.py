@@ -388,7 +388,7 @@ async def deposit_issue_to_triaged(issue: IssueCandidate,
     digest = hashlib.sha256(f"{issue.repo}/{issue.number}".encode()).hexdigest()[:8]
     msg = Message(
         msg_id=f"prospect-{slug}-{issue.number}-{digest}",
-        sender="prospect",
+        sender="sift",
         intent="investigate",
         repo=issue.repo,
         pr=issue.number,
@@ -861,24 +861,24 @@ async def auto_evict_stale_repos() -> dict:
 
 
 
-_PROSPECT_STATE_PATH = Path.home() / ".sweep" / "state" / "prospect_actor.json"
+_SIFT_STATE_PATH = Path.home() / ".sweep" / "state" / "sift_actor.json"
 PROSPECT_EVICT_EVERY = 10  # auto_evict_stale_repos runs every Nth cycle
 PROSPECT_LOOSEN_EMPTY_STREAK = 5  # loosen the floor after N empties in a row
 
 
-def _load_prospect_state() -> dict:
-    if not _PROSPECT_STATE_PATH.exists():
+def _load_sift_state() -> dict:
+    if not _SIFT_STATE_PATH.exists():
         return {"empty_streak": 0, "fires_total": 0}
     try:
-        return json.loads(_PROSPECT_STATE_PATH.read_text())
+        return json.loads(_SIFT_STATE_PATH.read_text())
     except (OSError, json.JSONDecodeError):
         return {"empty_streak": 0, "fires_total": 0}
 
 
-def _save_prospect_state(state: dict) -> None:
+def _save_sift_state(state: dict) -> None:
     try:
-        _PROSPECT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(_PROSPECT_STATE_PATH, json.dumps(state))
+        _SIFT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(_SIFT_STATE_PATH, json.dumps(state))
     except OSError:
         pass
 
@@ -886,16 +886,16 @@ def _save_prospect_state(state: dict) -> None:
 # How often the per-card cycle runs the eviction sweep. With per-issue
 # cards firing dozens of times per scout result, 100 keeps the cadence
 # roughly in line with the old per-pass `every-10-fires` rhythm.
-PROSPECT_EVICT_EVERY_CARDS = 100
+SIFT_EVICT_EVERY_CARDS = 100
 
 # After N consecutive cards rejected by the filter pipeline, ask the
 # floor to loosen. Cards that find no work (no raw payload, malformed)
 # don't count — only cards where we considered the issue and rejected.
-PROSPECT_LOOSEN_EMPTY_STREAK_CARDS = 50
+SIFT_LOOSEN_EMPTY_STREAK_CARDS = 50
 
 
 @activity.defn
-async def prospect_cycle(msg: Message) -> dict:
+async def sift_cycle(msg: Message) -> dict:
     """Process ONE issue card from scout. The card payload carries the
     raw gh search result; this activity filters it inline, makes at
     most one fresh gh call (issue_events to detect related PRs, and
@@ -904,7 +904,7 @@ async def prospect_cycle(msg: Message) -> dict:
     SkillActor's should_idle boundary, so the per-card cost is bounded
     and the budget gate has one-call resolution.
 
-    Compare the old per-pass `prospect_cycle`: that one ran an entire
+    Compare the old per-pass `sift_cycle`: that one ran an entire
     100-issue sweep inside a single activity invocation, bursting
     through the per-actor rate cap before the gate could see it. This
     refactor moves the loop up to scout (one search per card) and the
@@ -913,17 +913,17 @@ async def prospect_cycle(msg: Message) -> dict:
     from sweep import budget as _budget
     _budget.set_caller("prospect")
     if _budget.is_blocked("prospect"):
-        observe.event("prospect_cycle_skipped", reason="budget_andon",
+        observe.event("sift_cycle_skipped", reason="budget_andon",
                       msg_id=msg.msg_id)
         return {"skipped": "budget_andon"}
     if retro_state.is_halted():
-        observe.incr("halted_skip:prospect")
+        observe.incr("halted_skip:sift")
         return {"skipped": "halted"}
     if control_state.is_paused():
-        observe.incr("paused_skip:prospect")
+        observe.incr("paused_skip:sift")
         return {"skipped": "paused"}
 
-    state = _load_prospect_state()
+    state = _load_sift_state()
     state["fires_total"] = int(state.get("fires_total", 0)) + 1
 
     outcome = await _screen_one_issue(msg)
@@ -938,7 +938,7 @@ async def prospect_cycle(msg: Message) -> dict:
             state["empty_streak"] = 0
         else:
             state["empty_streak"] = int(state.get("empty_streak", 0)) + 1
-            if state["empty_streak"] >= PROSPECT_LOOSEN_EMPTY_STREAK_CARDS:
+            if state["empty_streak"] >= SIFT_LOOSEN_EMPTY_STREAK_CARDS:
                 try:
                     r = await loosen_floor()
                     if r.get("changed"):
@@ -949,21 +949,21 @@ async def prospect_cycle(msg: Message) -> dict:
                                   error=str(e)[:200])
 
     # Periodic eviction sweep.
-    if state["fires_total"] % PROSPECT_EVICT_EVERY_CARDS == 0:
+    if state["fires_total"] % SIFT_EVICT_EVERY_CARDS == 0:
         try:
             await auto_evict_stale_repos()
         except Exception as e:
             observe.event("auto_evict_failed",
                           error_type=type(e).__name__, error=str(e)[:200])
 
-    _save_prospect_state(state)
+    _save_sift_state(state)
     outcome["fires_total"] = state["fires_total"]
     outcome["empty_streak"] = state["empty_streak"]
     return outcome
 
 
 async def _screen_one_issue(msg: Message) -> dict:
-    """The per-card filter pipeline. Pure helper — `prospect_cycle`
+    """The per-card filter pipeline. Pure helper — `sift_cycle`
     wraps it with state bookkeeping and andon-clear logic. Returns a
     dict with `considered`, `deposited`, and a `reason`/`status` for
     observability."""
@@ -1044,7 +1044,7 @@ async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
     if retro_state.is_halted():
         # Backpressure from the retro pager. Forward pass stops until the
         # human Attends to at least one of the pending SOAP one-pagers.
-        observe.incr("halted_skip:prospect")
+        observe.incr("halted_skip:sift")
         return ProspectPassResult(
             repos_visited=0, repos_processed=0, issues_found=0,
             delivered_msg_ids=[],
@@ -1054,7 +1054,7 @@ async def prospect_one_pass(req: ProspectRunRequest) -> ProspectPassResult:
     if control_state.is_paused():
         # Operator-initiated soft-pause. Same no-op shape as the retro
         # halt — in-flight work elsewhere keeps running.
-        observe.incr("paused_skip:prospect")
+        observe.incr("paused_skip:sift")
         return ProspectPassResult(
             repos_visited=0, repos_processed=0, issues_found=0,
             delivered_msg_ids=[],

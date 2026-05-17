@@ -9,7 +9,7 @@ from pathlib import Path
 
 import typer
 
-from sweep.activities.prospect import (
+from sweep.activities.sift import (
     CURSOR_FILE,
     ProspectRunRequest,
     prospect_one_pass,

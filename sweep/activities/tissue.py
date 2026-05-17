@@ -158,7 +158,7 @@ def _policy_blocked(repo: str, issue: int) -> str | None:
     spirit to prospect's `_passes_lightweight_filter` so the rep cost
     of tissue mirrors the rep cost of a PR."""
     # Kill list — operator-curated patterns.
-    from sweep.activities.prospect import _on_kill_list, _on_evicted_list
+    from sweep.activities.sift import _on_kill_list, _on_evicted_list
     if _on_kill_list(repo):
         return "kill_list"
     if _on_evicted_list(repo):

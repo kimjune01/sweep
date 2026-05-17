@@ -22,10 +22,10 @@ from sweep.activities.pr_state import (
 )
 from sweep.activities.claim import claim_issue
 from sweep.activities.infer import infer_test_cmd
-from sweep.activities.prospect import (
+from sweep.activities.sift import (
     auto_evict_stale_repos,
     loosen_floor,
-    prospect_cycle,
+    sift_cycle,
     prospect_one_pass,
     should_triage_issue,
 )
@@ -96,7 +96,7 @@ async def _amain() -> None:
             # scout writes one prospect card per raw issue; prospect
             # screens one issue per fire, with should_idle between cards.
             scout_cycle,
-            prospect_cycle, should_triage_issue,
+            sift_cycle, should_triage_issue,
             loosen_floor, auto_evict_stale_repos,
             prospect_one_pass,  # legacy star-cursor path, kept as escape hatch
             # worktree + cockpit view-layer markers

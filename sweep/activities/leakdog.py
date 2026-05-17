@@ -77,24 +77,24 @@ async def leakdog_tick() -> dict:
     # Pull source of truth is triage's ack path (each ack emits one
     # card). This heartbeat is the safety net for bootstrap (no triage
     # has ever acked) and stuck-signal cases (process crashed mid-emit,
-    # signal lost). Kicks scout only when prospect's inbox has run dry —
-    # if prospect still has issue cards to screen, the substrate has
+    # signal lost). Kicks scout only when sift's inbox has run dry —
+    # if sift still has issue cards to screen, the substrate has
     # plenty to do and another search would just pile on. Scout's
     # SkillActor dedupes msg_ids, so a leaked extra card is benign.
     try:
         from sweep.activities.scout import kick_scout_card, SCOUT_INBOX
-        from sweep.activities.prospect import PROSPECT_INBOX
+        from sweep.activities.sift import SIFT_INBOX
         from sweep import inbox_state as _inbox
-        prospect_q = len(_inbox.inbox_states("prospect")["queued"]) \
-            if PROSPECT_INBOX.exists() else 0
+        sift_q = len(_inbox.inbox_states("sift")["queued"]) \
+            if SIFT_INBOX.exists() else 0
         scout_q = len(_inbox.inbox_states("scout")["queued"]) \
             if SCOUT_INBOX.exists() else 0
-        if prospect_q == 0 and scout_q == 0:
+        if sift_q == 0 and scout_q == 0:
             wf_id = await kick_scout_card("leakdog-heartbeat")
             out["scout_heartbeat"] = "fired" if wf_id else "fired-no-signal"
         else:
             out["scout_heartbeat"] = (
-                f"skip (prospect={prospect_q}, scout={scout_q})"
+                f"skip (sift={sift_q}, scout={scout_q})"
             )
     except Exception as e:
         out["scout_heartbeat_error"] = f"{type(e).__name__}: {str(e)[:200]}"

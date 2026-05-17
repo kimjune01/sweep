@@ -107,7 +107,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     from temporalio.client import Client
     from sweep.cli._common import (
         DRIP_ACTOR_ID, INVESTIGATE_ACTOR_ID, LEAKDOG_DAEMON_ID,
-        NOTIFICATION_POLLER_ID, PROSPECT_ACTOR_ID, QA_ACTOR_ID,
+        NOTIFICATION_POLLER_ID, SIFT_ACTOR_ID, QA_ACTOR_ID,
         BLESS_ACTOR_ID, IMMUNIZE_ACTOR_ID, SCOUT_ACTOR_ID, SWEEP_TASK_QUEUE,
         TISSUE_ACTOR_ID, TRIAGE_ACTOR_ID, USAGE_POLLER_ID, WIPE_ACTOR_ID,
     )
@@ -140,7 +140,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (DRIP_ACTOR_ID,         SkillActor.run,     ("drip_cycle",)),
         (TRIAGE_ACTOR_ID,       SkillActor.run,     ("triage_cycle",)),
         (INVESTIGATE_ACTOR_ID,  SkillActor.run,     ("investigate_cycle",)),
-        (PROSPECT_ACTOR_ID,     SkillActor.run,     ("prospect_cycle",)),
+        (SIFT_ACTOR_ID,        SkillActor.run,     ("sift_cycle",)),
         (SCOUT_ACTOR_ID,        SkillActor.run,     ("scout_cycle",)),
         (TISSUE_ACTOR_ID,       SkillActor.run,     ("tissue_cycle",)),
         (WIPE_ACTOR_ID,         SkillActor.run,     ("wipe_cycle",)),
@@ -179,9 +179,9 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "investigate", SkillActor.deliver, INVESTIGATE_ACTOR_ID)
     if drained:
         anomalies.append(f"{INVESTIGATE_ACTOR_ID}: drained {drained} pending")
-    drained = await _drain_inbox(client, "prospect", SkillActor.deliver, PROSPECT_ACTOR_ID)
+    drained = await _drain_inbox(client, "sift", SkillActor.deliver, SIFT_ACTOR_ID)
     if drained:
-        anomalies.append(f"{PROSPECT_ACTOR_ID}: drained {drained} pending")
+        anomalies.append(f"{SIFT_ACTOR_ID}: drained {drained} pending")
     drained = await _drain_inbox(client, "scout", SkillActor.deliver, SCOUT_ACTOR_ID)
     if drained:
         anomalies.append(f"{SCOUT_ACTOR_ID}: drained {drained} pending")

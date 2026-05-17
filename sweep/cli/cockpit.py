@@ -21,7 +21,7 @@ from sweep.system import system_status
 # Humans have deeper queues; LLM actors stay shallow.
 CAPS: dict[str, dict[str, int | None]] = {
     "scout":       {"queued": 3, "in_flight": 1},   # search cards from triage/heartbeat
-    "prospect":    {"queued": 100, "in_flight": 1}, # issue cards from scout (fan-out of one search)
+    "sift":        {"queued": 100, "in_flight": 1}, # issue cards from scout (fan-out of one search)
     "triaged":     {"queued": 10, "in_flight": 3},  # LLM, fan-out friendly
     "investigate": {"queued": 5, "in_flight": 5},   # LLM, root-causing
     "immunize":    {"queued": 10, "in_flight": 1},  # anti-AI routing to slop-offer
@@ -38,7 +38,7 @@ CAPS: dict[str, dict[str, int | None]] = {
 # the table's actor-key column to read closer to the natural pipeline names.
 FLOW_NAMES: dict[str, str] = {
     "scout":       "Scout",
-    "prospect":    "Prospect",
+    "sift":        "Sift",
     "triaged":     "Triage",
     "investigate": "Investigate",
     "immunize":    "Immunize",
@@ -50,7 +50,7 @@ FLOW_NAMES: dict[str, str] = {
     "retro":       "In Review",
     "respondable": "Respondable",
 }
-FLOW_ORDER = ("scout", "prospect", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "retro", "respondable")
+FLOW_ORDER = ("scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "retro", "respondable")
 
 def register(app: typer.Typer) -> None:
     """Attach the cockpit command to a top-level Typer app."""
@@ -121,7 +121,7 @@ def _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode) 
 
 
 def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
-    actionable = ["scout", "prospect", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "respondable"]
+    actionable = ["scout", "sift", "triaged", "immunize", "investigate", "tissue", "bless", "wipe", "qa", "drip", "respondable"]
     if include_wait:
         actionable = actionable + ["retro"]
 
@@ -150,7 +150,7 @@ def _knob_line() -> str:
     in qa_actor.py and SkillActor, not a runtime knob, so surfacing
     it as one misleads.
     """
-    from sweep.activities.prospect import (
+    from sweep.activities.sift import (
         _min_complexity, _search_limit, _min_issue_age_minutes,
         _warm_org_fan_out_cap, _warm_org_issue_limit,
     )
@@ -214,22 +214,22 @@ def _claude_sub_chip() -> str | None:
     return "sub " + " ".join(parts)
 
 
-def _prospect_info() -> dict:
-    """Cockpit chip for the prospect actor. Returns {state, age}.
+def _sift_info() -> dict:
+    """Cockpit chip for the sift actor. Returns {state, age}.
     `state`: 'empty ×N' streak label, or '' when streak is zero.
     `age`: human-compact time since the actor's most recent activity,
            sourced from the prospect inbox file mtime.
 
-    No temporal query: prospect is now a SkillActor and its empty-streak
-    counter lives in `~/.sweep/state/prospect_actor.json` (file-backed
+    No temporal query: sift is now a SkillActor and its empty-streak
+    counter lives in `~/.sweep/state/sift_actor.json` (file-backed
     across restarts). Andon/pause state already has its own banner, so
     the chip stops trying to duplicate it — bare 'ready' was noise."""
     import datetime as dt
     import json
     from pathlib import Path
 
-    state_path = Path.home() / ".sweep" / "state" / "prospect_actor.json"
-    inbox_path = Path.home() / ".sweep" / "inbox" / "prospect.jsonl"
+    state_path = Path.home() / ".sweep" / "state" / "sift_actor.json"
+    inbox_path = Path.home() / ".sweep" / "inbox" / "sift.jsonl"
 
     streak = 0
     if state_path.exists():
@@ -393,7 +393,7 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     # Knobs above the table — pipeline configuration, the state of
     # the world the operator can change. Reads as "here's how the line
     # is tuned" right under cpu/mem.
-    pinfo = _prospect_info()
+    pinfo = _sift_info()
     age = f" ({pinfo['age']})" if pinfo.get("age") else ""
     state_chip = f"    ·    {pinfo['state']}" if pinfo.get("state") else ""
     print(f"🎛   Prospecting Controls{age}:   {_knob_line()}{state_chip}")

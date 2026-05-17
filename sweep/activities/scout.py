@@ -10,8 +10,8 @@ The scout has an inbox cursor that alternates between two sources:
   • warm-org — one warm org per cycle, round-robin by index
 
 One cycle = one search = one budget tick. The N issues found are
-posted to prospect's inbox as cards carrying the raw item in the
-payload, so the prospect actor does no follow-up search of its own.
+posted to sift's inbox as cards carrying the raw item in the
+payload, so the sift actor does no follow-up search of its own.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from sweep.types import Message
 
 
 SCOUT_INBOX = Path.home() / ".sweep" / "inbox" / "scout.jsonl"
-PROSPECT_INBOX = Path.home() / ".sweep" / "inbox" / "prospect.jsonl"
+SIFT_INBOX = Path.home() / ".sweep" / "inbox" / "sift.jsonl"
 SCOUT_CURSOR_PATH = Path.home() / ".sweep" / "cursors" / "scout.json"
 
 # Mechanical search qualifiers shared by both sources. Push every
@@ -95,21 +95,21 @@ async def _emit_prospect_card(raw: dict, source: str) -> bool:
         payload={"raw": raw, "source": source},
         ts=ts.isoformat(),
     )
-    PROSPECT_INBOX.parent.mkdir(parents=True, exist_ok=True)
+    SIFT_INBOX.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(PROSPECT_INBOX, "a") as f:
+        with open(SIFT_INBOX, "a") as f:
             f.write(json.dumps(asdict(out)) + "\n")
     except OSError as e:
         observe.event("scout_emit_failed",
                       error_type=type(e).__name__, error=str(e)[:200])
         return False
-    # Signal the prospect actor. Best-effort; the jsonl write is the
+    # Signal the sift actor. Best-effort; the jsonl write is the
     # durable record and the leakdog drain catches missed signals on
     # restart. Import here so the workflow side doesn't drag the
     # signaling module into its sandbox.
     try:
         from sweep.activities.pr_state import _signal_actor
-        await _signal_actor("prospect", out)
+        await _signal_actor("sift", out)
     except Exception as e:
         observe.event("scout_signal_failed", msg_id=msg_id,
                       error_type=type(e).__name__, error=str(e)[:200])
@@ -213,7 +213,7 @@ async def kick_scout_card(sender: str) -> str | None:
 
     Fires from leakdog (heartbeat when prospect's inbox runs dry) and
     from triage acks (downstream consumed; refill). Mirrors the old
-    kick_prospect_card surface but targets scout — prospect no longer
+    kick_prospect_card surface but targets scout — sift no longer
     has a "schedule a search" card type, only "screen this issue".
     """
     from sweep.activities.pr_state import _signal_actor

@@ -38,7 +38,7 @@ _ACTOR_WORKFLOW_IDS = {
     "drip":        "drip-actor",
     "triaged":     "triage-actor",
     "investigate": "investigate-actor",
-    "prospect":    "prospect-actor",
+    "sift":        "sift-actor",
     "tissue":      "tissue-actor",
     "wipe":        "wipe-actor",
     "immunize":    "immunize-actor",
