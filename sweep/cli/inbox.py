@@ -67,35 +67,48 @@ def operator_inbox_lines() -> list[str]:
 # counts that cockpit/lanes already render.
 _ARCHITECTURE_DIAGRAM = """\
 ```
- production                              defense
- ══════════                              ═══════
- ┌────────┐
- │ scout  │
- └───┬────┘
-     ▼
- ┌────────┐  (inline evict gate — drops low-rank PRs)
- │  sift  │ ──────────────────────────┐
- └───┬────┘                           │
-     ▼                                ▼
- ┌────────┐                      ┌──────────┐
- │ triage │ ────────────────────▶│ immunize │── ack draft ──┐
- └───┬────┘                      └──────────┘               │
-     ▼                                                      │
- ┌──────────────┐                ┌──────────┐               │
- │ investigate  │ ── no fix ────▶│  tissue  │               │
- └──────┬───────┘                └────┬─────┘               │
-        ▼                             │ operator OK         │
-    ┌────────┐                        ▼                     │
-    │   qa   │                   ┌──────────┐               │
-    └───┬────┘                   │   wipe   │◀──────────────┘
-        ▼                        └──────────┘  post / close
-    ┌────────┐
-    │  drip  │                   ┌──────────┐
-    └───┬────┘       leakdog ───▶│  bless   │  classify reply
-        ▼                        └──────────┘  → tissue-drafts or
- ┌─────────────┐                                respondable-issues
- │ respondable │  ← PR work needs you
- └─────────────┘
+ intake          production                         defense
+ ══════          ══════════                         ═══════
+                 ┌────────┐
+ [notifs] ──▶    │ scout  │
+                 └───┬────┘
+                     ▼
+                 ┌────────┐  (inline evict gate)
+                 │  sift  │ ────────────────────┐
+                 └───┬────┘                     │
+                     ▼                          ▼
+                 ┌────────┐               ┌──────────┐
+                 │ triage │ ─────────────▶│ immunize │── ack draft ──┐
+                 └───┬────┘               └──────────┘               │
+                     ▼                                               │
+                 ┌──────────────┐         ┌──────────┐               │
+                 │ investigate  │── no ──▶│  tissue  │               │
+                 └──────┬───────┘   fix   └────┬─────┘               │
+                        ▼                      │ operator OK         │
+                    ┌────────┐                 ▼                     │
+                    │   qa   │            ┌──────────┐               │
+                    └───┬────┘            │   wipe   │◀──────────────┘
+                        ▼                 └──────────┘  post / close
+                    ┌────────┐
+                    │compose │            ┌──────────┐
+                    └───┬────┘  leakdog ─▶│  bless   │  classify reply
+                        ▼                 └──────────┘  → tissue-drafts /
+                    ┌────────┐                            respondable-issues
+                    │  ship  │  ◀── dry-mode hold lives here
+                    └───┬────┘     (the only actor that gates on dry)
+                        ▼
+ [notifs] ──▶    ┌──────────┐
+                 │  remit   │  classifier-router
+                 └─┬──┬──┬──┘
+       ┌──────────┘  │  └────────────────────┐
+       ▼             ▼                       ▼
+   ┌────────┐  ┌─────────┐            ┌─────────────┐
+   │respond │  │qa / etc.│            │ respondable │  ← needs you
+   └────────┘  └─────────┘            └─────────────┘
+   auto-handler                       manual peer
+   (rebase/close,                     to respond
+   grows by absorbing
+   from respondable)
 ```
 """
 
