@@ -44,6 +44,7 @@ _ACTOR_WORKFLOW_IDS = {
     "immunize":    "immunize-actor",
     "bless":       "bless-actor",
     "remit":       "remit-actor",
+    "ship":        "ship-actor",
 }
 
 

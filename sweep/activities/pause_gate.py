@@ -1,9 +1,15 @@
 """pause_gate — inbox-boundary check used by every actor's main loop.
 
 Returns True when the actor should idle (not pull its next message)
-because the line is paused or this actor's own budget andon is held.
-The point is to make pause and per-actor budget into honest "no new
-work" signals, applied at the inbox-pull point — never mid-skill.
+because the line is paused, this actor's own budget andon is held, or
+(ship-actor only) dry mode is on. The point is to make pause, per-actor
+budget, and dry mode into honest "no new work" signals, applied at the
+inbox-pull point — never mid-skill.
+
+Dry mode is narrowly scoped: only ship-actor gates on it, because dry
+means "no new public commitments" — once a PR is out there, the
+maintainer is on real-world time and we owe them a response regardless
+of operator pause/dry. Only the new-PR-create path (ship) honors dry.
 
 Cheap: two filesystem stats per call.
 """
@@ -27,4 +33,9 @@ async def should_idle(actor_name: str) -> bool:
     if control_state.is_paused():
         return True
     budget_key = actor_name.removesuffix("_cycle")
+    # Ship-actor only: dry mode holds the queue. Cards pile in ship.jsonl;
+    # operator inspects via `sweep inbox actor ship`; `sweep dry off`
+    # drains. No special code path for dry — just time.
+    if budget_key == "ship" and control_state.is_dry():
+        return True
     return budget.is_blocked(budget_key)

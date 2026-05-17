@@ -36,6 +36,7 @@ from sweep.activities.notifications import (
 )
 from sweep.activities.skill_runner import respond_cycle, investigate_cycle, triage_cycle
 from sweep.activities.remit import kick_remit_card, remit_cycle
+from sweep.activities.ship import kick_ship_card, ship_cycle
 from sweep.activities.bless import bless_cycle
 from sweep.activities.immunize import immunize_cycle
 from sweep.activities.tissue import tissue_cycle, wipe_cycle
@@ -83,6 +84,10 @@ async def _amain() -> None:
             # classify-and-route loop out of NotificationPoller into
             # a first-class actor on the post-ship engagement cycle.
             remit_cycle, kick_remit_card,
+            # ship — new-PR-create gate. Dry-mode hold lives at
+            # pause_gate (cards pile in ship.jsonl while dry is on).
+            # Skeleton: trusts upstream prep, delegates push to respond.
+            ship_cycle, kick_ship_card,
             # tissue (drafts) + wipe (posts) — side-hatch on no-fix
             # investigations. tissue drafts, wipe posts; separation of
             # concerns means LLM hiccups and gh hiccups don't share an
