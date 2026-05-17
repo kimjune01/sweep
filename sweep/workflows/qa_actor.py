@@ -49,6 +49,7 @@ with workflow.unsafe.imports_passed_through():
     )
     from sweep.activities.pause_gate import should_idle
     from sweep.activities.rope import kick_rope_card
+    from sweep.activities.compose import kick_compose_card
     from sweep.activities.worktree import (
         clear_andon_marker,
         ensure_worktree,
@@ -219,6 +220,27 @@ class QaActor:
                     gemini_last=gemini_last,
                     elapsed_seconds=0.0,
                 )
+
+                # Production-lane handoff: verdict=pass + a real branch
+                # means the fix is verified and the attestation is
+                # committed (test_attestation auto-commits the
+                # attestations/ dir). Kick compose to write the PR
+                # message; compose → submit applies the final gate
+                # (submit's _attestation_gate re-verifies independently
+                # before /drip is invoked). Without this kick the
+                # production lane dead-ends here.
+                try:
+                    if req.branch and req.branch not in ("HEAD", "main", "master"):
+                        await workflow.execute_activity(
+                            kick_compose_card,
+                            args=[req.repo, req.branch, req.issue, "qa", None],
+                            start_to_close_timeout=timedelta(seconds=10),
+                        )
+                except Exception as e:
+                    workflow.logger.warning(
+                        "kick_compose failed: msg_id=%s err=%s",
+                        msg.msg_id, str(e)[:200],
+                    )
             except Exception as e:
                 # Walk the cause chain looking for a "skip:"-prefixed
                 # ApplicationError. Temporal wraps activity exceptions
