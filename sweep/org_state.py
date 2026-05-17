@@ -176,39 +176,45 @@ def invalidate(org: str | None = None) -> None:
     _save_cache(data)
 
 
-def state() -> dict:
-    """Full snapshot — for display surfaces (cockpit, waste). Reads
-    every known org's cached entry; refreshes any that are stale
-    (per-org). Bootstrap (empty cache) does ONE full
-    `gh search prs --author=@me` call to learn the set of orgs.
+def state(*, refresh: bool = True) -> dict:
+    """Full snapshot.
 
-    Return shape stays the same as the legacy snapshot for
-    backward compatibility:
+    `refresh=True` (default, for background callers like sift): refreshes
+    any stale per-org entry by calling `gh search prs`. With ~120 orgs
+    and a 30s TTL, the loop can take 100+ seconds.
+
+    `refresh=False` (for display surfaces like cockpit / waste / TUI
+    cycling): reads whatever is on disk, no network. Returns
+    instantly; the display includes the cache's age so the operator
+    knows the freshness. Display surfaces never need real-time gate
+    accuracy — that's what `is_org_blocked` is for at decision time.
+
+    Return shape stays the same as the legacy snapshot:
       {orgs: {org_name: [pr_info, ...]}, fetched_at, user}.
     `fetched_at` is the oldest org's fetch time so callers using it
-    as a global freshness signal get a conservative answer."""
+    as a global freshness signal get a conservative answer.
+    """
     data = _load_cache()
     if not data.get("user"):
         data["user"] = _user()
     user = data["user"]
     if not user:
         return {"orgs": {}, "fetched_at": time.time(), "user": ""}
-    if not data["orgs"]:
-        # Cold cache: bootstrap with one full fetch.
-        now = time.time()
-        full = _refresh_all(user)
-        data["orgs"] = {org: {"prs": prs, "fetched_at": now}
-                        for org, prs in full.items()}
-        _save_cache(data)
-    else:
-        # Warm cache: refresh just the stale orgs.
-        for org, entry in list(data["orgs"].items()):
-            if time.time() - entry.get("fetched_at", 0.0) >= ORG_TTL:
-                data["orgs"][org] = {
-                    "prs": _refresh_org(org, user),
-                    "fetched_at": time.time(),
-                }
-        _save_cache(data)
+    if refresh:
+        if not data["orgs"]:
+            now = time.time()
+            full = _refresh_all(user)
+            data["orgs"] = {org: {"prs": prs, "fetched_at": now}
+                            for org, prs in full.items()}
+            _save_cache(data)
+        else:
+            for org, entry in list(data["orgs"].items()):
+                if time.time() - entry.get("fetched_at", 0.0) >= ORG_TTL:
+                    data["orgs"][org] = {
+                        "prs": _refresh_org(org, user),
+                        "fetched_at": time.time(),
+                    }
+            _save_cache(data)
     return {
         "orgs": {org: entry["prs"] for org, entry in data["orgs"].items()},
         "fetched_at": min((e.get("fetched_at", 0.0)

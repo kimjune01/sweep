@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -190,7 +191,10 @@ def waste(
         lines += ["```", ""]
 
     try:
-        org_data = org_state.state()
+        # Display surface: read cache as-is. Background actors (sift)
+        # keep the cache fresh; refreshing 120 orgs here would block
+        # the TUI cycle for 100+ seconds.
+        org_data = org_state.state(refresh=False)
     except Exception:
         org_data = {"orgs": {}}
 
@@ -384,10 +388,27 @@ def _human_bytes(n: int) -> str:
     return f"{n}B"
 
 
+_DU_CACHE = Path.home() / ".sweep" / "cache" / "du.json"
+_DU_TTL = 60.0  # seconds — disk usage moves slowly; staleness is fine
+
+
 def _du_bytes(path: Path) -> int | None:
-    """Use du -sk for O(stat-cached) directory size. Python's rglob walk
-    is O(file count) which is too slow for 100k-file worktrees."""
+    """Use du -sk for directory size, cached to ~/.sweep/cache/du.json.
+    Python's rglob walk is O(file count); du is O(stat-cached) but
+    still ~1s on a few-GB worktrees dir, which is enough to lag the
+    TUI cycle. The display is fine reading a value up to a minute old.
+    """
+    import json
     import subprocess
+    key = str(path)
+    now = time.time()
+    try:
+        cache = json.loads(_DU_CACHE.read_text()) if _DU_CACHE.exists() else {}
+        entry = cache.get(key)
+        if entry and now - entry.get("ts", 0) < _DU_TTL:
+            return int(entry["bytes"])
+    except (json.JSONDecodeError, OSError, ValueError):
+        cache = {}
     if not path.exists():
         return 0
     try:
@@ -397,9 +418,16 @@ def _du_bytes(path: Path) -> int | None:
         )
         if out.returncode != 0:
             return None
-        return int(out.stdout.split()[0]) * 1024
+        size = int(out.stdout.split()[0]) * 1024
     except (subprocess.TimeoutExpired, ValueError, IndexError):
         return None
+    cache[key] = {"ts": now, "bytes": size}
+    try:
+        _DU_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _DU_CACHE.write_text(json.dumps(cache))
+    except OSError:
+        pass
+    return size
 
 
 def _render_disk_pressure() -> list[str]:
