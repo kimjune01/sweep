@@ -246,7 +246,7 @@ def pr_inline_comments(repo: str, pr: int, *, ttl: int = 120) -> list[dict]:
 
     Distinct from issue-conversation comments. These are the threaded
     comments anchored to specific diff lines — load-bearing for the Sonnet
-    'is this respondable' classifier since they're often the substantive
+    'is this human-bucket' classifier since they're often the substantive
     review surface (maintainers leave 'consider X' on a specific line
     rather than a top-level review).
     """

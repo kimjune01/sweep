@@ -3,7 +3,7 @@
 Receives raw "PR X changed state" cards from NotificationPoller (or any
 other emitter), classifies via classify_one_pr, and routes to the
 matching downstream actor (qa, investigate, respond, tissue, etc.) or
-deposits to the human inbox (respondable.jsonl).
+deposits to the human inbox (human.jsonl).
 
 Replaces the inline gh_pr_view → classify_one_pr → deliver_to_inbox
 chain that used to live inside NotificationPoller. Pulling it into a

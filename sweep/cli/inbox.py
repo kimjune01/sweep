@@ -1,6 +1,6 @@
 """`sweep inbox` — operator's human inbox.
 
-  bare              → "what you owe": actionable retros + respondable PRs.
+  bare              → "what you owe": actionable retros + human-bucket PRs.
                        Same list cockpit shows under the table; this is
                        the standalone version for when you only want the
                        todo and not the rest of the dashboard.
@@ -18,7 +18,7 @@ from sweep import retro_state
 from sweep.inbox_state import INBOX_DIR, inbox_states, load_msg_id_set
 
 
-# Per-intent glyphs for the respondable list. Mirrors cockpit so both
+# Per-intent glyphs for the human inbox list. Mirrors cockpit so both
 # views read the same way.
 HUMAN_GLYPHS = {
     "respond":      "💬",
@@ -37,7 +37,7 @@ inbox_app = typer.Typer(
 
 def operator_inbox_lines() -> list[str]:
     """Markdown bullets for the human inbox: actionable retros first,
-    then respondable PRs. Shared with `sweep cockpit` so both surfaces
+    then human-bucket PRs. Shared with `sweep cockpit` so both surfaces
     render the same items the same way."""
     lines: list[str] = []
     for r in retro_state.list_retros():
@@ -92,7 +92,7 @@ _ARCHITECTURE_DIAGRAM = """\
 
 @inbox_app.callback(invoke_without_command=True)
 def inbox_default(ctx: typer.Context) -> None:
-    """What you owe: actionable retros + respondable PRs."""
+    """What you owe: actionable retros + human-bucket PRs."""
     if ctx.invoked_subcommand is not None:
         return
     lines = operator_inbox_lines()

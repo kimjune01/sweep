@@ -21,7 +21,7 @@ async def leakdog_tick() -> dict:
     """One leakdog pass. Two responsibilities:
       1. Resource-leak watchdog (API budget auto-clear).
       2. Inbox-staleness refresh — re-check items whose precondition
-         may have become false since delivery (e.g. respondable items
+         may have become false since delivery (e.g. human-bucket items
          where we already responded), and ack the ones that have.
 
     Intentionally never raises — leakdog itself andoning would be
@@ -99,34 +99,34 @@ async def leakdog_tick() -> dict:
     except Exception as e:
         out["scout_heartbeat_error"] = f"{type(e).__name__}: {str(e)[:200]}"
 
-    # --- (4) Respondable inbox staleness refresh ------------------
+    # --- (4) Human inbox staleness refresh ------------------------
     # When the operator answers a maintainer's question on GitHub,
-    # the PR's bucket flips away from "respondable" but our inbox
-    # entry lingers until either the maintainer replies (notification
-    # poller catches it) or the full pr-state rescan runs. Leakdog
-    # closes that gap: re-fetch the PR (5min TTL cache, so this
-    # batches cheaply across ticks) and ack inbox entries whose
-    # precondition no longer holds.
+    # the PR's bucket flips away from "human" but our inbox entry
+    # lingers until either the maintainer replies (notification poller
+    # catches it) or the full pr-state rescan runs. Leakdog closes
+    # that gap: re-fetch the PR (5min TTL cache, so this batches
+    # cheaply across ticks) and ack inbox entries whose precondition
+    # no longer holds.
     try:
-        refreshed = await _refresh_respondable_inbox()
-        out["respondable_refreshed"] = refreshed
+        refreshed = await _refresh_human_inbox()
+        out["human_refreshed"] = refreshed
     except Exception as e:
-        out["respondable_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+        out["human_error"] = f"{type(e).__name__}: {str(e)[:200]}"
 
     return out
 
 
-async def _refresh_respondable_inbox() -> dict:
-    """For each unique (repo, pr) in the respondable inbox's queued
-    set, re-fetch the PR state and ack the msg if the bucket has
-    moved away from 'respondable'. Returns counts for the tick log."""
+async def _refresh_human_inbox() -> dict:
+    """For each unique (repo, pr) in the human inbox's queued set,
+    re-fetch the PR state and ack the msg if the bucket has moved
+    away from 'human'. Returns counts for the tick log."""
     import json
     from pathlib import Path
     from sweep import gh_io
     from sweep.activities.pr_state import classify_one_pr
     from sweep.types import PrLiveState
 
-    inbox_path = Path.home() / ".sweep" / "inbox" / "respondable.jsonl"
+    inbox_path = Path.home() / ".sweep" / "inbox" / "human.jsonl"
     acks_path = Path.home() / ".sweep" / "inbox" / "_acks.jsonl"
     if not inbox_path.exists():
         return {"checked": 0, "acked": 0}
@@ -178,8 +178,8 @@ async def _refresh_respondable_inbox() -> dict:
             result = await classify_one_pr(live)
         except Exception:
             continue
-        if result.bucket == "respondable":
-            continue  # still respondable; leave it
+        if result.bucket == "human":
+            continue  # still human's court; leave it
         # Bucket changed — ack every msg referring to this PR.
         for mid in msg_ids:
             new_acks.append(json.dumps({

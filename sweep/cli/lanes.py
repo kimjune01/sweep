@@ -26,7 +26,7 @@ from sweep.inbox_state import inbox_states
 #   qa          — LLM, runs gates
 #   drip        — LLM, paces pushes
 #   in review   — reviewer holds the ball (retro/wait inbox)
-#   respondable — ball back to you (human) after reviewer engages
+#   human       — ball back to you after reviewer engages
 STATIONS = [
     ("triaged",     "triaged"),
     ("investigate", "investigate"),
@@ -389,7 +389,7 @@ def render_leakdog(hours: int = 24) -> list[str]:
 
     # bless: classifier-router for tissue replies. Cards from leakdog
     # engagement detector. Three outputs: template (auto-draft from
-    # catalog), auto (LLM draft, currently off), human (respondable
+    # catalog), auto (LLM draft, currently off), human (human-issues
     # queue). "Screened" here = bless_skipped (no_fence, timeouts).
     bless_cards = aged("bless_card_deposited", lag_minutes=30)
     bless_routed = count("bless_routed")

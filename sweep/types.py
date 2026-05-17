@@ -78,9 +78,10 @@ Bucket = Literal["close", "human", "rebase", "qa", "investigate", "done", "wait"
 #
 # Note: pr-state classifies *existing* open PRs. When a reviewer engages
 # (comment, changes_requested), the ball comes back to the human — that's
-# "respondable," not "investigate." The investigate.jsonl inbox is reserved
-# for /triage and /actionable to populate with new-issue work for the LLM
-# investigator actor.
+# the "human" bucket, not "investigate." The investigate.jsonl inbox is
+# reserved for /triage and /actionable to populate with new-issue work
+# for the LLM investigator actor — plus the maintainer-raised-concern
+# path from pr-state (a new in-PR bug routes to investigate, not human).
 #
 # Two distinct no-action shapes:
 #   - "done"  (APPROVED + MERGEABLE + green CI): maintainer's court.
@@ -119,7 +120,7 @@ class PrLiveState:
     # maintainer_raised_concern: maintainer flagged a NEW bug/issue in an
     # in-PR comment that the author hasn't addressed. Different from
     # maintainer_question (which is "you owe an answer"); this is "we owe
-    # another investigation pass." Routes to investigate, not respondable.
+    # another investigation pass." Routes to investigate, not human.
     maintainer_raised_concern: bool = False
 
 

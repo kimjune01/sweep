@@ -134,8 +134,8 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
 
     # Inline code-review comments live on a separate REST endpoint
     # (not exposed via `gh pr view --json`). Lazy-fetch: only when the
-    # PR is plausibly respondable — CHANGES_REQUESTED or maintainer has
-    # commented. For wait/ship/qa-mechanical PRs (~90% of the queue),
+    # PR plausibly needs human attention — CHANGES_REQUESTED or maintainer
+    # has commented. For wait/done/qa-mechanical PRs (~90% of the queue),
     # the inline comments don't influence the classification, so we
     # skip the call entirely. Halves the per-PR fetch cost in steady
     # state.
@@ -178,7 +178,7 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     # LLM, with the cautious bias: ambiguous replies (acks, "looking into
     # it", short OKs) stay flagged as still-open. The structural check
     # alone (latest comment is from a maintainer with "?") was generating
-    # false positives — flagging PRs as respondable even after the author
+    # false positives — flagging PRs as human-bucket even after the author
     # had replied at length.
     comments = data.get("comments") or []
     author_login = (data.get("author") or {}).get("login", "")
@@ -224,7 +224,7 @@ async def _open_maintainer_question(
 
     Cautious bias: ambiguous author replies (short acks, "looking into it")
     don't close the question. LLM-judged with a default of True on any
-    parse failure — better to keep a respondable item one cycle too long
+    parse failure — better to keep a human-bucket item one cycle too long
     than to silently drop it.
     """
     questions = [
@@ -257,13 +257,13 @@ async def _open_maintainer_concern(comments: list[dict], *,
                                    repo: str, pr: int) -> bool:
     """True iff a maintainer raised a NEW bug/issue in an in-PR comment
     that the author hasn't addressed. Distinct from maintainer_question:
-    question = "you owe an answer" (→ respondable); concern = "we owe
+    question = "you owe an answer" (→ human-bucket); concern = "we owe
     another investigation pass" (→ investigate).
 
     Default False on parse error or empty input — the cautious side
     here is the opposite of maintainer_question. False positive routes
     you into a re-investigate cycle (costly, LLM time); missing one
-    means the operator sees the comment as respondable instead, which
+    means the operator sees the comment as human-bucket instead, which
     is still a real signal — they can re-route manually.
     """
     # Look at the latest maintainer comment after the author's latest
@@ -375,7 +375,7 @@ _MECHANICAL_CHECK_PATTERNS = (
     "typo",
     # Intentionally NOT here: dco, sign-off, license/cla. Those require
     # the human's actual signature or legal agreement — qa can't fake
-    # one. They flow to respondable via the maintainer-question path or
+    # one. They flow to human-bucket via the maintainer-question path or
     # sit as "investigate" if CI surfaces them without a maintainer
     # comment.
 )
@@ -413,15 +413,15 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
 
     # 2a. investigate — maintainer raised a new bug/concern in-PR that
     # the author hasn't addressed. Re-investigate before re-responding;
-    # respondable is for "you owe a reply," investigate is for "we owe
-    # more diagnostic work." Takes priority over respondable so a
+    # human-bucket is for "you owe a reply," investigate is for "we owe
+    # more diagnostic work." Takes priority over human-bucket so a
     # concern + question on the same PR routes to investigate.
     if state.maintainer_raised_concern:
         bucket = "investigate"
         reasons.append("maintainer raised new concern in-PR")
-    # 2b. respondable — reviewer engaged, ball back in human's court
+    # 2b. human — reviewer engaged, ball back in human's court
     elif rd == "CHANGES_REQUESTED" or state.maintainer_question:
-        bucket = "respondable"
+        bucket = "human"
         reasons.append(
             "changes_requested" if rd == "CHANGES_REQUESTED" else "maintainer asked"
         )
