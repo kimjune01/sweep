@@ -67,21 +67,22 @@ def operator_inbox_lines() -> list[str]:
 # counts that cockpit/lanes already render.
 _ARCHITECTURE_DIAGRAM = """\
 ```
- ░ production ░    (dry-mode holds here ──┐
-                                          │     ▼      )
+ production
    notifs ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ compose ▸ ship ▸ push
                      └──┬──┘          │
                         ▼             ▼
-                     immunize ─▶ tissue ─▶ wipe
+                     immunize ▸ tissue ▸ wipe
 
- ░ engagement (post-ship) ░
-   notifs ▸ remit ┬▸ respond     (auto: rebase / close / clarify)
-                  ├▸ qa          (re-attest on CI flip)
-                  └▸ respondable (you — the manual peer to respond)
+ engagement (post-ship)
+   notifs ▸ remit ┬▸ respond      auto: rebase / close / clarify
+                  ├▸ qa           re-attest on CI flip
+                  └▸ respondable  you — the manual peer to respond
 
- ░ side-channels ░
+ side-channels
    leakdog ▸ bless ┬▸ tissue-drafts ▸ wipe
                    └▸ respondable-issues
+
+   · dry holds at ship · everything else flows on real-world time
 ```
 """
 
