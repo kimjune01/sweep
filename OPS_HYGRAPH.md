@@ -216,3 +216,36 @@ Any rule fails → gate refuses push. The LLM cannot bypass the parser; the pars
 
 **Compounds with:** [[O1-activity-owned-observability]] (the attestation file IS the activity-owned receipt, replacing the skill's editorial claim), [[O3-leakdog-interface-accounting]] (`submit_attestation_failed` / `respond_attestation_failed` events surface as a balance row), [[O6-signal-decode-drop-is-silent]] (the same silent-failure class — silent test-skip is to qa what silent signal-drop is to messaging).
 
+**Refinements landed same session (2026-05-17):**
+
+- **Commit-pinned attestation.** The manifest carries `head_sha` at write time. The submit/respond gate now diffs `manifest.head_sha` against current `HEAD` excluding `attestations/`; any non-attestation file change rejects with `code changed since attestation: N file(s) differ — re-run qa to refresh`. Closes the window where qa attests at commit A, the fix is amended to A', and a stale attestation from A satisfies the gate against A'. (sweep/activities/submit.py)
+
+- **Platform-aware investigate andon.** The /investigate skill running on a host that can't actually execute the repo's tests produces fixes shaped by wrong assumptions (the wild #1924 trigger event). `qa.assert_test_env_available(repo)` checks docker daemon reachability AND `docker pull <image>` succeeds for any `docker:<image>` test_env; failure raises non-retryable ApplicationError → actor andon. The andon message names both directions of fix explicitly: either install/start docker (env-setup path) or tighten sift's filter so the repo isn't investigated on this host. (sweep/activities/qa.py + skill_runner.py)
+
+- **Ghost-branch sanity check.** investigate_cycle now `git ls-remote --heads origin <branch>` before kicking qa. The skill sometimes claims `phase 8 — shipped` without the branch actually reaching origin (skill editorial vs side-effect reality, the [[O1]] class). New `ghost_branch` event fires when the skill's claim doesn't match origin state; qa isn't kicked. (sweep/activities/skill_runner.py)
+
+## O9: When the LLM skill's heuristic can't pick, the substrate routes to operator inbox — silent halts are forbidden by topology
+
+**Prediction:** Skills produce structured outputs the substrate consumes via a classifier (`_classify_investigate_artifact` and siblings). When the classifier returns a recognized signal (shipped / no-fix / human-gated), routing is mechanical. But skills can also produce a "summary + no decisive flag" shape — what /investigate calls "N options, awaiting choice" — where the skill's go-with-the-flow heuristic ran but the LLM couldn't confidently pick. The substrate has historically dropped these into a no-op state: the artifact exists, the event fires (`investigate_done`), but no downstream actor wakes. Result: the work vanishes into the operator's blind spot. The structural fix: when classification matches no routing branch, the wrapper kicks a card to `human` inbox carrying the artifact path and summary. Silence is forbidden; every artifact resolves to either autonomous action or operator visibility.
+
+**Status: CONFIRMED (2026-05-17, /investigate + reinvestigate this-session).** Triggered by wild-linker/wild#1924 reinvestigate. Card kicked at 19:50:27, `investigate_done` at 19:52:54 (~2.5 min) with `produced_pr: false, no_fix: false, human_gated: false, summary: "Investigation identified silent None return … three fix options presented, awaiting user choice before any branch is pushed."` None of the existing routing branches matched. Operator wouldn't have noticed without manually grepping events.jsonl.
+
+**Fix landed (sweep/activities/skill_runner.py):**
+
+- Added `_kick_human_decision(repo, pr, signal, summary, artifact_path)` that deposits a Message on `human.jsonl` with intent=`decide` and a payload carrying the artifact path + summary + a one-line `reason` ("skill's go-with-the-flow heuristic couldn't pick").
+- `_investigate_cycle_inner` calls it after the existing routing branches when the classifier returned a signal AND none of (produced_pr / no_fix / human_gated) is set AND summary is non-empty. The conditions deliberately require a non-empty summary so genuinely-empty shim-fallback cases (the skill produced nothing) don't spam the inbox.
+- Emits `human_decision_card_deposited` event so leakdog can balance routing-fallouts as a metric.
+- Sibling fix: `_investigate_artifact_path` now tolerates the legacy `<owner>-<repo>.md` naming (no issue suffix) in addition to the new `<owner>__<repo>__<issue>.md` convention. The wild reinvestigate's classifier was reading nothing because the old per-repo file existed but the lookup was for the new per-issue path. Reads check both; writes always go to the new path.
+
+**Skill-side discipline (separate from substrate):** The /investigate skill at `~/.claude/skills/investigate/skill.md` (mirrored at `sweep/skills/investigate.md`) gains the **go-with-the-flow** rule:
+
+> When the fix presents multiple plausible options (which API to use, which error format to emit, which file to put the test in, what to name a function), pick the option that matches the codebase's existing conventions. Read the surrounding code, find similar cases, copy their shape. We are contributors, not consultants. **If the convention looks bad, follow the bad convention.** It is not our job to tell maintainers their tests are mis-shaped, their error messages inconsistent, or their patterns dated. Imitate, do not reform. The maintainer earned the convention; we earn merge by respecting it. If genuinely no convention exists OR the convention's application is ambiguous after honest looking, ONLY THEN halt with `human-gated` — the substrate routes to operator inbox.
+
+The skill rule makes ambiguity rare; the substrate fallback handles the remaining cases. Two layers: skill prefers convention-matching default, substrate refuses to lose the work when even the heuristic can't pick.
+
+**Falsifier:**
+- Operator inbox fills with `decide` cards faster than they can be processed → either the skill's heuristic is too aggressive about halting (rewrite the prompt to push harder on convention-matching), OR the LLM is genuinely facing more ambiguity than convention-matching can resolve (real signal: codebase patterns are sparse / inconsistent enough that imitation breaks down). The first reading is a prompt-tightening; the second is "we shouldn't be investigating this repo."
+- Cards reach `decide` state but the artifact path is dead / hygraph is stale → the artifact-write side of the skill is broken; tighten the artifact-first discipline ([[O1]]).
+
+**Compounds with:** [[O1-activity-owned-observability]] (the wrapper records what the skill claimed; the inbox card carries the artifact path so editorial vs reality stays auditable), [[O8-publish-or-perish-attestation]] (both close silent failure modes — O8 closes silent test-skip-reads-as-pass; O9 closes silent skill-can't-decide-vanishes; both make the failure mode visible via routed events instead of letting it die in stdout).
+
