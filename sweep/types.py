@@ -72,7 +72,7 @@ class QaOneEntryRequest:
     issue: int | None = None
 
 
-Bucket = Literal["close", "respondable", "rebase", "qa", "investigate", "done", "wait"]
+Bucket = Literal["close", "human", "rebase", "qa", "investigate", "done", "wait"]
 
 # Each bucket has a destination inbox + intent verb the receiver consumes.
 #
@@ -92,7 +92,7 @@ Bucket = Literal["close", "respondable", "rebase", "qa", "investigate", "done", 
 #             routes; done is not.
 BUCKET_ROUTING: dict[str, tuple[str, str]] = {
     "close":       ("respond",     "close"),
-    "respondable": ("respondable", "respond"),
+    "human": ("human", "respond"),
     "rebase":      ("respond",     "rebase"),
     "qa":          ("qa",          "reattest"),
     "investigate": ("investigate",  "diagnose"),

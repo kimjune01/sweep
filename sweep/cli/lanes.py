@@ -33,7 +33,7 @@ STATIONS = [
     ("qa",          "qa"),
     ("respond",     "respond"),
     ("retro",       "in review"),
-    ("respondable", "respondable"),
+    ("human", "human"),
 ]
 
 

@@ -20,7 +20,7 @@ from sweep.inbox_state import INBOX_DIR, inbox_states, load_msg_id_set
 
 # Per-intent glyphs for the respondable list. Mirrors cockpit so both
 # views read the same way.
-RESPONDABLE_GLYPHS = {
+HUMAN_GLYPHS = {
     "respond":      "💬",
     "force-push":   "⬆️",
     "manual-merge": "🤝",
@@ -45,7 +45,7 @@ def operator_inbox_lines() -> list[str]:
             continue
         lines.append(f"- 🌱 [retro {r.name}]({r.path.as_uri()})")
 
-    s = inbox_states("respondable")
+    s = inbox_states("human")
     msgs = sorted(s.get("queued", []) + s.get("in_flight", []),
                   key=lambda m: m.get("ts", ""))
     for m in msgs:
@@ -55,7 +55,7 @@ def operator_inbox_lines() -> list[str]:
         payload = m.get("payload") or {}
         reason = payload.get("reason", "")
         url = f"https://github.com/{repo}/pull/{pr}"
-        glyph = RESPONDABLE_GLYPHS.get(intent, "·")
+        glyph = HUMAN_GLYPHS.get(intent, "·")
         suffix = f" — {reason}" if reason else ""
         lines.append(f"- {glyph} [{repo}#{pr}]({url}){suffix}")
     return lines
@@ -78,11 +78,11 @@ _ARCHITECTURE_DIAGRAM = """\
  engagement (post-ship)
    notifs ▸ remit ┬▸ respond      auto: rebase / close / clarify
                   ├▸ qa           re-attest on CI flip
-                  └▸ respondable  you — the manual peer to respond
+                  └▸ human        you — the manual peer to respond
 
  side-channels
    leakdog ▸ bless ┬▸ tissue-drafts ▸ wipe
-                   └▸ respondable-issues
+                   └▸ human-issues
 
    · dry holds at ship · everything else flows on real-world time
 ```
@@ -107,10 +107,10 @@ def inbox_default(ctx: typer.Context) -> None:
 
 @inbox_app.command("actor")
 def actor_inspect(
-    actor: str = typer.Argument(..., help="triaged | investigate | qa | drip | respondable | retro"),
+    actor: str = typer.Argument(..., help="triaged | investigate | qa | respond | human | retro"),
 ) -> None:
     """Dump one actor's inbox jsonl, dedupe by msg_id, show acked vs unacked."""
-    valid = {"triaged", "investigate", "qa", "respond", "respondable", "retro"}
+    valid = {"triaged", "investigate", "qa", "respond", "human", "retro"}
     if actor not in valid:
         raise typer.BadParameter(
             f"unknown actor {actor!r}; pick one of {'|'.join(sorted(valid))}"

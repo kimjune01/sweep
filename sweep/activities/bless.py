@@ -6,7 +6,7 @@ it into one of:
 
   - template: matched a known reply shape; canned comment used.
   - auto: novel but mechanical; LLM drafts a short reply.
-  - human: needs operator judgment; routed to respondable-issues queue.
+  - human: needs operator judgment; routed to human-issues queue.
 
 Template-first design (per H25, the long-term arc): as the hypothesis
 graph fills with recurring reply shapes, more responses get template
@@ -16,7 +16,7 @@ matches and stop calling LLM. The actor's cost asymptotically tends to
 
 Auto and template outputs share the same downstream: draft → tissue-
 drafts queue → operator approves → wipe posts. Human outputs go to a
-separate respondable-issues queue that the operator handles directly,
+separate human-issues queue that the operator handles directly,
 no automated reply.
 """
 
@@ -38,7 +38,7 @@ from sweep.types import Message
 
 
 BLESS_INBOX = Path.home() / ".sweep" / "inbox" / "bless.jsonl"
-RESPONDABLE_ISSUES = Path.home() / ".sweep" / "inbox" / "respondable-issues.jsonl"
+HUMAN_ISSUES = Path.home() / ".sweep" / "inbox" / "human-issues.jsonl"
 BLESS_TEMPLATES_DIR = Path.home() / ".sweep" / "templates" / "bless"
 
 # Default templates ship as seed — operator/retro adds more over time.
@@ -181,13 +181,13 @@ def _deposit_tissue_draft(*, repo: str, issue: int, source_id: str,
     return draft_id
 
 
-def _deposit_respondable(*, repo: str, issue: int, source_id: str,
+def _deposit_human(*, repo: str, issue: int, source_id: str,
                           reason: str, reply_excerpt: str) -> str:
-    """Write a human-classified reply into the respondable-issues
+    """Write a human-classified reply into the human-issues
     queue. No auto-draft; the operator handles via their direct
     response surface."""
     ts = dt.datetime.now(dt.timezone.utc)
-    msg_id = (f"respondable-{repo.replace('/', '-')}-{issue}-"
+    msg_id = (f"human-{repo.replace('/', '-')}-{issue}-"
               f"{ts.strftime('%Y%m%dT%H%M%S')}")
     entry = {
         "msg_id":         msg_id,
@@ -199,12 +199,12 @@ def _deposit_respondable(*, repo: str, issue: int, source_id: str,
         "from_tissue":    source_id,
         "issue_url":      f"https://github.com/{repo}/issues/{issue}",
     }
-    RESPONDABLE_ISSUES.parent.mkdir(parents=True, exist_ok=True)
+    HUMAN_ISSUES.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(RESPONDABLE_ISSUES, "a") as f:
+        with open(HUMAN_ISSUES, "a") as f:
             f.write(json.dumps(entry) + "\n")
     except OSError as e:
-        observe.event("bless_respondable_write_failed", repo=repo, issue=issue,
+        observe.event("bless_human_write_failed", repo=repo, issue=issue,
                       error_type=type(e).__name__, error=str(e)[:200])
         return ""
     return msg_id
@@ -258,7 +258,7 @@ async def bless_cycle(msg: Message) -> dict:
 
     Emits exactly one terminal event:
       - bless_routed (kind=template|auto|human) — card routed to the
-        appropriate downstream (tissue-drafts or respondable-issues)
+        appropriate downstream (tissue-drafts or human-issues)
       - bless_skipped (reason) — nothing to do (empty reply, missing
         payload, dedupe)
     """
@@ -305,17 +305,17 @@ async def bless_cycle(msg: Message) -> dict:
     # gradient.
     llm_enabled = (Path.home() / ".sweep" / "control" / "bless_llm_enabled").exists()
     if not llm_enabled:
-        msg_id = _deposit_respondable(
+        msg_id = _deposit_human(
             repo=repo, issue=issue, source_id=tissue_draft_id,
             reason="no template match; LLM classifier disabled (bootstrap)",
             reply_excerpt=reply_text,
         )
         observe.event("bless_routed", repo=repo, issue=issue,
-                      kind="human", respondable_msg_id=msg_id,
+                      kind="human", human_msg_id=msg_id,
                       reason="default-to-human (LLM off)",
                       tissue_draft_id=tissue_draft_id,
                       reply_author=reply_author)
-        return {"routed": "human", "respondable_msg_id": msg_id,
+        return {"routed": "human", "human_msg_id": msg_id,
                 "default": "no_llm"}
 
     # LLM classifier path (off by default — see above).
@@ -349,17 +349,17 @@ async def bless_cycle(msg: Message) -> dict:
                       reply_author=reply_author)
         return {"routed": "auto", "draft_id": draft_id}
     if cls == "human":
-        msg_id = _deposit_respondable(
+        msg_id = _deposit_human(
             repo=repo, issue=issue, source_id=tissue_draft_id,
             reason=parsed.get("reason", "(no reason)"),
             reply_excerpt=reply_text,
         )
         observe.event("bless_routed", repo=repo, issue=issue,
-                      kind="human", respondable_msg_id=msg_id,
+                      kind="human", human_msg_id=msg_id,
                       reason=parsed.get("reason", "")[:200],
                       tissue_draft_id=tissue_draft_id,
                       reply_author=reply_author)
-        return {"routed": "human", "respondable_msg_id": msg_id}
+        return {"routed": "human", "human_msg_id": msg_id}
 
     observe.event("bless_skipped", repo=repo, issue=issue,
                   reason=f"unknown_classification:{cls}",
