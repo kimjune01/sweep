@@ -68,10 +68,12 @@ def operator_inbox_lines() -> list[str]:
 _ARCHITECTURE_DIAGRAM = """\
 ```
  production
-   notifs ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ compose ▸ ship ▸ push
-                     └──┬──┘          │
-                        ▼             ▼
-                     immunize ▸ tissue ▸ wipe
+   rope ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ compose ▸ ship ▸ push
+    ▲              └──┬──┘          │
+    │                 ▼             ▼
+    │              immunize ▸ tissue ▸ wipe
+    │
+    └── idle signals from investigate / qa (rope regulates scout depth)
 
  engagement (post-ship)
    notifs ▸ remit ┬▸ respond      auto: rebase / close / clarify

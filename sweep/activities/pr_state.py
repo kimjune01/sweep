@@ -46,6 +46,7 @@ _ACTOR_WORKFLOW_IDS = {
     "remit":       "remit-actor",
     "ship":        "ship-actor",
     "compose":     "compose-actor",
+    "rope":        "rope-actor",
 }
 
 

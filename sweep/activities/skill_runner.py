@@ -228,15 +228,16 @@ async def triage_cycle(msg: Message) -> dict:
                       issue=msg.pr, rc=result.get("rc", 0))
         return result
     finally:
-        # Pull signal: every triage cycle emits one scout card on
-        # exit, regardless of outcome. Scout's gh share is small
-        # (0.02) and one card per ack is the natural pacing — the
-        # SkillActor's should_idle gate throttles when scout's burst
-        # would overshoot.
+        # Pull signal: route through rope (the depth controller) instead
+        # of kicking scout directly. Rope reads scout.jsonl depth and
+        # decides whether to fire; one idle signal in, zero-or-one scout
+        # card out. This converges all pull signals on a single throttle
+        # point so the line doesn't over-fire from multiple callers.
         try:
-            await kick_scout_card("triage")
+            from sweep.activities.rope import kick_rope_card
+            await kick_rope_card("triage")
         except Exception as e:
-            observe.event("kick_scout_failed", site="triage_cycle",
+            observe.event("kick_rope_failed", site="triage_cycle",
                           error_type=type(e).__name__, error=str(e)[:200])
 
 
@@ -291,6 +292,24 @@ async def investigate_cycle(msg: Message) -> dict:
     if not msg.repo or not msg.pr:
         raise ApplicationError("investigate: repo + issue required",
                                non_retryable=True)
+    try:
+        return await _investigate_cycle_inner(msg)
+    finally:
+        # Pull signal: idle-style. Every investigate cycle ends with a
+        # rope tug; rope reads scout.jsonl depth and decides whether to
+        # fire. Investigate is one of the actors most likely to drain
+        # work (long cycles, fewer outputs per input), so its idle is a
+        # high-value signal for the controller.
+        try:
+            from sweep.activities.rope import kick_rope_card
+            await kick_rope_card("investigate")
+        except Exception as e:
+            from sweep import observe
+            observe.event("kick_rope_failed", site="investigate_cycle",
+                          error_type=type(e).__name__, error=str(e)[:200])
+
+
+async def _investigate_cycle_inner(msg: Message) -> dict:
     ref = f"{msg.repo}#{msg.pr}"
     from sweep import budget as _budget, observe, skill_result
     _budget.record_subprocess_estimate("investigate")

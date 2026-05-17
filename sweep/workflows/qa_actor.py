@@ -48,6 +48,7 @@ with workflow.unsafe.imports_passed_through():
         test_attestation,
     )
     from sweep.activities.pause_gate import should_idle
+    from sweep.activities.rope import kick_rope_card
     from sweep.activities.worktree import (
         clear_andon_marker,
         ensure_worktree,
@@ -252,6 +253,16 @@ class QaActor:
                 mark_acked, args=[msg.msg_id],
                 start_to_close_timeout=timedelta(seconds=5),
             )
+            # Pull signal: qa just freed a slot. Tug rope; rope decides
+            # whether scout's inbox needs filling. Best-effort — a
+            # missed signal is a missed pull, not a correctness bug.
+            try:
+                await workflow.execute_activity(
+                    kick_rope_card, args=["qa"],
+                    start_to_close_timeout=timedelta(seconds=5),
+                )
+            except Exception:
+                pass
         finally:
             # Decrement no matter what — exceptions, halts, skips. The
             # dispatcher loop's wait_condition uses this counter to know

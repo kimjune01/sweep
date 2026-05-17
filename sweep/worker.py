@@ -38,6 +38,7 @@ from sweep.activities.skill_runner import respond_cycle, investigate_cycle, tria
 from sweep.activities.remit import kick_remit_card, remit_cycle
 from sweep.activities.ship import kick_ship_card, ship_cycle
 from sweep.activities.compose import compose_cycle, kick_compose_card
+from sweep.activities.rope import kick_rope_card, rope_cycle
 from sweep.activities.bless import bless_cycle
 from sweep.activities.immunize import immunize_cycle
 from sweep.activities.tissue import tissue_cycle, wipe_cycle
@@ -94,6 +95,12 @@ async def _amain() -> None:
             # separately. First-class actor so the responsibility for
             # PR text is visible instead of buried in /drip --push.
             compose_cycle, kick_compose_card,
+            # rope — pull-signal controller. Reads scout.jsonl depth,
+            # fires scout if below target. Idle signals from downstream
+            # actors trigger the tick; depth is the regulator. Kanban-
+            # shaped: target is operator-tunable via
+            # ~/.sweep/control/rope_target.
+            rope_cycle, kick_rope_card,
             # tissue (drafts) + wipe (posts) — side-hatch on no-fix
             # investigations. tissue drafts, wipe posts; separation of
             # concerns means LLM hiccups and gh hiccups don't share an
