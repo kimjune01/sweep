@@ -509,8 +509,14 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                                 capture_output=True, text=True, timeout=10,
                             )
                             if ls.returncode == 0 and ls.stdout.strip():
-                                from sweep.activities.qa import kick_qa_card
-                                await kick_qa_card(
+                                # Route through attest (behavioral gate)
+                                # not qa (adversarial review). Attest
+                                # runs test_attestation; on pass it
+                                # forwards to qa carrying the
+                                # attestation_hash. Same shape pr-state
+                                # uses for engagement-lane CI cards.
+                                from sweep.activities.attest import kick_attest_card
+                                await kick_attest_card(
                                     msg.repo, branch,
                                     sender="investigate",
                                     incoming=msg,

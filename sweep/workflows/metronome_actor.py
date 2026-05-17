@@ -76,11 +76,19 @@ class MetronomeActor:
     @workflow.run
     async def run(self) -> None:
         while True:
+            # If andon is up, block until clear_andon flips it. Sleeping
+            # a fixed MIN_SLEEP would either spin (wake on pending, sleep
+            # min, loop, wake on pending again...) or silently defer
+            # manual kicks (sonnet found this one). Block-until-clear
+            # gives manual kicks immediate processing after recovery.
+            if self.halted:
+                await workflow.wait_condition(lambda: not self.halted)
+
             # Wake on manual kick OR scheduled tick. Sleep is bounded
             # by MAX_SLEEP so we never miss an externally-edited schedule.
             try:
                 await workflow.wait_condition(
-                    lambda: bool(self._pending) and not self.halted,
+                    lambda: bool(self._pending),
                     timeout=MAX_SLEEP,
                 )
             except TimeoutError:
@@ -92,10 +100,6 @@ class MetronomeActor:
                 start_to_close_timeout=timedelta(seconds=5),
                 retry_policy=RetryPolicy(maximum_attempts=2),
             ):
-                await workflow.sleep(MIN_SLEEP)
-                continue
-
-            if self.halted:
                 await workflow.sleep(MIN_SLEEP)
                 continue
 

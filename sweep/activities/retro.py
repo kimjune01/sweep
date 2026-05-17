@@ -166,21 +166,27 @@ async def retro_cycle(msg: Message) -> dict:
         timeout_s=1800,  # backward pass over a week's events can be slow
     )
 
+    rc = skill_result.get("rc", 0)
     summary = {
         "unprocessed_audit_rows": unprocessed,
         "since": since,
-        "rc": skill_result.get("rc", 0),
+        "rc": rc,
         "stdout_tail": skill_result.get("stdout_tail", ""),
         "trigger_sender": msg.sender,
     }
     _emit_human_card(msg, summary)
-    _mark_processed_now()
+    # Only advance the processed-marker on success. Marking on failure
+    # skips that window's audit rows forever on the next pass —
+    # silently losing whatever the failed run was supposed to compress.
+    if rc == 0:
+        _mark_processed_now()
 
     observe.event(
         "retro_pass_complete",
         unprocessed_audit_rows=unprocessed,
         since=since,
-        rc=skill_result.get("rc", 0),
+        rc=rc,
+        marked_processed=(rc == 0),
         msg_id=msg.msg_id,
     )
     return {
