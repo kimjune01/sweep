@@ -1,14 +1,14 @@
 """Side-channel seed file for slop-offer candidates.
 
-Prospect drops repos with hostile AI policies from the contribution
+Sift drops repos with hostile AI policies from the contribution
 funnel. Those same repos are warm targets for the slop-offer pipeline
 (they've already publicly committed to the framing). Rather than calling
-offer-slop-filter inline from the prospect hot path, prospect appends
+offer-slop-filter inline from the sift hot path, sift appends
 to this seed file; the next `slop-offer tick` pulls candidates from
 both dep-pool and the seed file, dedupes, and queues passing rows.
 
 Append-only plain text, one owner/repo per line. dep-pool reads it on
-demand. Fail-soft: any IO error here must never break prospect.
+demand. Fail-soft: any IO error here must never break sift.
 """
 from __future__ import annotations
 

@@ -155,7 +155,7 @@ def _has_prior_tissue(repo: str, issue: int) -> bool:
 def _policy_blocked(repo: str, issue: int) -> str | None:
     """Returns a short skip reason if posting here would be unwise,
     None if the draft may proceed. Gates intentionally identical in
-    spirit to prospect's `_passes_lightweight_filter` so the rep cost
+    spirit to sift's `_passes_deterministic_issue` so the rep cost
     of tissue mirrors the rep cost of a PR."""
     # Kill list — operator-curated patterns.
     from sweep.activities.sift import _on_kill_list, _on_evicted_list

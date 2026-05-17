@@ -218,7 +218,7 @@ def _sift_info() -> dict:
     """Cockpit chip for the sift actor. Returns {state, age}.
     `state`: 'empty ×N' streak label, or '' when streak is zero.
     `age`: human-compact time since the actor's most recent activity,
-           sourced from the prospect inbox file mtime.
+           sourced from the sift inbox file mtime.
 
     No temporal query: sift is now a SkillActor and its empty-streak
     counter lives in `~/.sweep/state/sift_actor.json` (file-backed
@@ -396,7 +396,7 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
     pinfo = _sift_info()
     age = f" ({pinfo['age']})" if pinfo.get("age") else ""
     state_chip = f"    ·    {pinfo['state']}" if pinfo.get("state") else ""
-    print(f"🎛   Prospecting Controls{age}:   {_knob_line()}{state_chip}")
+    print(f"🎛   Sift Controls{age}:   {_knob_line()}{state_chip}")
     print()
 
     print(f"| Station | Queued | In-flight | Rate | Var | Trend ( {_window_label(spark_minutes, spark_buckets)} ) | Oldest | Status |")

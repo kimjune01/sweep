@@ -156,10 +156,10 @@ async def triage_cycle(msg: Message) -> dict:
     from sweep.activities.scout import kick_scout_card
     _budget.record_subprocess_estimate("triage")
     # Front-of-cycle gate: if the repo is hostile to AI contributions,
-    # route to immunize and short-circuit. Catches what prospect's 24h
+    # route to immunize and short-circuit. Catches what sift's 24h
     # AI-policy cache missed (policy added since last refresh, or the
     # operator's kill list lagged). Investigate never sees the card.
-    # Belt-and-suspenders: prospect filters most of these out at the
+    # Belt-and-suspenders: sift filters most of these out at the
     # front; immunize is the safety net for the gap.
     try:
         if gh_io.repo_ai_policy(msg.repo) == "hostile":

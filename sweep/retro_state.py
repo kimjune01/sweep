@@ -37,7 +37,7 @@ RETRO_CAP = 2
 # fresh file. Empty-P rounds therefore don't burn cap slots — quiet
 # stretches accumulate context without halting the pipeline.
 #
-# A section names codebase components (qa cascade, prospect labels,
+# A section names codebase components (qa cascade, sift labels,
 # gh_io cache, observe) — projection through the Natural Framework is
 # unnecessary because the pipeline is already structurally decomposed
 # by role.

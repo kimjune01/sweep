@@ -3,7 +3,7 @@
 Earliest defensible moment: after /investigate's pushout converges
 on a concrete fix shape. The hypothesis is grounded, no worktree has
 been touched yet, no PR opened. Posting now reserves the first-mover
-spot we already grabbed via recency-first prospect.
+spot we already grabbed via recency-first sift.
 
 Gated per-repo via `retro_params`: `claim_after_investigate=true|false`,
 default false (cautious — some communities discourage claiming, the

@@ -70,7 +70,7 @@ def andon_clear(actor: str = typer.Argument(..., help="Actor name (e.g. triage_c
     which both flips its `halted` flag and removes the marker file. Use
     `sweep andon list` to see actor names.
 
-    Watchdog-style halts (e.g. `prospect_puller` from the API budget
+    Watchdog-style halts (e.g. `budget_sift` from the per-actor budget
     watchdog) have no workflow exception to flip — just remove the
     marker file directly, since the next watchdog tick will re-fire if
     the condition is still bad."""

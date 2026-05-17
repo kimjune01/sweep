@@ -1,6 +1,6 @@
 """Immunize — anti-AI repo routing.
 
-Defense-in-depth gate for repos with hostile AI policies. Prospect's
+Defense-in-depth gate for repos with hostile AI policies. Sift's
 `_passes_lightweight_filter` already drops them at the front of the
 funnel and seeds `slop_offer_seeds.txt`, but the AI-policy cache has
 a 24h TTL and operator-curated kill list may lag — issues can leak
@@ -14,7 +14,7 @@ activity does not investigate, comment, or otherwise contact the repo
 the deliberate-outreach surface for these repos, human-gated).
 
 Per [[H24]]: this actor's job is to be boring. If it never fires,
-prospect's gate is doing its job. If it fires often, prospect's gate
+sift's gate is doing its job. If it fires often, sift's gate
 is broken and should be tightened upstream — fix the gate, don't lean
 on the safety net.
 """
@@ -39,7 +39,7 @@ IMMUNIZE_INBOX = Path.home() / ".sweep" / "inbox" / "immunize.jsonl"
 async def kick_immunize_card(repo: str, issue: int | None, *,
                               source: str) -> str | None:
     """Deposit an anti-AI card on the immunize inbox and signal the
-    actor. Called from prospect (repo-level, issue=None) and from
+    actor. Called from sift (repo-level, issue=None) and from
     triage (issue-level, issue=number).
 
     The activity does the live policy re-check + seeding; this helper
@@ -130,7 +130,7 @@ async def immunize_cycle(msg: Message) -> dict:
     #   - issue-level (triage source): draft a deferential
     #     acknowledgement, route through tissue-drafts → wipe so the
     #     operator approval gate applies the same way as tissue.
-    #   - repo-level (prospect source, no issue): append to the
+    #   - repo-level (sift source, no issue): append to the
     #     legacy slop_offer_seeds file. The existing `sweep slop-offer`
     #     CLI flow consumes these for repo-level outreach.
     if msg.pr:
@@ -211,7 +211,7 @@ IMMUNIZE_MIN_STARS = 500
 
 # How long to suppress re-seeding the same repo. The slop-offer flow
 # is operator-paced; flooding the seed file with the same repo every
-# time prospect (or triage) catches it again is noise.
+# time sift (or triage) catches it again is noise.
 IMMUNIZE_SEED_TTL_DAYS = 30
 
 

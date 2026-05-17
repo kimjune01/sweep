@@ -1,15 +1,15 @@
 """GitHub API budget watchdog — three-tier jidoka for the core rate limit.
 
 Tiers (projected core utilization at reset, with hysteresis):
-  - ≥ 20% (_API_BUDGET_THRESHOLD): throttle — prospect-puller idles.
+  - ≥ 20% (_API_BUDGET_THRESHOLD): throttle — sift idles.
   - ≥ 50% (_API_BUDGET_ANDON):     andon  — marker written + line paused.
   - < 40% (_API_BUDGET_RECOVER):   recover — clear marker, lift pause.
 
 The 10-point dead band between andon and recover prevents flap.
 
-Originally lived in `sweep/activities/prospect.py`; extracted so both
+Originally lived in `sweep/activities/sift.py`; extracted so both
 the puller (check_pull_conditions) and leakdog daemon can import from
-one place without dragging in prospect's full surface.
+one place without dragging in sift's full surface.
 
 Per [[H21]], the auto-clear path runs from leakdog's independent tick,
 not just the puller's loop — a wedged puller can't recover its own
@@ -22,7 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-# Prospect's share of the GitHub core rate limit. Conservative on
+# Sift's share of the GitHub core rate limit. Conservative on
 # purpose: pr-state polls every open PR on every cycle, drip does
 # pushes, qa pulls reviews — they all share the same hourly bucket and
 # their loads scale with the number of open PRs, not the operator's
@@ -31,7 +31,7 @@ from pathlib import Path
 # upward only after rate-limit hits stop appearing in andon.
 _API_BUDGET_THRESHOLD = 0.20
 
-# Projected utilization above this means the throttle failed: prospect
+# Projected utilization above this means the throttle failed: sift
 # (or something it sits in front of) is burning through the budget
 # faster than the 20% cap allows. That's an andon — pull the cord,
 # stop the line, demand operator eyes. Block AND record the marker.
@@ -52,7 +52,7 @@ def _budget_andon_path() -> Path:
 
 
 def _record_budget_andon(reason: str) -> None:
-    """Write an andon marker for prospect when the API budget goes
+    """Write an andon marker for sift when the API budget goes
     critical. Inlines the file format from activities.worktree.record_andon
     so we don't need a workflow path to engage the cord."""
     import datetime as _dt
@@ -88,7 +88,7 @@ def _clear_budget_andon_if_held() -> bool:
 
 def _api_budget_block() -> str | None:
     """Return a block reason if projected core utilization at reset is
-    over prospect's allotted share, else None. Cached for
+    over sift's allotted share, else None. Cached for
     `_API_BUDGET_CACHE_S` to keep poll cycles cheap. The `gh api
     rate_limit` call itself doesn't count against the limit (per
     GitHub docs), so polling it is free.
@@ -137,7 +137,7 @@ def _api_budget_block() -> str | None:
                     elif proj_pct >= _API_BUDGET_THRESHOLD:
                         reason = (f"api budget tight "
                                   f"({100 * proj_pct:.0f}% projected, "
-                                  f"prospect capped at {int(_API_BUDGET_THRESHOLD * 100)}%)")
+                                  f"sift capped at {int(_API_BUDGET_THRESHOLD * 100)}%)")
     except Exception:
         pass
 

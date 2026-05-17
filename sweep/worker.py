@@ -83,7 +83,7 @@ async def _amain() -> None:
             # andon.
             tissue_cycle, wipe_cycle,
             # immunize — anti-AI repo routing (worth-pursuing decider
-            # for slop-offer candidates). Receives from prospect (two
+            # for slop-offer candidates). Receives from sift (two
             # branches) and triage.
             immunize_cycle,
             # bless — classifier-router for issue-comment responses.
@@ -91,9 +91,9 @@ async def _amain() -> None:
             bless_cycle,
             # usage probe
             probe_claude_usage,
-            # scout (one search per card) + prospect (one issue per card).
+            # scout (one search per card) + sift (one issue per card).
             # Per-card pacing replaces the old burst-per-pass model:
-            # scout writes one prospect card per raw issue; prospect
+            # scout writes one sift card per raw issue; sift
             # screens one issue per fire, with should_idle between cards.
             scout_cycle,
             sift_cycle, should_triage_issue,
@@ -111,7 +111,7 @@ async def _amain() -> None:
             leakdog_tick,
             # pause-gate: inbox-boundary check used by every actor's
             # main loop. Lets pause mean "no new starts" universally
-            # instead of just prospect.
+            # instead of just sift.
             should_idle,
         ],
     )

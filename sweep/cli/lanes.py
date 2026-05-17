@@ -135,7 +135,7 @@ def _events_for_pr(repo: str, pr: int, *, hours: int = 168) -> list[dict]:
         except json.JSONDecodeError:
             continue
         # `pr` may live under `pr` (PR-side events) or `issue`
-        # (issue-side events — prospect/tissue/bless). Match either.
+        # (issue-side events — sift/tissue/bless). Match either.
         e_repo = e.get("repo", "")
         e_pr = e.get("pr") if e.get("pr") is not None else e.get("issue")
         if e_repo != repo or e_pr != pr:
@@ -379,7 +379,7 @@ def render_leakdog(hours: int = 24) -> list[str]:
     wipe_failed = count("tissue_post_failed")
     wipe_pending = _inbox_pending("wipe")
 
-    # immunize: anti-AI escape hatch. Cards from prospect (repo-level)
+    # immunize: anti-AI escape hatch. Cards from sift (repo-level)
     # and triage (issue-level). Pursue → seed-or-draft; skip → silent
     # drop (policy resettled, below stars, archived, already seeded).
     immunize_cards = aged("immunize_card_deposited", lag_minutes=30)

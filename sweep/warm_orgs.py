@@ -1,6 +1,6 @@
 """Warm-orgs: orgs where we've already landed a merged PR.
 
-Warmth is a prospect-time prioritization signal. An org with a merged PR
+Warmth is a sift-time prioritization signal. An org with a merged PR
 under our author handle is "warm" — the maintainers have seen the
 username, any CLA is signed, and CI is already configured to our shape.
 Cold orgs still get processed, just after warm ones in the same pass.

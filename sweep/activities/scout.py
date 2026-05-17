@@ -40,7 +40,7 @@ SCOUT_CURSOR_PATH = Path.home() / ".sweep" / "cursors" / "scout.json"
 _BASE_QUALIFIERS = ["-linked:pr", "comments:<20"]
 
 # Default recency window for the global search. The retroactive
-# widen/recover from the old ProspectPuller is gone; if the operator
+# widen/recover from the old per-pass model is gone; if the operator
 # wants a wider window, write it to ~/.sweep/control/scout_days.
 _DEFAULT_DAYS = 30
 _DAYS_MAX = 365
@@ -211,7 +211,7 @@ async def scout_cycle(msg: Message) -> dict:
 async def kick_scout_card(sender: str) -> str | None:
     """Drop one trigger card on scout's inbox and signal it.
 
-    Fires from leakdog (heartbeat when prospect's inbox runs dry) and
+    Fires from leakdog (heartbeat when sift's inbox runs dry) and
     from triage acks (downstream consumed; refill). Mirrors the old
     kick_prospect_card surface but targets scout — sift no longer
     has a "schedule a search" card type, only "screen this issue".

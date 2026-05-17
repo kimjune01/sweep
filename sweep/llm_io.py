@@ -63,7 +63,7 @@ async def call(
             # the system prompt as ephemeral so the API caches the
             # prefix for ~5min. Subsequent calls with the same system
             # within the window pay ~10% of the input-token cost.
-            # Worth it for hot paths (prospect's should_triage_issue
+            # Worth it for hot paths (sift's should_triage_issue
             # ticks every few minutes with a stable system).
             sys_arg: object = (
                 [{"type": "text", "text": system,

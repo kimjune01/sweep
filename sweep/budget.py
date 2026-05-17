@@ -181,7 +181,7 @@ def share_used(actor: str) -> float:
     return calls_last_window(actor) / cap_calls if cap_calls else 0.0
 
 
-# ---- per-actor andon markers (mirror prospect's pattern) ---------
+# ---- per-actor andon markers (mirror sift's pattern) ---------
 ANDON_DIR = Path.home() / ".sweep" / "control" / "andon"
 
 

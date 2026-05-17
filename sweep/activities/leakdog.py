@@ -6,7 +6,7 @@ table where it surfaces interface leaks at a glance.
 
 The activity here is what makes leakdog *independent* of any one
 workflow's health: it runs on its own tick (driven by the
-`LeakdogDaemon` workflow) so a wedged prospect-puller can't trap the
+`LeakdogDaemon` workflow) so a wedged actor can't trap the
 API-budget andon in the "set" state. That was [[H21]] — the supervisor
 must not be supervised by the thing it supervises.
 """

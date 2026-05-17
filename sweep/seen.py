@@ -1,6 +1,6 @@
-"""Dedup for prospect → triage handoff.
+"""Dedup for sift → triage handoff.
 
-Prospect surfaces issues; triage consumes them. Without dedup, prospect
+Sift surfaces issues; triage consumes them. Without dedup, sift
 re-discovers the same issue on every scan and triage scores it again.
 
 We use a plain set in a file (`~/.sweep/seen/issues.txt`) rather than a
@@ -64,7 +64,7 @@ def mark_seen(key: str) -> None:
     # Keep cache mtime in sync with the file we just wrote.
     global _cache_mtime
     _cache_mtime = ISSUES_FILE.stat().st_mtime
-    # Counter — retro reads this to estimate prospect's surface-area growth.
+    # Counter — retro reads this to estimate sift's surface-area growth.
     # Local import: seen is a leaf module and observe must not pull it in.
     from sweep import observe
     observe.incr("seen_add")

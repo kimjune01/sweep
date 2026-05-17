@@ -2,12 +2,12 @@
 
 Reviews are org-gated — only one open PR per org is sustainable without
 burning standing. This module tracks which orgs are "blocked" (have an
-open PR awaiting review) so prospect can skip them at the front of the
+open PR awaiting review) so sift can skip them at the front of the
 pipe and drip can hold pushes for them at the back.
 
 Cached at ~/.sweep/cache/org_state.json with a 5 min TTL. Orgs unblock
 when PRs merge or close upstream — we don't need second-by-second
-freshness, but stale data > 5 min would let prospect surface issues
+freshness, but stale data > 5 min would let sift surface issues
 from orgs that drained while we were sweeping.
 """
 

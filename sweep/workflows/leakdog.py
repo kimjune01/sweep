@@ -2,14 +2,14 @@
 other workflow's health.
 
 Today's job: clear the API-budget andon when projected utilization
-has actually recovered. This logic also lives inside the prospect
+has actually recovered. This logic also lives inside the sift
 puller's gate, but a wedged puller can't recover its own andon —
 hence the independent tick. See [[H21]].
 
 Future: this daemon is the natural place to surface interface
 leakdog warnings as events when the funnel imbalance crosses a
 threshold (e.g. emit `leakdog_interface_warning` when any
-prospect→triage residual exceeds N for >M minutes).
+sift→triage residual exceeds N for >M minutes).
 
 Cadence: 60s. Short enough that an API-budget recovery is visible
 within a minute; long enough that the leakdog tick itself doesn't

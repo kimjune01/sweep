@@ -54,7 +54,7 @@ def investigate_enqueue(
     with path.open("a") as f:
         f.write(json.dumps(asdict(msg)) + "\n")
 
-    # Signal the actor — same shape as prospect → triage signal.
+    # Signal the actor — same shape as sift → triage signal.
     async def _signal() -> None:
         try:
             from temporalio.client import Client

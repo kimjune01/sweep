@@ -209,9 +209,9 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
     if gh_io.repo_ai_policy(repo.name_with_owner) == "hostile":
         # Hostile repos route to the immunize actor — immunize decides
         # whether they're worth pursuing via slop-offer (visibility,
-        # recency, dedupe) instead of every prospect tick auto-seeding.
+        # recency, dedupe) instead of every sift tick auto-seeding.
         # Fail-soft: signaling failures emit observe events but never
-        # raise — prospect's hot path stays liveness-preserving.
+        # raise — sift's hot path stays liveness-preserving.
         try:
             import asyncio as _asyncio
             from sweep.activities.immunize import kick_immunize_card
@@ -263,7 +263,7 @@ def _on_evicted_list(name_with_owner: str) -> bool:
 def _on_kill_list(name_with_owner: str) -> bool:
     """fnmatch-style patterns, one per line, comments with '#'. Re-read
     each call — small file, hot-reloadable without restart. Operator
-    edits and the next prospect tick picks it up.
+    edits and the next sift tick picks it up.
     """
     if not _KILL_LIST_PATH.exists():
         return False
@@ -375,7 +375,7 @@ async def deposit_issue_to_triaged(issue: IssueCandidate,
                                     complexity: str = "unknown") -> str:
     """Append one Message to ~/.sweep/inbox/triaged.jsonl and mark seen.
     `complexity` ∈ {trivial, shallow, medium, deep, unknown} is the
-    depth label assigned at prospect time; it propagates downstream so
+    depth label assigned at sift time; it propagates downstream so
     every event from triage/investigate/qa/drip can be joined back to
     the original depth probe. Trivial issues should already have been
     filtered out before this call — passing trivial here means the
@@ -441,7 +441,7 @@ async def deposit_issue_to_triaged(issue: IssueCandidate,
 
 # Stable system prompt — pulled out of the function so Anthropic's
 # prompt cache can fingerprint it. The same bytes every tick → 5-min
-# ephemeral cache hit at ~10% cost on the input prefix. With prospect
+# ephemeral cache hit at ~10% cost on the input prefix. With sift
 # ticking on demand-driven cadence, near-every call lands in cache.
 # Keep this tight: every token is paid on cache miss (first call,
 # post-restart, and post-5-min idle).
@@ -504,7 +504,7 @@ def _target_complexity() -> str:
     return "MEDIUM"
 
 
-# --- prospect cost knobs (operator-tunable from ~/.sweep/control/) ----
+# --- sift cost knobs (operator-tunable from ~/.sweep/control/) ----
 # Same hot-reload pattern as _min_complexity: read each call, no cache.
 # Files are plaintext ints; missing/malformed = use the default.
 
@@ -550,7 +550,7 @@ def _min_issue_age_minutes() -> int:
     """Minimum age (in minutes) before an issue is considered for
     triage. The maintainer-self-PR pattern (open issue then immediately
     open the PR yourself) shows up as a rejection at /investigate, after
-    we've already spent triage tokens. Filtering at prospect time on a
+    we've already spent triage tokens. Filtering at sift time on a
     short delay catches most of these for one cheap timestamp check.
     Cedes a small first-mover advantage on issues no maintainer will
     engage with, which is acceptable because that's not our edge anyway."""
@@ -720,7 +720,7 @@ def _passes_deterministic_issue(repo: str, meta: dict) -> bool:
             import asyncio as _asyncio
             from sweep.activities.immunize import kick_immunize_card
             _asyncio.create_task(kick_immunize_card(
-                repo, None, source="prospect-deterministic",
+                repo, None, source="sift-deterministic",
             ))
         except Exception:
             pass
@@ -912,7 +912,7 @@ async def sift_cycle(msg: Message) -> dict:
     100-issue sweep inside a single activity invocation, bursting
     through the per-actor rate cap before the gate could see it. This
     refactor moves the loop up to scout (one search per card) and the
-    per-issue work down to one prospect cycle per issue.
+    per-issue work down to one sift cycle per issue.
     """
     from sweep import budget as _budget
     _budget.set_caller("sift")

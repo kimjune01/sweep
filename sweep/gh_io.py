@@ -14,7 +14,7 @@ nothing to await. Activities call them directly; Temporal runs activities on
 a worker thread pool so blocking on subprocess inside an activity is fine.
 
 Forensics: every cache hit / miss is timestamped in ~/.sweep/cache/gh.db.
-Easy to ask "how many gh calls did this prospect run actually fire" by
+Easy to ask "how many gh calls did this sift run actually fire" by
 diffing row counts before/after.
 """
 

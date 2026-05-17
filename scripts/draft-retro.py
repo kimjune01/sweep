@@ -39,7 +39,7 @@ PR-pipeline's forward pass. Four sections:
   S — Subjective: what the actors emitted (paraphrase event payloads)
   O — Objective: what the counters and event-derivations show
   A — Assessment: diagnosis, naming codebase components by name
-                  (qa cascade, prospect labels, gh_io cache, observe, etc.)
+                  (qa cascade, sift labels, gh_io cache, observe, etc.)
   P — Plan: concrete commits to make, or "(none)" if nothing actionable
 
 Constraints:
