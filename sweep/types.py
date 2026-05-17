@@ -110,13 +110,20 @@ BUCKET_ROUTING: dict[str, tuple[str, str]] = {
 
 @dataclass
 class PrLiveState:
-    """Live state of an open PR pulled from gh."""
+    """Live state of a PR pulled from gh.
+
+    `state` is OPEN / CLOSED / MERGED. The classifier short-circuits
+    non-OPEN PRs to the `done` bucket — they're terminal regardless of
+    review/CI signals (a CLOSED PR with failing CI doesn't need
+    reinvestigation; it needs forgetting).
+    """
 
     repo: str
     pr: int
     branch: str
     title: str
     url: str
+    state: str  # OPEN / CLOSED / MERGED
     review_decision: str  # APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED / ""
     mergeable: str  # MERGEABLE / CONFLICTING / UNKNOWN / ""
     ci: str  # green / failing / pending / unknown

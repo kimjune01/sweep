@@ -212,6 +212,7 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
         branch=data.get("headRefName", ""),
         title=data.get("title", ""),
         url=data.get("url", ""),
+        state=(data.get("state") or "").upper(),
         review_decision=data.get("reviewDecision") or "",
         mergeable=data.get("mergeable") or "",
         ci=ci,
@@ -415,6 +416,23 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     ci = state.ci
     merge = state.mergeable
     reasons: list[str] = []
+
+    # 0. terminal state — CLOSED / MERGED PRs short-circuit to done.
+    #    Routing them into reqa / reinvestigate burns a worktree clone
+    #    for a branch the head fork has already deleted (typical
+    #    post-close cleanup); the andon that fires is misleading
+    #    because the bug is "we shouldn't be looking at this PR" not
+    #    "the worktree is broken." Empty branch is also terminal —
+    #    gh returns "" for headRefName on detached PRs.
+    if state.state and state.state != "OPEN":
+        return PrStateResult(
+            repo=state.repo,
+            pr=state.pr,
+            branch=state.branch,
+            bucket="done",
+            reason=f"PR state={state.state} — terminal, out of rotation",
+            signals={"state": state.state},
+        )
 
     # 1. close (terminal — needs explicit signal, not stale-age)
     #    We only auto-flag close for: changes_requested + close-this-PR-language.
