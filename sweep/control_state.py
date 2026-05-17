@@ -6,15 +6,19 @@ via io_safe, no parsing. Three surfaces (CLI subcommands, TUI key binds,
 direct fs manipulation) are interchangeable because they all bottom out
 on the same files.
 
-- dry: actors run the full forward pass but skip external mutations.
-  In-memory work, tests, attestations, observability all still fire;
-  only writes that hit the outside world (inbox delivery, gh pr create,
-  git push) are gated. The line rehearses without touching the world.
+- dry: "no new public commitments / no new work." Narrowly scoped —
+  only ship-actor honors it (at pause_gate.should_idle, the inbox-pull
+  boundary). Other actors (respond, qa, investigate, etc.) keep
+  flowing because once a PR is out there, the maintainer is on
+  real-world time and we owe them a response regardless of operator
+  pause/dry state. Cards pile in ship.jsonl while dry is on; `sweep
+  dry off` drains. No special code paths — dry is just *time*.
 - paused: forward-pass actors no-op at takt entry; in-flight work
-  completes normally. Set by the operator (`sweep pause on`) or
-  automatically by an andon firing (something broke → don't produce
-  more). Clears when the operator runs `sweep pause off` OR when the
-  last andon marker is cleared (operator signaling "ready to run").
+  completes normally. Blanket gate (every actor's main loop calls
+  pause_gate). Set by the operator (`sweep pause on`) or automatically
+  by an andon firing (something broke → don't produce more). Clears
+  when the operator runs `sweep pause off` OR when the last andon
+  marker is cleared (operator signaling "ready to run").
 """
 
 from __future__ import annotations

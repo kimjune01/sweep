@@ -498,20 +498,17 @@ async def route_classified() -> dict:
             },
             ts=now_iso,
         )
-        if control_state.is_dry():
-            inbox = INBOX_DIR / f"{actor}.dry.jsonl"
-            observe.event("dry_skip", site="route_classified",
-                          actor=actor, msg_id=msg.msg_id,
-                          repo=repo, pr=pr)
-        else:
-            inbox = INBOX_DIR / f"{actor}.jsonl"
+        # Dry mode is NOT checked here. Dry means "no new public
+        # commitments" — once a PR is out there, the maintainer is on
+        # real-world time and we owe them a response regardless of
+        # operator pause/dry state. The only actor that gates on dry is
+        # ship-actor (new-PR-create), enforced at pause_gate.should_idle.
+        inbox = INBOX_DIR / f"{actor}.jsonl"
         with open(inbox, "a") as f:
             f.write(json.dumps(asdict(msg)) + "\n")
         # Best-effort actor signal — qa actor receives messages this way;
         # buckets without a wired actor just stay in the jsonl view layer.
-        # Skip on dry: the whole point of dry is no external mutations.
-        if not control_state.is_dry():
-            await _signal_actor(actor, msg)
+        await _signal_actor(actor, msg)
         routed[actor] = routed.get(actor, 0) + 1
 
     return {"read": len(latest), "routed": routed, "skipped_acked": 0}
@@ -548,17 +545,10 @@ async def deliver_to_inbox(result: PrStateResult) -> str:
 
     INBOX_DIR.mkdir(parents=True, exist_ok=True)
     line = json.dumps(asdict(msg)) + "\n"
-    if control_state.is_dry():
-        # Rehearsal trace — write the message to a sibling .dry.jsonl
-        # instead of the live inbox. Downstream actors don't see it; the
-        # operator can `cat` the file later to see what would have shipped.
-        dry_inbox = INBOX_DIR / f"{actor}.dry.jsonl"
-        with open(dry_inbox, "a") as f:
-            f.write(line)
-        observe.event("dry_skip", site="deliver_to_inbox",
-                      actor=actor, msg_id=msg.msg_id,
-                      repo=result.repo, pr=result.pr)
-        return str(dry_inbox)
+    # Dry mode is NOT checked here. Dry means "no new public
+    # commitments" — only ship-actor gates on it (at pause_gate). Once
+    # a PR exists, the maintainer is on real-world time and we owe them
+    # a response regardless of operator pause/dry state.
     inbox = INBOX_DIR / f"{actor}.jsonl"
     # Append-only — read all lines later, dedupe by msg_id.
     with open(inbox, "a") as f:
