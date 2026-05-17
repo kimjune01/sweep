@@ -52,11 +52,13 @@ _ACTOR_WORKFLOW_IDS = {
     "scout":       "scout-actor",
 }
 
-# View-only sinks: their inbox jsonl IS the audit trail; no Temporal
-# actor consumes them. Routing still writes the jsonl row, but signaling
-# would emit a spurious signal_failed/unwired_actor — these are not
-# unwired, they're intentionally signal-less.
-_VIEW_ONLY_ACTORS: set[str] = {"retro"}
+# View-only sinks: their inbox jsonl IS the consumer; no Temporal
+# actor processes them. Routing still writes the jsonl row, but
+# signaling would emit a spurious signal_failed/unwired_actor — these
+# are not unwired, they're intentionally signal-less. retro is the
+# wait-bucket audit trail; human is the operator inbox (you are the
+# consumer, surfaced via cockpit's 📥 chip and `sweep inbox actor human`).
+_VIEW_ONLY_ACTORS: set[str] = {"retro", "human"}
 
 
 async def _signal_actor(actor: str, msg: "Message") -> str | None:
