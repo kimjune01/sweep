@@ -83,6 +83,55 @@ async def kick_ship_card(repo: str, branch: str, pr: int | None = None,
     return await _signal_actor("ship", msg)
 
 
+async def _final_checks(repo: str, pr: int | None) -> tuple[bool, str]:
+    """Cheap re-checks against live state right before push. Returns
+    (ok, reason). Order matters: cheapest checks first, so a fast no
+    short-circuits the expensive ones.
+
+    Checks:
+      1. Repo on kill list (operator hard-banned this repo).
+      2. Repo on evicted list (sift evicted it while card waited).
+      3. Repo AI policy went hostile (24h-cached gh lookup).
+      4. If pr exists: still mergeable per live gh state.
+
+    Not checked here: attestation hash. That belongs upstream — the
+    push artifact (attestation) is hashed at create time and the
+    drip/respond layer re-hashes at push time via the existing
+    gate-pr-create hook (see attestations.py / fuses.py). Adding a
+    third re-hash here would duplicate the gate without adding signal.
+    """
+    from sweep.activities.sift import _on_kill_list, _on_evicted_list
+    if _on_kill_list(repo):
+        return False, "repo on kill list"
+    if _on_evicted_list(repo):
+        return False, "repo on evicted list"
+    try:
+        from sweep import gh_io
+        if gh_io.repo_ai_policy(repo) == "hostile":
+            return False, "repo AI policy went hostile"
+    except Exception as e:
+        # Don't fail-closed on a transient gh hiccup — log and continue.
+        # The policy check is belt-and-suspenders; sift filters most of
+        # these out at the front, and a stale check shouldn't block a
+        # ready push.
+        from sweep import observe
+        observe.event("ship_policy_check_error", repo=repo,
+                      error_type=type(e).__name__, error=str(e)[:200])
+    if pr is not None:
+        try:
+            from sweep.activities.pr_state import gh_pr_view
+            state = await gh_pr_view(repo, int(pr))
+            mergeable = (state.signals or {}).get("mergeable", "")
+            if mergeable == "CONFLICTING":
+                return False, "PR became conflicting since prep"
+        except Exception as e:
+            from sweep import observe
+            observe.event("ship_mergeable_check_error",
+                          repo=repo, pr=pr,
+                          error_type=type(e).__name__, error=str(e)[:200])
+    return True, "ok"
+
+
 @activity.defn
 async def ship_cycle(msg: Message) -> dict:
     """Gate one publish card and delegate the push to respond.
@@ -92,14 +141,23 @@ async def ship_cycle(msg: Message) -> dict:
     we know dry is off. The final-check battery is the gate; respond is
     the doer.
 
-    Skeleton version: trusts upstream's prep, runs the publish via
-    respond_cycle. Final checks land in a follow-up commit.
+    On gate failure: ack the card (returns rather than raises) and emit
+    ship_gate_failed. The card is consumed — re-evaluating it would
+    likely fail the same way, and the upstream signal that produced it
+    (qa-converged) will fire again on the next pass if conditions
+    change. Operator can re-kick manually if intended.
     """
     if not msg.repo or not msg.branch:
         raise ApplicationError("ship: repo + branch required",
                                non_retryable=True)
     from sweep import observe
     from sweep.activities.skill_runner import respond_cycle
+
+    ok, reason = await _final_checks(msg.repo, msg.pr)
+    if not ok:
+        observe.event("ship_gate_failed", repo=msg.repo, branch=msg.branch,
+                      pr=msg.pr, reason=reason, msg_id=msg.msg_id)
+        return {"published": False, "gated": True, "reason": reason}
 
     # Synthesize a respond-shaped message and delegate. respond_cycle
     # records its own subprocess budget and runs /drip --push.
