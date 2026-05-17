@@ -452,18 +452,21 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
         bucket = "reinvestigate"
         reasons.append("maintainer raised new concern in-PR")
     # 2b. reinvestigate — CHANGES_REQUESTED or maintainer_question on a
-    # PR with failing CI. The substrate can re-attest and push a new
-    # fix; the maintainer's "have you tested?" / "this is broken"
-    # gets answered structurally with a fresh receipt. Only after the
-    # substrate has tried (and produced an attestation that either
-    # passes the gate or surfaces what's still broken) does a
-    # failure to attest punt to operator inbox via [[O9]]. This
-    # supersedes the previous "any CR → human" rule which dumped
-    # wild #1924 into the operator's lap without trying.
-    elif (rd == "CHANGES_REQUESTED" or state.maintainer_question) and ci == "failing":
+    # PR whose CI isn't visibly green. Covers failing CI (test broken)
+    # AND unknown CI (draft, never-ran, rollup-empty — wild #1924's
+    # case after we drafted it for org-cap cleanup) AND pending CI
+    # (substrate runs in container anyway, no reason to wait). The
+    # substrate can re-attest in either case; the maintainer's "have
+    # you tested?" / "this is broken" gets answered structurally with
+    # a fresh receipt. Only after the substrate has tried (and either
+    # passes the gate or surfaces what's still broken) does a failure
+    # to attest punt to operator inbox via [[O9]]. Supersedes the
+    # previous "any CR → human" rule which dumped wild #1924 into the
+    # operator's lap without trying.
+    elif (rd == "CHANGES_REQUESTED" or state.maintainer_question) and ci != "green":
         bucket = "reinvestigate"
         reasons.append(
-            f"CR+failing CI ({state.failing_check or 'unspecified'}) — substrate re-attests"
+            f"CR+ci={ci} ({state.failing_check or 'no-failing-check'}) — substrate re-attests"
         )
     # 2c. human — CR or maintainer_question on a green PR. CI is
     # already green, so there's nothing to fix structurally; the
