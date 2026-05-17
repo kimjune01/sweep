@@ -28,6 +28,52 @@ ADVERSARY_3 = models.default_for("adversary_3")  # opus subagent fallback
 CODE_MODEL  = models.default_for("code")          # opus, for impl/fix tasks
 
 ATTESTATIONS = Path.home() / ".sweep" / "attestations"
+QA_INBOX = Path.home() / ".sweep" / "inbox" / "qa.jsonl"
+
+
+@activity.defn
+async def kick_qa_card(repo: str, branch: str,
+                       pr: int | None = None,
+                       sender: str = "investigate",
+                       attestation_hash: str | None = None) -> str | None:
+    """Deposit a card on qa.jsonl and signal qa-actor. Called by
+    investigate_cycle on the production lane when a fresh fix branch
+    is ready for verification. Reqa-actor handles the engagement-lane
+    equivalent via kick_reqa_card."""
+    import datetime as _dt
+    import json as _json
+    from dataclasses import asdict as _asdict
+    from sweep.types import Message
+    from sweep.activities.pr_state import _signal_actor
+
+    ts = _dt.datetime.now(_dt.timezone.utc)
+    slug = repo.replace("/", "-")
+    pr_part = pr if pr is not None else "new"
+    msg_id = f"qa-{ts.strftime('%Y%m%dT%H%M%S')}-{slug}-{pr_part}"
+    payload: dict = {}
+    if attestation_hash:
+        payload["attestation_hash"] = attestation_hash
+    msg = Message(
+        msg_id=msg_id,
+        sender=sender,
+        intent="reattest",
+        repo=repo,
+        pr=pr,
+        branch=branch,
+        payload=payload,
+        ts=ts.isoformat(),
+    )
+    QA_INBOX.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(QA_INBOX, "a") as f:
+            f.write(_json.dumps(_asdict(msg)) + "\n")
+    except Exception as e:
+        observe.event("qa_card_write_failed", repo=repo, branch=branch,
+                      error_type=type(e).__name__, error=str(e)[:200])
+        return None
+    observe.event("qa_card_deposited", repo=repo, branch=branch,
+                  pr=pr, sender=sender, msg_id=msg_id)
+    return await _signal_actor("qa", msg)
 
 
 def _heartbeat(details: dict) -> None:
@@ -173,35 +219,56 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     att = _capture(req.msg_id, "test", body, worktree=req.worktree)
     att.verdict = "pass"
 
-    # Write the committable attestation pair into the worktree's
-    # prework dir. The deterministic verifier (attestation_verify.py)
-    # re-parses fix_run.stdout independently — silent-skip cases that
-    # this code reads as 'pass' get caught at the push gate. The
-    # files ship in the PR branch so the maintainer can verify by
-    # re-running test_cmd themselves and comparing sha256.
+    # Write the committable attestation set into the worktree's
+    # attestations/ dir. The "fail on master, pass with fix"
+    # discipline is made visible: maintainer can re-run test_cmd
+    # on both refs and compare sha256. The deterministic verifier
+    # (attestation_verify.py) re-parses after.txt independently —
+    # silent-skip cases that this code reads as 'pass' get caught
+    # at the push gate.
     try:
         from sweep.attestation_verify import write_attestation_files
         import platform
         slug = req.branch.removeprefix("fix/").replace("/", "__") or "attestation"
-        prework_dir = Path(req.worktree) / "prework" / slug
-        # Expected test name: use the slug as a heuristic — the user-
-        # authored test should reference the fix's slug. If a different
-        # convention is needed (e.g. the integration test name differs
-        # from the branch slug), callers can pass it explicitly later.
+        attestation_dir = Path(req.worktree) / "attestations" / slug
         write_attestation_files(
-            prework_dir,
+            attestation_dir,
             test_cmd=req.test_cmd,
             expected_test_name=slug.split("__")[-1].replace("_", "-"),
             head_sha=_head_sha(req.worktree),
             host=f"{platform.system().lower()}-{platform.machine()}",
             test_env="native",
-            stdout=fix_run.stdout,
+            before_stdout=(master_run.stdout or "") + "\n--- stderr ---\n" + (master_run.stderr or ""),
+            after_stdout=(fix_run.stdout or "") + "\n--- stderr ---\n" + (fix_run.stderr or ""),
             elapsed_seconds=time.time() - _test_start,
         )
+        # Auto-commit + ship: the forcing function only works if the
+        # files are public. /drip's push picks up the commit naturally.
+        # If the verifier rejects, gate_push refuses; if it accepts,
+        # the maintainer sees the receipts in the PR. No invisible
+        # middle ground where the substrate "checked but didn't show."
+        add = subprocess.run(
+            ["git", "-C", req.worktree, "add", "attestations/"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if add.returncode == 0:
+            cmt = subprocess.run(
+                ["git", "-C", req.worktree, "commit", "-m",
+                 f"attestation: {slug} ({req.test_cmd[:60]})"],
+                capture_output=True, text=True, timeout=10,
+            )
+            # commit returns 1 when nothing new to commit (re-runs of
+            # the same fix on the same sha). That's fine; the existing
+            # commit still ships.
+            if cmt.returncode == 0:
+                observe.event("attestation_committed", msg_id=req.msg_id,
+                              slug=slug, branch=req.branch)
     except Exception as e:
         # Don't fail the test_attestation activity if the writer hits
-        # an issue (e.g. read-only fs) — substrate-private record still
-        # got written via _capture above. Log so leakdog can see it.
+        # an issue (e.g. read-only fs, git config missing) — substrate-
+        # private record still got written via _capture above. Log so
+        # leakdog can see it; gate_push will then refuse the push for
+        # lack of a committed manifest, which is the right outcome.
         observe.event("attestation_write_failed", msg_id=req.msg_id,
                       error_type=type(e).__name__, error=str(e)[:200])
 

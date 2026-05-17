@@ -379,6 +379,43 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                                   repo=msg.repo, issue=msg.pr,
                                   error_type=type(e).__name__,
                                   error=str(e)[:200])
+
+            # Production-lane handoff: if the investigation produced
+            # a fresh fix branch, kick qa-actor for verification before
+            # the push. Branch derived from the substrate's worktree
+            # (the dir investigate's /investigate skill operates in
+            # by convention). qa-actor will run test_attestation, write
+            # the attestation files to <worktree>/attestations/<slug>,
+            # then kick compose. submit-actor's _attestation_gate is
+            # the structural backstop that refuses push without a
+            # verified manifest.
+            if classified["produced_pr"] and not classified["human_gated"]:
+                try:
+                    from sweep.activities.worktree import _safe_dir
+                    import subprocess
+                    wt = _safe_dir(msg.repo)
+                    if wt.exists():
+                        br_out = subprocess.run(
+                            ["git", "-C", str(wt), "rev-parse",
+                             "--abbrev-ref", "HEAD"],
+                            capture_output=True, text=True, timeout=5,
+                        )
+                        branch = br_out.stdout.strip() if br_out.returncode == 0 else ""
+                        if branch and branch not in ("HEAD", "main", "master"):
+                            from sweep.activities.qa import kick_qa_card
+                            await kick_qa_card(
+                                msg.repo, branch,
+                                sender="investigate",
+                            )
+                        else:
+                            observe.event("kick_qa_skipped",
+                                          repo=msg.repo, issue=msg.pr,
+                                          reason=f"branch={branch!r} not a fix branch")
+                except Exception as e:
+                    observe.event("kick_qa_failed",
+                                  repo=msg.repo, issue=msg.pr,
+                                  error_type=type(e).__name__,
+                                  error=str(e)[:200])
             return result
 
     # Artifact missing or unclassifiable — degraded mode. Try the

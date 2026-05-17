@@ -84,10 +84,16 @@ async def kick_submit_card(repo: str, branch: str, pr: int | None = None,
 
 
 async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
-    """Find the worktree's prework dir and run the deterministic
+    """Find the worktree's attestations dir and run the deterministic
     verifier. Returns (ok, reason). Refuses push if no attestation
-    file exists, if the verifier rejects it, or if the worktree can't
-    be located."""
+    manifest exists, if the verifier rejects it, or if the worktree
+    can't be located.
+
+    Convention: each PR ships an `attestations/<slug>/` dir with
+    `manifest.json` + `after.txt` (test stdout on fix branch). Optional
+    `before.txt` shows the test on master. Both the hygraph (in
+    repo-hypotheses/) and the attestation live with the change — no
+    'trust me, I checked' moves."""
     if not branch:
         return False, "no branch — can't locate worktree"
     from sweep.activities.worktree import ensure_worktree
@@ -96,15 +102,13 @@ async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
         worktree = await ensure_worktree(repo, branch)
     except Exception as e:
         return False, f"ensure_worktree: {type(e).__name__}: {e}"
-    prework_root = Path(worktree) / "prework"
-    if not prework_root.exists():
-        return False, f"no prework/ dir in worktree {worktree}"
-    # Find any subdir containing test-attestation.json. Multiple is
-    # ambiguous → reject (fail-closed).
-    candidates = [p for p in prework_root.iterdir()
-                  if p.is_dir() and (p / "test-attestation.json").exists()]
+    att_root = Path(worktree) / "attestations"
+    if not att_root.exists():
+        return False, f"no attestations/ dir in worktree {worktree}"
+    candidates = [p for p in att_root.iterdir()
+                  if p.is_dir() and (p / "manifest.json").exists()]
     if not candidates:
-        return False, f"no prework/*/test-attestation.json in {prework_root}"
+        return False, f"no attestations/*/manifest.json in {att_root}"
     if len(candidates) > 1:
         names = ", ".join(p.name for p in candidates)
         return False, f"ambiguous attestation dirs: {names}"

@@ -106,35 +106,59 @@ def verify_test_attestation(
     return VerifyResult(True, f"verified: {passed} passed, {failed} failed, {ignored} ignored", facts)
 
 
+def _parsed_facts_dict(stdout: str, expected_test_name: str) -> dict:
+    """Run the parser and return its findings as a dict — used inside
+    the manifest's before/after blocks."""
+    import hashlib
+    r = verify_test_attestation(stdout, expected_test_name)
+    f = r.facts
+    return {
+        "verified": r.ok,
+        "verify_reason": r.reason,
+        "tests_run": f.tests_run if f else 0,
+        "tests_passed": f.tests_passed if f else 0,
+        "tests_failed": f.tests_failed if f else 0,
+        "tests_ignored": f.tests_ignored if f else 0,
+        "expected_test_present": f.expected_test_present if f else False,
+        "sha256": hashlib.sha256(stdout.encode()).hexdigest(),
+    }
+
+
 def write_attestation_files(
-    prework_dir: Path,
+    attestation_dir: Path,
     *,
     test_cmd: str,
     expected_test_name: str,
     head_sha: str,
     host: str,
     test_env: str,
-    stdout: str,
+    after_stdout: str,
     elapsed_seconds: float,
+    before_stdout: str | None = None,
 ) -> dict:
-    """Write the committable attestation pair (.json summary + .txt
-    captured stdout) into `prework_dir`. The .json is small + diff-
-    friendly; the .txt is truncated to 50KB so a maintainer can verify
-    by re-running but the diff doesn't balloon.
+    """Write the committable attestation set into `attestation_dir`.
+    Layout:
+      manifest.json       — machine-readable summary (small, diff-friendly)
+      after.txt           — captured test_cmd stdout on the fix branch
+      before.txt          — captured test_cmd stdout on master (if provided)
 
-    Returns the parsed summary dict (same as the .json content) so
-    callers can both write to disk and decide push/no-push in one pass.
+    The split is the "fail on master, pass with fix" discipline made
+    visible: the maintainer can re-run on both refs and compare. When
+    a PR adds the test itself (test didn't exist on master), the
+    before.txt captures `running 0 tests` and the manifest's
+    before.expected_test_present=False makes that visible too.
+
+    Returns the manifest dict so callers can write + decide in one pass.
     """
-    import hashlib
+    attestation_dir.mkdir(parents=True, exist_ok=True)
 
-    prework_dir.mkdir(parents=True, exist_ok=True)
-    truncated = stdout if len(stdout) <= 50_000 else stdout[-50_000:]
-    sha = hashlib.sha256(stdout.encode()).hexdigest()
+    def _truncate(s: str) -> str:
+        return s if len(s) <= 50_000 else s[-50_000:]
 
-    result = verify_test_attestation(stdout, expected_test_name)
-    facts = result.facts
+    after_facts = _parsed_facts_dict(after_stdout, expected_test_name)
+    (attestation_dir / "after.txt").write_text(_truncate(after_stdout))
 
-    summary = {
+    manifest = {
         "kind": "test_attestation",
         "test_cmd": test_cmd,
         "expected_test_name": expected_test_name,
@@ -142,40 +166,51 @@ def write_attestation_files(
         "host": host,
         "test_env": test_env,
         "elapsed_seconds": elapsed_seconds,
-        "sha256_of_stdout": sha,
-        "verified": result.ok,
-        "verify_reason": result.reason,
-        "tests_run": facts.tests_run if facts else 0,
-        "tests_passed": facts.tests_passed if facts else 0,
-        "tests_failed": facts.tests_failed if facts else 0,
-        "tests_ignored": facts.tests_ignored if facts else 0,
-        "expected_test_present": facts.expected_test_present if facts else False,
+        "after": after_facts,
     }
-    (prework_dir / "test-attestation.json").write_text(json.dumps(summary, indent=2) + "\n")
-    (prework_dir / "test-attestation.txt").write_text(truncated)
-    return summary
+    if before_stdout is not None:
+        before_facts = _parsed_facts_dict(before_stdout, expected_test_name)
+        (attestation_dir / "before.txt").write_text(_truncate(before_stdout))
+        manifest["before"] = before_facts
+
+    (attestation_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    return manifest
 
 
-def gate_push(prework_dir: Path) -> tuple[bool, str]:
+def gate_push(attestation_dir: Path) -> tuple[bool, str]:
     """Submit-actor / respond-actor calls this before invoking gh.
-    Returns (ok, reason). If the attestation file is missing or its
-    `verified` field is False or its claimed facts disagree with a
-    re-parse of the stored stdout, returns ok=False."""
-    summary_path = prework_dir / "test-attestation.json"
-    stdout_path = prework_dir / "test-attestation.txt"
-    if not summary_path.exists():
-        return False, f"no test-attestation.json at {summary_path}"
-    if not stdout_path.exists():
-        return False, f"no test-attestation.txt at {stdout_path}"
+    Returns (ok, reason). Refuses push when:
+      - manifest.json or after.txt missing
+      - manifest.after.verified is False
+      - re-parsed after.txt fails the deterministic check
+      - before.txt is present AND its parsed verdict shows the test
+        passed on master (fix would be unnecessary) — but the
+        before-was-added case (0 tests on master) does NOT fail
+        because the PR is adding the test fresh."""
+    manifest_path = attestation_dir / "manifest.json"
+    after_path = attestation_dir / "after.txt"
+    if not manifest_path.exists():
+        return False, f"no manifest.json at {manifest_path}"
+    if not after_path.exists():
+        return False, f"no after.txt at {after_path}"
     try:
-        summary = json.loads(summary_path.read_text())
+        manifest = json.loads(manifest_path.read_text())
     except json.JSONDecodeError as e:
-        return False, f"attestation JSON malformed: {e}"
-    if not summary.get("verified"):
-        return False, f"attestation marked verified=False: {summary.get('verify_reason','?')}"
-    # Re-parse stdout independently — don't trust the summary's claims.
-    expected = summary.get("expected_test_name", "")
-    result = verify_test_attestation(stdout_path.read_text(), expected)
+        return False, f"manifest malformed: {e}"
+    after = manifest.get("after", {})
+    if not after.get("verified"):
+        return False, f"after marked verified=False: {after.get('verify_reason','?')}"
+    expected = manifest.get("expected_test_name", "")
+    result = verify_test_attestation(after_path.read_text(), expected)
     if not result.ok:
-        return False, f"re-parse rejected attestation: {result.reason}"
+        return False, f"re-parse rejected after.txt: {result.reason}"
+    # Optional before.txt sanity: if it exists AND the test was present
+    # AND verdict shows it passed, the fix is unnecessary — reject.
+    before_path = attestation_dir / "before.txt"
+    if before_path.exists() and "before" in manifest:
+        before = manifest["before"]
+        if (before.get("expected_test_present") and before.get("tests_run", 0) > 0
+                and before.get("tests_failed", 0) == 0):
+            return False, ("before.txt shows the test passes on master too — "
+                           "fix is unnecessary")
     return True, "attestation verified"
