@@ -1,11 +1,11 @@
 ?   	github.com/lindell/multi-gitter	[no test files]
-ok  	github.com/lindell/multi-gitter/cmd	0.002s
+ok  	github.com/lindell/multi-gitter/cmd	(cached)
 ?   	github.com/lindell/multi-gitter/internal/git	[no test files]
 ?   	github.com/lindell/multi-gitter/internal/git/cmdgit	[no test files]
 ?   	github.com/lindell/multi-gitter/internal/git/gogit	[no test files]
 ?   	github.com/lindell/multi-gitter/internal/http	[no test files]
 ok  	github.com/lindell/multi-gitter/internal/log	(cached)
-ok  	github.com/lindell/multi-gitter/internal/multigitter	0.201s
+ok  	github.com/lindell/multi-gitter/internal/multigitter	(cached)
 ?   	github.com/lindell/multi-gitter/internal/multigitter/logger	[no test files]
 ok  	github.com/lindell/multi-gitter/internal/multigitter/repocounter	(cached)
 ?   	github.com/lindell/multi-gitter/internal/multigitter/terminal	[no test files]
@@ -16,7 +16,7 @@ ok  	github.com/lindell/multi-gitter/internal/scm/gerrit	(cached)
 ?   	github.com/lindell/multi-gitter/internal/scm/gitea	[no test files]
 ok  	github.com/lindell/multi-gitter/internal/scm/github	(cached)
 ok  	github.com/lindell/multi-gitter/internal/scm/gitlab	(cached)
-ok  	github.com/lindell/multi-gitter/tests	4.407s
+ok  	github.com/lindell/multi-gitter/tests	4.307s
 ?   	github.com/lindell/multi-gitter/tests/scripts/adder	[no test files]
 ?   	github.com/lindell/multi-gitter/tests/scripts/changer	[no test files]
 ?   	github.com/lindell/multi-gitter/tests/scripts/manual-committer	[no test files]
