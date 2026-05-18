@@ -489,3 +489,278 @@ def retro_remediation_prompt_list() -> None:
         except Exception:
             pass
         print(f"  {f.name}  {first_line[:80]}")
+
+
+# ---------------------------------------------------------------- since helper
+
+def _parse_since(spec: str | None):
+    """Accept `Nd`, `Nh`, or ISO date (YYYY-MM-DD). Returns UTC datetime
+    or None for unparseable / None input."""
+    import datetime as dt
+    if not spec:
+        return None
+    now = dt.datetime.now(dt.timezone.utc)
+    s = spec.strip().lower()
+    if s.endswith("h") and s[:-1].isdigit():
+        return now - dt.timedelta(hours=int(s[:-1]))
+    if s.endswith("d") and s[:-1].isdigit():
+        return now - dt.timedelta(days=int(s[:-1]))
+    try:
+        return dt.datetime.fromisoformat(spec).replace(tzinfo=dt.timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+# ---------------------------------------------------------------- missing-calls
+
+@retro_app.command("missing-calls")
+def retro_missing_calls(
+    since: str = typer.Option(None, "--since", help="Window: 7d, 24h, or YYYY-MM-DD"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Top N by votes"),
+) -> None:
+    """List sweep CLI commands agents tried that don't exist. Each row is a
+    wishlist entry the agent demonstrated by reaching for it."""
+    from sweep import missing_calls as _mc
+    entries = _mc.wishlist(since=_parse_since(since))[:limit]
+    label = f"since {since}" if since else "all time"
+    if not entries:
+        print(f"# Missing CLI calls ({label})")
+        print()
+        print("_no reaches recorded_")
+        return
+    print(f"# Missing CLI calls ({label})")
+    print()
+    print("| votes | r/w | argv | latest | reason |")
+    print("|------:|-----|------|--------|--------|")
+    for e in entries:
+        argv = " ".join(e["argv"])
+        reason = (e.get("reasons") or [""])[0][:80].replace("|", "\\|")
+        print(f"| {e['votes']} | r{e['reach_count']}/w{e['wish_count']} | "
+              f"`{argv}` | {e['last_ts'][:10]} | {reason} |")
+
+
+# ---------------------------------------------------------------- skill-stats
+
+# event kind → (skill name, payload key whose value buckets outcomes).
+# `None` outcome key means "every firing is the same bucket" — counted
+# under "(fired)".
+_SKILL_EVENTS: dict = {
+    "triage_decision":       ("triage",        "decision"),
+    "qa_converged":          ("qa",            "verdict"),
+    "investigate_done":      ("investigate",   "outcome"),
+    "reinvestigate_done":    ("reinvestigate", "outcome"),
+    "compose_applied":       ("compose",       None),
+    "amend_applied":         ("amend",         None),
+    "attestation_published": ("attest",        None),
+    "ping_drafted":          ("ping",          None),
+    "tissue_posted":         ("tissue",        None),
+    "tissue_skipped":        ("tissue",        "reason"),
+    "sign_posted":           ("sign",          None),
+    "sift_deposited":        ("sift",          None),
+}
+
+
+@retro_app.command("skill-stats")
+def retro_skill_stats(
+    since: str = typer.Option("7d", "--since", help="Window: 7d, 24h, or YYYY-MM-DD"),
+) -> None:
+    """Per-skill firings + outcomes within the window. Reads events.jsonl."""
+    import datetime as dt
+    from collections import Counter, defaultdict
+    cutoff = _parse_since(since)
+    if cutoff is None:
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
+    counts: dict = defaultdict(Counter)
+    totals: Counter = Counter()
+    for r in observe.events_recent(limit=100000):
+        k = r.get("kind")
+        if k not in _SKILL_EVENTS:
+            continue
+        try:
+            ts = dt.datetime.fromisoformat(r["ts"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if ts < cutoff:
+            continue
+        skill, outcome_key = _SKILL_EVENTS[k]
+        totals[skill] += 1
+        bucket = str(r.get(outcome_key, "-")) if outcome_key else "(fired)"
+        counts[skill][bucket] += 1
+    print(f"# Skill stats (since {since})")
+    print()
+    if not totals:
+        print("_no skill firings in window_")
+        return
+    print("| skill | total | top outcomes |")
+    print("|-------|------:|--------------|")
+    for skill in sorted(totals, key=lambda s: -totals[s]):
+        outcomes = ", ".join(
+            f"{v}× {k}" for k, v in counts[skill].most_common(4)
+        )
+        print(f"| {skill} | {totals[skill]} | {outcomes} |")
+
+
+# ---------------------------------------------------------------- outcomes
+
+@retro_app.command("outcomes")
+def retro_outcomes(
+    repo: str = typer.Option(..., "--repo", help="owner/repo"),
+    author: str = typer.Option("kimjune01", "--author",
+                               help="bot/own author for the own/prior-art split"),
+    limit: int = typer.Option(50, "--limit", "-n"),
+) -> None:
+    """PR outcomes for the repo. Own (bot-authored) + prior art (other authors),
+    showing merge/close state per PR. Pulls live from gh."""
+    from sweep import gh_io
+    try:
+        rows = gh_io.pr_list(repo, state="all", limit=limit)
+    except subprocess.CalledProcessError as e:
+        print(f"# Outcomes — {repo}")
+        print(f"_gh failed: {(e.stderr or str(e))[:200]}_")
+        return
+    own: list = []
+    prior: list = []
+    for r in rows:
+        a = (r.get("author") or {}).get("login", "")
+        (own if a == author else prior).append(r)
+
+    def _fmt(r: dict) -> str:
+        n = r.get("number", "?")
+        state = r.get("state", "?")
+        merged = r.get("mergedAt")
+        closed = r.get("closedAt")
+        outcome = "merged" if merged else ("closed" if closed else state.lower())
+        when = (merged or closed or r.get("updatedAt") or "")[:10]
+        title = (r.get("title") or "")[:70].replace("|", "\\|")
+        return f"| `{repo}#{n}` | {outcome} | {when} | {title} |"
+
+    print(f"# Outcomes — {repo}")
+    print()
+    print(f"## Own ({len(own)})  author=`{author}`")
+    if not own:
+        print("_none_")
+    else:
+        print("| pr | outcome | when | title |")
+        print("|----|---------|------|-------|")
+        for r in own:
+            print(_fmt(r))
+    print()
+    print(f"## Prior art ({len(prior)})")
+    if not prior:
+        print("_none_")
+    else:
+        print("| pr | outcome | when | title |")
+        print("|----|---------|------|-------|")
+        for r in prior:
+            print(_fmt(r))
+
+
+# ---------------------------------------------------------------- evict
+
+EVICTION_PROPOSALS = Path.home() / ".sweep" / "eviction-proposals.jsonl"
+
+
+@retro_app.command("evict")
+def retro_evict(
+    target: str = typer.Option(..., "--target", help="Name of the skill/memory/CLI to evict"),
+    reason: str = typer.Option(..., "--reason", help="Why this isn't earning its keep"),
+    kind: str = typer.Option("skill", "--kind", help="skill | memory | cli | other"),
+) -> None:
+    """Propose an eviction. Appends to ~/.sweep/eviction-proposals.jsonl
+    for human review — does NOT remove anything itself."""
+    import datetime as dt
+    EVICTION_PROPOSALS.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "kind": kind,
+        "target": target,
+        "reason": reason,
+    }
+    with EVICTION_PROPOSALS.open("a") as f:
+        f.write(json.dumps(entry) + "\n")
+    print(f"# Eviction proposal recorded")
+    print(f"- kind:   {kind}")
+    print(f"- target: {target}")
+    print(f"- reason: {reason}")
+    print(f"- log:    {EVICTION_PROPOSALS}")
+
+
+# ---------------------------------------------------------------- gather
+
+@retro_app.command("gather")
+def retro_gather(
+    repo: str = typer.Option(..., "--repo", help="owner/repo"),
+    since: str = typer.Option("7d", "--since", help="Window: 7d, 24h, or YYYY-MM-DD"),
+    jsonl: bool = typer.Option(False, "--jsonl",
+                               help="Emit raw events.jsonl lines instead of markdown summary"),
+) -> None:
+    """All structured events for a repo since date. Default: markdown
+    summary by kind. With --jsonl: raw events one per line, for piping."""
+    import datetime as dt
+    from collections import Counter
+    cutoff = _parse_since(since)
+    if cutoff is None:
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
+    matching: list = []
+    for r in observe.events_recent(limit=200000):
+        if r.get("repo") != repo:
+            continue
+        try:
+            ts = dt.datetime.fromisoformat(r["ts"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if ts < cutoff:
+            continue
+        matching.append(r)
+    if jsonl:
+        for r in matching:
+            print(json.dumps(r, separators=(",", ":")))
+        return
+    print(f"# Gather — {repo} (since {since})")
+    print()
+    print(f"_{len(matching)} events_")
+    if not matching:
+        return
+    # events_recent is newest-first, so [-1] is oldest in the window.
+    first_ts = matching[-1].get("ts", "")[:19]
+    last_ts = matching[0].get("ts", "")[:19]
+    print(f"_window: {first_ts} → {last_ts}_")
+    print()
+    kind_counts = Counter(r.get("kind", "?") for r in matching)
+    print("| kind | count |")
+    print("|------|------:|")
+    for k, v in kind_counts.most_common():
+        print(f"| `{k}` | {v} |")
+
+
+# ---------------------------------------------------------------- fix-ready
+
+FIX_READY_LOG = Path.home() / ".sweep" / "fix-ready.jsonl"
+
+
+@retro_app.command("fix-ready")
+def retro_fix_ready(
+    repo: str = typer.Option(..., "--repo"),
+    issue: int = typer.Option(..., "--issue"),
+    line_count: int = typer.Option(..., "--line-count", help="Diff line count of the fix"),
+    description: str = typer.Option(..., "--description", help="One-line summary"),
+) -> None:
+    """Record a confirmed fix-ready entry. Append-only at ~/.sweep/fix-ready.jsonl.
+    Used by the retro skill to mark "reproducer + fix in hand" before submission."""
+    import datetime as dt
+    FIX_READY_LOG.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "repo": repo,
+        "issue": issue,
+        "line_count": line_count,
+        "description": description,
+    }
+    with FIX_READY_LOG.open("a") as f:
+        f.write(json.dumps(entry) + "\n")
+    print(f"# fix_ready recorded")
+    print(f"- repo:        {repo}")
+    print(f"- issue:       #{issue}")
+    print(f"- line_count:  {line_count}")
+    print(f"- description: {description}")
+    print(f"- log:         {FIX_READY_LOG}")
