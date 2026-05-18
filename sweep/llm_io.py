@@ -73,72 +73,72 @@ async def call(
 
     # Miss — call the provider.
     if model.provider == "anthropic":
-        import anthropic
-        from anthropic import AsyncAnthropic
-
-        client = AsyncAnthropic()
+        # Route via `claude -p` subprocess so the call bills against
+        # the operator's Max plan (OAuth auth) instead of the API
+        # credit balance. Cost was the driver: pre-swap, sift's hot
+        # path alone burned ~$90/day in cache_creation tokens against
+        # API credits; qa's opus adversary slot multiplied it.
+        #
+        # Trade-offs accepted:
+        #   - ~1-2s subprocess overhead per call (no SDK, no streaming)
+        #   - Ephemeral prompt cache is dropped (cache_system silently
+        #     ignored); CLI doesn't expose per-call cache_control
+        #   - Token counts not surfaced in print mode → set to 0,
+        #     wasteboard's $$ panel will under-report Anthropic spend
+        #     (acceptable: real spend is now Max-plan quota, not $$).
+        #   - --bare would skip CLAUDE.md / hooks but forces
+        #     ANTHROPIC_API_KEY back on, re-engaging the credit
+        #     balance and defeating the routing. So no --bare;
+        #     accept the context-load overhead.
+        import asyncio as _asyncio
+        import os as _os
+        import subprocess as _subprocess
+        env = dict(_os.environ)
+        env.pop("ANTHROPIC_API_KEY", None)  # force OAuth → Max plan
         t0 = time.time()
         try:
-            # Anthropic prompt cache: when `cache_system=True`, mark
-            # the system prompt as ephemeral so the API caches the
-            # prefix for ~5min. Subsequent calls with the same system
-            # within the window pay ~10% of the input-token cost.
-            # Worth it for hot paths (sift's should_triage_issue
-            # ticks every few minutes with a stable system).
-            sys_arg: object = (
-                [{"type": "text", "text": system,
-                  "cache_control": {"type": "ephemeral"}}]
-                if cache_system else system
+            proc = await _asyncio.to_thread(
+                _subprocess.run,
+                ["claude", "-p",
+                 "--model", model.model_id,
+                 "--append-system-prompt", system,
+                 user],
+                capture_output=True, text=True, timeout=300, env=env,
             )
-            resp = await client.messages.create(
-                model=model.model_id,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=sys_arg,
-                messages=[{"role": "user", "content": user}],
-            )
-        except anthropic.APIError as e:
-            # Capture the failure as an observe event (with the call's
-            # provenance and the error class/message) but do NOT write a
-            # row to the attestation log. Writing under the success key
-            # would poison the cache: the next retry would find an error
-            # string instead of hitting the wire, and the verdict parser
-            # would treat it as a reviewer opinion ("revise"). The chain
-            # is allowed to have no row for a failed attempt; retro reads
-            # the observe event to know it happened.
+        except FileNotFoundError as e:
             from sweep import observe
-            observe.event(
-                "llm_error",
-                msg_id=msg_id,
-                repo=repo,
-                pr=pr,
-                model=model.model_id,
-                provider=model.provider,
-                error_type=type(e).__name__,
-                error_message=str(e)[:500],
-                duration_ms=int((time.time() - t0) * 1000),
-            )
+            observe.event("llm_error", msg_id=msg_id, repo=repo, pr=pr,
+                          model=model.model_id, provider="anthropic",
+                          error_type="FileNotFoundError",
+                          error_message=f"claude CLI not on PATH ({e})")
             observe.incr(f"llm_error:{model.provider}")
             raise
+        except _subprocess.TimeoutExpired as e:
+            from sweep import observe
+            observe.event("llm_error", msg_id=msg_id, repo=repo, pr=pr,
+                          model=model.model_id, provider="anthropic",
+                          error_type="TimeoutExpired",
+                          error_message="claude -p exceeded 300s")
+            observe.incr(f"llm_error:{model.provider}")
+            raise RuntimeError("claude -p timed out") from e
         duration_ms = int((time.time() - t0) * 1000)
-        response_text = "".join(
-            block.text for block in resp.content if hasattr(block, "text")
-        )
-        input_tokens = resp.usage.input_tokens
-        output_tokens = resp.usage.output_tokens
-        # Anthropic's usage object reports cache_creation and cache_read
-        # as separate fields; neither is included in input_tokens. Cache
-        # creation is billed at 1.25× input rate, reads at 0.1×. Without
-        # capturing these the wasteboard severely undercounts spend
-        # whenever cache_system=True is used — sift's hot path was the
-        # witness, ~$90/day in cache_creation that didn't show on the
-        # wasteboard at all. getattr with default 0 keeps the wrapper
-        # backward-compatible with SDK versions that don't report them.
-        cache_creation_tokens = getattr(
-            resp.usage, "cache_creation_input_tokens", 0) or 0
-        cache_read_tokens = getattr(
-            resp.usage, "cache_read_input_tokens", 0) or 0
-        response_id = resp.id
+        if proc.returncode != 0:
+            from sweep import observe
+            observe.event("llm_error", msg_id=msg_id, repo=repo, pr=pr,
+                          model=model.model_id, provider="anthropic",
+                          error_type="NonZeroExit",
+                          error_message=(proc.stderr or proc.stdout or "")[:400])
+            observe.incr(f"llm_error:{model.provider}")
+            raise RuntimeError(
+                f"claude -p rc={proc.returncode}: "
+                f"{(proc.stderr or proc.stdout or '')[:200]}"
+            )
+        response_text = (proc.stdout or "").strip()
+        input_tokens = 0
+        output_tokens = 0
+        cache_creation_tokens = 0
+        cache_read_tokens = 0
+        response_id = None
     elif model.provider == "openai":
         # Codex via CLI. The OpenAI SDK path would require a separate
         # API key and billing channel; shelling to `codex exec -` rides

@@ -106,6 +106,13 @@ async def _run_skill(slash_argv: list[str], label: str,
     # the subprocess gets attributed to this actor's budget. Without
     # this, the LLM's gh calls vanish from per-actor accounting.
     env = os.environ.copy()
+    # Force OAuth → Max plan. When ANTHROPIC_API_KEY is present in
+    # the inherited env, claude CLI prefers it over OAuth and bills
+    # the API credit balance — that was the silent root of multi-
+    # $100/day auto-recharges (2026-05-18 gemba). Removing the key
+    # makes claude fall through to OAuth/Max. Codex unaffected; its
+    # auth is independent.
+    env.pop("ANTHROPIC_API_KEY", None)
     env["PATH"] = _SHIM_BIN + os.pathsep + env.get("PATH", "")
     env["SWEEP_BUDGET_CALLER"] = caller or label
     if extra_env:
