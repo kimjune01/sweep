@@ -1,7 +1,7 @@
 
 --- stderr ---
      Testing DataFramesMeta
-      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_CJVTAo/Project.toml`
+      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_NTzY56/Project.toml`
   [324d7699] CategoricalArrays v1.1.0
   [8be319e6] Chain v1.0.0
   [a93c6f00] DataFrames v1.8.2
@@ -15,7 +15,7 @@
   [9ce81f87] TableMetadataTools v0.1.0
   [9a3f8284] Random v1.11.0
   [8dfed614] Test v1.11.0
-      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_CJVTAo/Manifest.toml`
+      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_NTzY56/Manifest.toml`
   [324d7699] CategoricalArrays v1.1.0
   [8be319e6] Chain v1.0.0
   [34da2185] Compat v4.18.1
@@ -71,13 +71,10 @@
   [e66e0078] CompilerSupportLibraries_jll v1.3.0+1
   [4536629a] OpenBLAS_jll v0.3.29+0
   [8e850b90] libblastrampoline_jll v5.15.0+0
-Precompiling for configuration --code-coverage=none --color=auto --check-bounds=yes --warn-overwrite=yes --depwarn=yes --inline=yes --startup-file=no --track-allocation=none
-    873.5 ms  ✓ DataFramesMeta
-  1 dependency successfully precompiled in 1 seconds. 49 already precompiled.
      Testing Running tests...
 Running tests:
 Test Summary: | Pass  Total  Time
-@transform    |   35     35  1.3s
+@transform    |   35     35  1.2s
 Test Summary:          | Pass  Total  Time
 @transform with :block |    5      5  0.1s
 Test Summary: | Pass  Total  Time
@@ -91,17 +88,17 @@ Test Summary: | Pass  Total  Time
 Test Summary:      | Pass  Total  Time
 select with :block |    5      5  0.1s
 Test Summary: | Pass  Total  Time
-@select!      |   36     36  0.3s
+@select!      |   36     36  0.2s
 Test Summary:        | Pass  Total  Time
 @select! with :block |    5      5  0.1s
 Test Summary:     | Pass  Total  Time
 limits of @select |    2      2  0.0s
 Test Summary: | Pass  Total  Time
-with          |   13     13  0.4s
+with          |   13     13  0.3s
 Test Summary: | Pass  Total  Time
-orderby       |    5      5  1.1s
+orderby       |    5      5  1.0s
 Test Summary:       | Pass  Total  Time
-orderby with :block |    5      5  0.4s
+orderby with :block |    5      5  0.3s
 Test Summary:         | Pass  Total  Time
 cols with @select fix |    4      4  0.1s
 ┌ Warning: Using an un-quoted Symbol on the LHS is deprecated. Write :y = ... instead.
@@ -111,17 +108,17 @@ cols with @select fix |    4      4  0.1s
 ┌ Warning: Using an un-quoted Symbol on the LHS is deprecated. Write :y = ... instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/parsing.jl:387
 Test Summary:  | Pass  Total  Time
-removing lines |    6      6  0.4s
+removing lines |    6      6  0.3s
 	[1m[32mPASSED[0m: dataframes.jl
 Test Summary: | Pass  Total  Time
-eachrow       |   10     10  0.3s
+eachrow       |   10     10  0.2s
 Test Summary:      | Pass  Total  Time
 cols with @eachrow |    7      7  0.1s
 ┌ Warning: cols is deprecated use $ to escape column names instead
 │   caller = ip:0x0
 └ @ Core :-1
 Test Summary:      | Pass  Total  Time
-limits of @eachrow |    4      4  0.6s
+limits of @eachrow |    4      4  0.4s
 Test Summary: | Pass  Total  Time
 eachrow!      |   12     12  0.1s
 Test Summary:            | Pass  Total  Time
@@ -132,13 +129,13 @@ Test Summary: | Pass  Total  Time
 ┌ Warning: Using an un-quoted Symbol on the LHS is deprecated. Write :nsum = ... instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/parsing.jl:387
 Test Summary: | Pass  Total  Time
-@combine      |   32     32  2.3s
+@combine      |   32     32  2.0s
 Test Summary:       | Pass  Total  Time
 combine with :block |    4      4  0.1s
 Test Summary:      | Pass  Total  Time
 Limits of @combine |    2      2  0.0s
 Test Summary: | Pass  Total  Time
-@by           |   32     32  1.6s
+@by           |   32     32  1.4s
 Test Summary:  | Pass  Total  Time
 by with :block |    4      4  0.0s
 Test Summary: | Pass  Total  Time
@@ -146,37 +143,37 @@ limits of @by |    2      2  0.0s
 ┌ Warning: Using an un-quoted Symbol on the LHS is deprecated. Write :y = ... instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/parsing.jl:387
 Test Summary:                      | Pass  Total  Time
-@transform with grouped data frame |   12     12  3.1s
+@transform with grouped data frame |   12     12  2.7s
 Test Summary: | Pass  Total  Time
-@groupby      |    8      8  0.9s
+@groupby      |    8      8  0.8s
 	[1m[32mPASSED[0m: grouping.jl
 Test Summary: | Pass  Total  Time
-subset        |   17     17  2.9s
+subset        |   17     17  2.5s
 Test Summary:      | Pass  Total  Time
-subset with :block |    5      5  0.8s
+subset with :block |    5      5  0.7s
 Test Summary: | Pass  Total  Time
-subset!       |   18     18  1.0s
+subset!       |   18     18  0.9s
 Test Summary:       | Pass  Total  Time
-subset! with :block |    5      5  0.8s
+subset! with :block |    5      5  0.7s
 Test Summary:                     | Pass  Total  Time
-@subset with a grouped data frame |    3      3  1.3s
+@subset with a grouped data frame |    3      3  1.1s
 Test Summary:                      | Pass  Total  Time
-@subset! with a grouped data frame |    3      3  0.6s
+@subset! with a grouped data frame |    3      3  0.5s
 Test Summary:               | Pass  Total  Time
-@subset with literal values |    8      8  0.3s
+@subset with literal values |    8      8  0.2s
 	[1m[32mPASSED[0m: subset.jl
 Test Summary: | Pass  Total  Time
-distinct      |   12     12  3.2s
+distinct      |   12     12  2.9s
 Test Summary: | Pass  Total  Time
-rdistinct     |   10     10  0.7s
+rdistinct     |   10     10  0.6s
 Test Summary:        | Pass  Total  Time
-distinct with :block |    5      5  0.4s
+distinct with :block |    5      5  0.3s
 Test Summary:         | Pass  Total  Time
 rdistinct with :block |    5      5  0.1s
 Test Summary: | Pass  Total  Time
-distinct!     |   13     13  0.8s
+distinct!     |   13     13  0.7s
 Test Summary: | Pass  Total  Time
-rdistinct!    |   12     12  0.7s
+rdistinct!    |   12     12  0.6s
 Test Summary:         | Pass  Total  Time
 distinct! with :block |    4      4  0.1s
 Test Summary:          | Pass  Total  Time
@@ -193,10 +190,10 @@ rename! with :block |    7      7  0.0s
 Test Summary: | Pass  Total  Time
 rename errors |    6      6  0.0s
 	[1m[32mPASSED[0m: rename.jl
+Test Summary:        | Pass  Total  Time
+function_compilation |   56     56  8.9s
 Test Summary:        | Pass  Total   Time
-function_compilation |   56     56  10.3s
-Test Summary:        | Pass  Total   Time
-composed compilation |   15     15  13.6s
+composed compilation |   15     15  13.0s
 	[1m[32mPASSED[0m: function_compilation.jl
 ┌ Warning: `@where is deprecated, use `@subset` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:1025
@@ -330,7 +327,7 @@ Test Summary:     | Pass  Total  Time
 ┌ Warning: `@based_on` is deprecated. Use `@combine` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:2155
 Test Summary: | Pass  Total  Time
-@based_on     |   31     31  1.6s
+@based_on     |   31     31  1.5s
 ┌ Warning: `@where is deprecated, use `@subset` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:1025
 ┌ Warning: `@where is deprecated, use `@subset` instead.
@@ -423,7 +420,7 @@ Test Summary:           | Pass  Total  Time
 Unquoted symbols on LHS |   11     11  0.1s
 	[1m[32mPASSED[0m: deprecated.jl
 Test Summary:          | Pass  Total  Time
-@transform with @byrow |   11     11  0.3s
+@transform with @byrow |   11     11  0.2s
 Test Summary: | Pass  Total  Time
 @rtransform   |   11     11  0.1s
 Test Summary:           | Pass  Total  Time
@@ -441,7 +438,7 @@ Test Summary: | Pass  Total  Time
 Test Summary:     | Pass  Total  Time
 @with with @byrow |    4      4  0.1s
 Test Summary:       | Pass  Total  Time
-@subset with @byrow |    2      2  0.4s
+@subset with @byrow |    2      2  0.3s
 Test Summary: | Pass  Total  Time
 @rsubset      |    2      2  0.3s
 Test Summary:        | Pass  Total  Time
@@ -455,7 +452,7 @@ Test Summary: | Pass  Total  Time
 Test Summary:        | Pass  Total  Time
 @combine with @byrow |   11     11  1.1s
 Test Summary:   | Pass  Total  Time
-@by with @byrow |   11     11  0.5s
+@by with @byrow |   11     11  0.4s
 Test Summary:           | Pass  Total  Time
 multi-argument r*, #280 |    7      7  0.1s
 Test Summary:         | Pass  Total  Time
@@ -465,7 +462,7 @@ Test Summary:         | Pass  Total  Time
 Test Summary: | Pass  Total  Time
 @rdistinct    |    1      1  0.1s
 Test Summary:          | Pass  Total  Time
-@distinct! with @byrow |    2      2  0.2s
+@distinct! with @byrow |    2      2  0.1s
 Test Summary: | Pass  Total  Time
 @rdistinct!   |    1      1  0.1s
 	[1m[32mPASSED[0m: byrow.jl

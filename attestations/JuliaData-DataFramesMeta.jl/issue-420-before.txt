@@ -1,94 +1,7 @@
 
 --- stderr ---
-  Installing known registries into `~/.julia`
-       Added `General` registry to ~/.julia/registries
-    Updating registry at `~/.julia/registries/General.toml`
-   Installed TableTraits ───────────────── v1.0.1
-   Installed DataAPI ───────────────────── v1.16.0
-   Installed Crayons ───────────────────── v4.1.1
-   Installed SentinelArrays ────────────── v1.4.9
-   Installed Tables ────────────────────── v1.12.1
-   Installed Unitful ───────────────────── v1.28.0
-   Installed Preferences ───────────────── v1.5.2
-   Installed PrettyTables ──────────────── v3.3.2
-   Installed PooledArrays ──────────────── v1.4.3
-   Installed OrderedCollections ────────── v1.8.1
-   Installed DataValueInterfaces ───────── v1.0.0
-   Installed IteratorInterfaceExtensions ─ v1.0.0
-   Installed TableMetadataTools ────────── v0.1.0
-   Installed InlineStrings ─────────────── v1.4.5
-   Installed PrecompileTools ───────────── v1.3.4
-   Installed LaTeXStrings ──────────────── v1.4.0
-   Installed InvertedIndices ───────────── v1.3.1
-   Installed Chain ─────────────────────── v1.0.0
-   Installed Reexport ──────────────────── v1.2.2
-   Installed Statistics ────────────────── v1.11.1
-   Installed MacroTools ────────────────── v0.5.16
-   Installed Compat ────────────────────── v4.18.1
-   Installed DataStructures ────────────── v0.19.4
-   Installed DataFrames ────────────────── v1.8.2
-   Installed Missings ──────────────────── v1.2.0
-   Installed SortingAlgorithms ─────────── v1.2.2
-   Installed StringManipulation ────────── v0.4.4
-    Updating `~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/Project.toml`
-  [8be319e6] + Chain v1.0.0
-  [a93c6f00] + DataFrames v1.8.2
-  [1914dd2f] + MacroTools v0.5.16
-  [bac558e1] + OrderedCollections v1.8.1
-  [08abe8d2] + PrettyTables v3.3.2
-  [189a3867] + Reexport v1.2.2
-  [9ce81f87] + TableMetadataTools v0.1.0
-    Updating `~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/Manifest.toml`
-  [8be319e6] + Chain v1.0.0
-  [34da2185] + Compat v4.18.1
-  [a8cc5b0e] + Crayons v4.1.1
-  [9a962f9c] + DataAPI v1.16.0
-  [a93c6f00] + DataFrames v1.8.2
-  [864edb3b] + DataStructures v0.19.4
-  [e2d170a0] + DataValueInterfaces v1.0.0
-  [842dd82b] + InlineStrings v1.4.5
-  [41ab1584] + InvertedIndices v1.3.1
-  [82899510] + IteratorInterfaceExtensions v1.0.0
-  [b964fa9f] + LaTeXStrings v1.4.0
-  [1914dd2f] + MacroTools v0.5.16
-  [e1d29d7a] + Missings v1.2.0
-  [bac558e1] + OrderedCollections v1.8.1
-  [2dfb63ee] + PooledArrays v1.4.3
-  [aea7be01] + PrecompileTools v1.3.4
-  [21216c6a] + Preferences v1.5.2
-  [08abe8d2] + PrettyTables v3.3.2
-  [189a3867] + Reexport v1.2.2
-  [91c51154] + SentinelArrays v1.4.9
-  [a2af1166] + SortingAlgorithms v1.2.2
-  [10745b16] + Statistics v1.11.1
-  [892a3eda] + StringManipulation v0.4.4
-  [9ce81f87] + TableMetadataTools v0.1.0
-  [3783bdb8] + TableTraits v1.0.1
-  [bd369af6] + Tables v1.12.1
-  [1986cc42] + Unitful v1.28.0
-  [56f22d72] + Artifacts v1.11.0
-  [2a0f44e3] + Base64 v1.11.0
-  [ade2ca70] + Dates v1.11.0
-  [9fa8497b] + Future v1.11.0
-  [b77e0a4c] + InteractiveUtils v1.11.0
-  [ac6e5ff7] + JuliaSyntaxHighlighting v1.12.0
-  [8f399da3] + Libdl v1.11.0
-  [37e2e46d] + LinearAlgebra v1.12.0
-  [d6f4376e] + Markdown v1.11.0
-  [de0858da] + Printf v1.11.0
-  [3fa0cd96] + REPL v1.11.0
-  [9a3f8284] + Random v1.11.0
-  [ea8e919c] + SHA v0.7.0
-  [6462fe0b] + Sockets v1.11.0
-  [f489334b] + StyledStrings v1.11.0
-  [fa267f1f] + TOML v1.0.3
-  [cf7118a7] + UUIDs v1.11.0
-  [4ec0a83e] + Unicode v1.11.0
-  [e66e0078] + CompilerSupportLibraries_jll v1.3.0+1
-  [4536629a] + OpenBLAS_jll v0.3.29+0
-  [8e850b90] + libblastrampoline_jll v5.15.0+0
      Testing DataFramesMeta
-      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_2CzZvg/Project.toml`
+      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_zcA6bY/Project.toml`
   [324d7699] CategoricalArrays v1.1.0
   [8be319e6] Chain v1.0.0
   [a93c6f00] DataFrames v1.8.2
@@ -102,7 +15,7 @@
   [9ce81f87] TableMetadataTools v0.1.0
   [9a3f8284] Random v1.11.0
   [8dfed614] Test v1.11.0
-      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_2CzZvg/Manifest.toml`
+      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_zcA6bY/Manifest.toml`
   [324d7699] CategoricalArrays v1.1.0
   [8be319e6] Chain v1.0.0
   [34da2185] Compat v4.18.1
@@ -158,50 +71,14 @@
   [e66e0078] CompilerSupportLibraries_jll v1.3.0+1
   [4536629a] OpenBLAS_jll v0.3.29+0
   [8e850b90] libblastrampoline_jll v5.15.0+0
-Precompiling for configuration --code-coverage=none --color=auto --check-bounds=yes --warn-overwrite=yes --depwarn=yes --inline=yes --startup-file=no --track-allocation=none
-    551.2 ms  ✓ IteratorInterfaceExtensions
-    646.9 ms  ✓ Statistics
-    650.8 ms  ✓ DataValueInterfaces
-    648.0 ms  ✓ InlineStrings
-    649.0 ms  ✓ Reexport
-    652.9 ms  ✓ Chain
-    649.9 ms  ✓ InvertedIndices
-    650.6 ms  ✓ LaTeXStrings
-    643.6 ms  ✓ DataAPI
-    831.0 ms  ✓ OrderedCollections
-   1043.4 ms  ✓ Crayons
-    399.8 ms  ✓ Requires
-    460.4 ms  ✓ Preferences
-    487.9 ms  ✓ TableTraits
-    721.7 ms  ✓ Missings
-    733.2 ms  ✓ PooledArrays
-    772.5 ms  ✓ Compat
-    776.8 ms  ✓ SentinelArrays
-    637.8 ms  ✓ PrecompileTools
-    665.0 ms  ✓ Compat → CompatLinearAlgebraExt
-   1562.5 ms  ✓ MacroTools
-   1440.9 ms  ✓ DataStructures
-   1090.6 ms  ✓ StringManipulation
-   1767.8 ms  ✓ Tables
-    790.8 ms  ✓ SortingAlgorithms
-   1455.3 ms  ✓ Lazy
-   2082.1 ms  ✓ CategoricalArrays
-    724.8 ms  ✓ CategoricalArrays → CategoricalArraysSentinelArraysExt
-   7815.0 ms  ✓ Unitful
-    587.5 ms  ✓ Unitful → PrintfExt
-    514.0 ms  ✓ TableMetadataTools
-  10931.8 ms  ✓ PrettyTables
-  18699.9 ms  ✓ DataFrames
-   1822.2 ms  ✓ DataFramesMeta
-  34 dependencies successfully precompiled in 34 seconds. 16 already precompiled.
      Testing Running tests...
 Running tests:
 Test Summary: | Pass  Total  Time
-@transform    |   35     35  1.2s
+@transform    |   35     35  1.1s
 Test Summary:          | Pass  Total  Time
 @transform with :block |    5      5  0.1s
 Test Summary: | Pass  Total  Time
-@transform!   |   36     36  0.3s
+@transform!   |   36     36  0.2s
 Test Summary:           | Pass  Total  Time
 @transform! with :block |    5      5  0.1s
 Test Summary:        | Pass  Total  Time
@@ -211,7 +88,7 @@ Test Summary: | Pass  Total  Time
 Test Summary:      | Pass  Total  Time
 select with :block |    5      5  0.1s
 Test Summary: | Pass  Total  Time
-@select!      |   36     36  0.3s
+@select!      |   36     36  0.2s
 Test Summary:        | Pass  Total  Time
 @select! with :block |    5      5  0.1s
 Test Summary:     | Pass  Total  Time
@@ -241,7 +118,7 @@ cols with @eachrow |    7      7  0.1s
 │   caller = ip:0x0
 └ @ Core :-1
 Test Summary:      | Pass  Total  Time
-limits of @eachrow |    4      4  0.4s
+limits of @eachrow |    4      4  0.3s
 Test Summary: | Pass  Total  Time
 eachrow!      |   12     12  0.1s
 Test Summary:            | Pass  Total  Time
@@ -258,7 +135,7 @@ combine with :block |    4      4  0.1s
 Test Summary:      | Pass  Total  Time
 Limits of @combine |    2      2  0.0s
 Test Summary: | Pass  Total  Time
-@by           |   32     32  1.4s
+@by           |   32     32  1.3s
 Test Summary:  | Pass  Total  Time
 by with :block |    4      4  0.0s
 Test Summary: | Pass  Total  Time
@@ -266,20 +143,20 @@ limits of @by |    2      2  0.0s
 ┌ Warning: Using an un-quoted Symbol on the LHS is deprecated. Write :y = ... instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/parsing.jl:387
 Test Summary:                      | Pass  Total  Time
-@transform with grouped data frame |   12     12  2.9s
+@transform with grouped data frame |   12     12  2.8s
 Test Summary: | Pass  Total  Time
-@groupby      |    8      8  0.8s
+@groupby      |    8      8  0.7s
 	[1m[32mPASSED[0m: grouping.jl
 Test Summary: | Pass  Total  Time
-subset        |   17     17  2.6s
+subset        |   17     17  2.4s
 Test Summary:      | Pass  Total  Time
 subset with :block |    5      5  0.8s
 Test Summary: | Pass  Total  Time
-subset!       |   18     18  1.0s
+subset!       |   18     18  0.9s
 Test Summary:       | Pass  Total  Time
-subset! with :block |    5      5  0.8s
+subset! with :block |    5      5  0.7s
 Test Summary:                     | Pass  Total  Time
-@subset with a grouped data frame |    3      3  1.2s
+@subset with a grouped data frame |    3      3  1.1s
 Test Summary:                      | Pass  Total  Time
 @subset! with a grouped data frame |    3      3  0.5s
 	[1m[31mFAILED[0m: subset.jl
@@ -308,7 +185,7 @@ Stacktrace:
 in expression starting at /Users/junekim/.sweep/worktrees/JuliaData__DataFramesMeta.jl/test/subset.jl:180
 in expression starting at /Users/junekim/.sweep/worktrees/JuliaData__DataFramesMeta.jl/test/subset.jl:1
 Test Summary: | Pass  Total  Time
-distinct      |   12     12  3.0s
+distinct      |   12     12  2.9s
 Test Summary: | Pass  Total  Time
 rdistinct     |   10     10  0.6s
 Test Summary:        | Pass  Total  Time
@@ -316,7 +193,7 @@ distinct with :block |    5      5  0.3s
 Test Summary:         | Pass  Total  Time
 rdistinct with :block |    5      5  0.1s
 Test Summary: | Pass  Total  Time
-distinct!     |   13     13  0.8s
+distinct!     |   13     13  0.7s
 Test Summary: | Pass  Total  Time
 rdistinct!    |   12     12  0.6s
 Test Summary:         | Pass  Total  Time
@@ -336,9 +213,9 @@ Test Summary: | Pass  Total  Time
 rename errors |    6      6  0.0s
 	[1m[32mPASSED[0m: rename.jl
 Test Summary:        | Pass  Total  Time
-function_compilation |   56     56  9.6s
+function_compilation |   56     56  8.9s
 Test Summary:        | Pass  Total   Time
-composed compilation |   15     15  13.3s
+composed compilation |   15     15  13.1s
 	[1m[32mPASSED[0m: function_compilation.jl
 ┌ Warning: `@where is deprecated, use `@subset` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:1025
@@ -472,7 +349,7 @@ Test Summary:     | Pass  Total  Time
 ┌ Warning: `@based_on` is deprecated. Use `@combine` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:2155
 Test Summary: | Pass  Total  Time
-@based_on     |   31     31  1.6s
+@based_on     |   31     31  1.5s
 ┌ Warning: `@where is deprecated, use `@subset` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:1025
 ┌ Warning: `@where is deprecated, use `@subset` instead.
@@ -508,7 +385,7 @@ Test Summary: | Pass  Total  Time
 ┌ Warning: `@where is deprecated, use `@subset` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:1025
 Test Summary: | Pass  Total  Time
-where         |   17     17  1.1s
+where         |   17     17  1.0s
 ┌ Warning: `@where is deprecated, use `@subset` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:1025
 ┌ Warning: `@where is deprecated, use `@subset` instead.
@@ -530,7 +407,7 @@ where         |   17     17  1.1s
 ┌ Warning: `@where is deprecated, use `@subset` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:1025
 Test Summary:     | Pass  Total  Time
-where with :block |    5      5  0.8s
+where with :block |    5      5  0.7s
 ┌ Warning: `@where is deprecated, use `@subset` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:1025
 ┌ Warning: `@where is deprecated, use `@subset` instead.
@@ -562,16 +439,16 @@ Test Summary:                    | Pass  Total  Time
 ┌ Warning: Using an un-quoted Symbol on the LHS is deprecated. Write :n = ... instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/parsing.jl:387
 Test Summary:           | Pass  Total  Time
-Unquoted symbols on LHS |   11     11  0.1s
+Unquoted symbols on LHS |   11     11  0.0s
 	[1m[32mPASSED[0m: deprecated.jl
 Test Summary:          | Pass  Total  Time
-@transform with @byrow |   11     11  0.3s
+@transform with @byrow |   11     11  0.2s
 Test Summary: | Pass  Total  Time
 @rtransform   |   11     11  0.1s
 Test Summary:           | Pass  Total  Time
 @transform! with @byrow |   11     11  0.1s
 Test Summary: | Pass  Total  Time
-@rtransform!  |   13     13  0.2s
+@rtransform!  |   13     13  0.1s
 Test Summary:       | Pass  Total  Time
 @select with @byrow |   11     11  0.1s
 Test Summary: | Pass  Total  Time
@@ -583,7 +460,7 @@ Test Summary: | Pass  Total  Time
 Test Summary:     | Pass  Total  Time
 @with with @byrow |    4      4  0.1s
 Test Summary:       | Pass  Total  Time
-@subset with @byrow |    2      2  0.5s
+@subset with @byrow |    2      2  0.3s
 Test Summary: | Pass  Total  Time
 @rsubset      |    2      2  0.3s
 Test Summary:        | Pass  Total  Time
@@ -597,7 +474,7 @@ Test Summary: | Pass  Total  Time
 Test Summary:        | Pass  Total  Time
 @combine with @byrow |   11     11  1.2s
 Test Summary:   | Pass  Total  Time
-@by with @byrow |   11     11  0.5s
+@by with @byrow |   11     11  0.4s
 Test Summary:           | Pass  Total  Time
 multi-argument r*, #280 |    7      7  0.1s
 Test Summary:         | Pass  Total  Time
@@ -652,7 +529,7 @@ Test Summary:            | Total  Time
 Broadcasting bugfix #380 |     0  0.2s
 	[1m[32mPASSED[0m: astable_flag.jl
 Test Summary:      | Pass  Total  Time
-passmissing by row |    8      8  0.2s
+passmissing by row |    8      8  0.1s
 	[1m[32mPASSED[0m: passmissing.jl
 Test Summary: | Pass  Total  Time
 select_multi  |    4      4  0.1s

@@ -6,13 +6,13 @@
   "head_sha": "36b06d793464b4e87fe78bee1ba01a1da6b34bda",
   "host": "darwin-arm64",
   "test_env": "native",
-  "elapsed_seconds": 203.4385769367218,
+  "elapsed_seconds": 147.9993920326233,
   "after": {
-    "bytes": 29450,
-    "sha256": "1d815a4bf686af1f9a2a4b6eb36ad23357ec43a082290dc655361e7c78328a82"
+    "bytes": 29165,
+    "sha256": "d3f8b46415a30702abe7481ab021039bc0d965b059b6de5fdb447e37a4b5933b"
   },
   "before": {
-    "bytes": 37751,
-    "sha256": "06da1abe1fa48612ef6f3beb66cde0b13e113a74a5e5168ab17825daa3f9e868"
+    "bytes": 32854,
+    "sha256": "60160380b3e6d3e5e4654434bdc3ba2fb557863ec326b916a9092e3f0aae9f12"
   }
 }
