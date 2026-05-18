@@ -1,0 +1,18 @@
+{
+  "kind": "test_attestation",
+  "name": "issue-1033",
+  "test_cmd": "make test",
+  "expected_test_name": "fix-progress-bar-100-percent",
+  "head_sha": "a2985abb25e6ed6fbfad294c9ed7ee3417f8e672",
+  "host": "darwin-arm64",
+  "test_env": "docker:golang:bookworm",
+  "elapsed_seconds": 11.30749797821045,
+  "after": {
+    "bytes": 464,
+    "sha256": "78184cc5a4b48a1a19e2dc9de6807c97f38704bcde9839ff8d7e70cddce84b31"
+  },
+  "before": {
+    "bytes": 1956,
+    "sha256": "185ac677ff75fdc2941422ec5a6a59f761edbd50e11496ac8b72453877551992"
+  }
+}
