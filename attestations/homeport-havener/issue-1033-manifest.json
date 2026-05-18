@@ -6,13 +6,13 @@
   "head_sha": "a2985abb25e6ed6fbfad294c9ed7ee3417f8e672",
   "host": "darwin-arm64",
   "test_env": "docker:golang:bookworm",
-  "elapsed_seconds": 11.30749797821045,
+  "elapsed_seconds": 11.665337085723877,
   "after": {
-    "bytes": 464,
-    "sha256": "78184cc5a4b48a1a19e2dc9de6807c97f38704bcde9839ff8d7e70cddce84b31"
+    "bytes": 465,
+    "sha256": "0a128c7e4f7de965376e60b750e583e03dcb26c869738b64d28e5641f625899d"
   },
   "before": {
-    "bytes": 1956,
-    "sha256": "185ac677ff75fdc2941422ec5a6a59f761edbd50e11496ac8b72453877551992"
+    "bytes": 1957,
+    "sha256": "6405c0d78bb0c1cba7cc4ca2159c131a18cd6f6ec4fcbe791bf144cba5f1558e"
   }
 }
