@@ -108,7 +108,8 @@ async def reqa_cycle(msg: Message) -> dict:
                 non_retryable=True,
             )
 
-    worktree = await ensure_worktree(msg.repo, branch)
+    worktree = await ensure_worktree(msg.repo, branch,
+                                     int(msg.pr) if msg.pr else None)
     test_cmd = await infer_test_cmd(worktree, msg.repo)
 
     req = QaOneEntryRequest(

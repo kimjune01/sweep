@@ -7,6 +7,7 @@ with multiple repos or branches.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shlex
 import subprocess
@@ -19,6 +20,25 @@ from temporalio.exceptions import ApplicationError
 from sweep import control_state, llm_io, models, observe, retro_params, retro_state
 from sweep.io_safe import atomic_write_text
 from sweep.types import GateAttestation, Message, QaOneEntryRequest, QaOneEntryResult
+
+
+def is_repo_evicted(repo: str) -> bool:
+    """Check whether `repo` is on the operator's evict list. Cards for
+    evicted repos should short-circuit at activity entry — no point
+    running an attest cycle when the operator has marked the repo
+    out-of-rotation. Wraps `sift._on_evicted_list` so non-sift
+    activities can share the check without importing sift's internals."""
+    from sweep.activities.sift import _on_evicted_list, _on_kill_list
+    return _on_evicted_list(repo) or _on_kill_list(repo)
+
+
+@activity.defn(name="is_repo_evicted_activity")
+async def is_repo_evicted_activity(repo: str) -> bool:
+    """Temporal-callable wrapper so SkillActor / QaActor workflows can
+    consult the eviction list from inside their loops (workflow code
+    can't do filesystem reads directly). Pure delegation to
+    is_repo_evicted."""
+    return is_repo_evicted(repo)
 
 
 def assert_test_env_available(repo: str) -> str:
@@ -35,6 +55,12 @@ def assert_test_env_available(repo: str) -> str:
     """
     env, _ = _get_test_env(repo)
     if env == "native":
+        # Native is now an explicit operator opt-in (e.g. xcodebuild
+        # repos that require macOS host). The previous "halt if
+        # defaulted to native on darwin" gate is gone because the
+        # default itself is `docker:sweep-tester:latest` — operators
+        # only land here when they typed `sweep retro set ... test_env
+        # native` deliberately. Trust the operator; no further check.
         return env
     if env.startswith("docker:"):
         image = env.removeprefix("docker:")
@@ -52,21 +78,71 @@ def assert_test_env_available(repo: str) -> str:
                 f"on this host. Then `sweep andon clear`.",
                 non_retryable=True,
             )
-        # Image pullable / present? Pull is idempotent (no-op if cached).
-        pull = subprocess.run(
-            ["docker", "pull", "--quiet", image],
-            capture_output=True, text=True, timeout=120,
+        # Image present locally? Check first via inspect (covers both
+        # built-locally images like sweep-tester and pulled-from-registry
+        # images that are already cached). Only fall through to `docker
+        # pull` for registry images that aren't cached — pulling
+        # `sweep-tester:latest` would fail with "repository does not
+        # exist" because it's built locally, not on a registry.
+        inspect = subprocess.run(
+            ["docker", "image", "inspect", image],
+            capture_output=True, text=True, timeout=10,
         )
-        if pull.returncode != 0:
-            raise ApplicationError(
-                f"test_env={env!r} requires image {image!r} but "
-                f"`docker pull` failed (rc={pull.returncode}): "
-                f"{(pull.stderr or '')[:200]}. Either fix the image "
-                f"name in retro_params (env-setup path), OR tighten "
-                f"sift's filter so {repo} isn't investigated. Then "
-                f"`sweep andon clear`.",
-                non_retryable=True,
+        if inspect.returncode != 0:
+            # Not cached locally. For the fat image, that means the
+            # operator hasn't built it yet — give the targeted message.
+            if image == "sweep-tester:latest":
+                raise ApplicationError(
+                    f"test_env={env!r} but sweep-tester:latest isn't "
+                    f"built locally. Run `sweep cache rebuild-image` "
+                    f"(one-time, ~5-10 min). Then `sweep andon clear`.",
+                    non_retryable=True,
+                )
+            # Registry image — try a pull.
+            pull = subprocess.run(
+                ["docker", "pull", "--quiet", image],
+                capture_output=True, text=True, timeout=120,
             )
+            if pull.returncode != 0:
+                raise ApplicationError(
+                    f"test_env={env!r} requires image {image!r} but "
+                    f"`docker pull` failed (rc={pull.returncode}): "
+                    f"{(pull.stderr or '')[:200]}. Either fix the image "
+                    f"name in retro_params (env-setup path), OR tighten "
+                    f"sift's filter so {repo} isn't investigated. Then "
+                    f"`sweep andon clear`.",
+                    non_retryable=True,
+                )
+        # Platform compatibility: the image's resolved arch must match
+        # the host's, or runtime is qemu emulation — slow, flaky, and
+        # produces misleading test failures attributable to the env
+        # rather than the patch. Bail at the precondition rather than
+        # let the test run and lie. (Front-load env checks; if the env
+        # isn't possible here, attest can't honor its contract.)
+        import platform as _platform
+        inspect = subprocess.run(
+            ["docker", "image", "inspect", "--format",
+             "{{.Architecture}}", image],
+            capture_output=True, text=True, timeout=10,
+        )
+        if inspect.returncode == 0:
+            image_arch = inspect.stdout.strip()
+            host_arch = {
+                "x86_64": "amd64", "amd64": "amd64",
+                "aarch64": "arm64", "arm64": "arm64",
+            }.get(_platform.machine().lower(), _platform.machine().lower())
+            if image_arch and image_arch != host_arch:
+                raise ApplicationError(
+                    f"test_env={env!r} resolved to image arch "
+                    f"{image_arch!r} but host is {host_arch!r}. Running "
+                    f"under qemu emulation produces unreliable test "
+                    f"verdicts (misattributes env flakiness to the "
+                    f"patch). Either pin a multi-arch / host-native "
+                    f"image in retro_params, OR tighten sift's filter "
+                    f"so {repo} isn't investigated on this host. Then "
+                    f"`sweep andon clear`.",
+                    non_retryable=True,
+                )
         return env
     raise ApplicationError(
         f"unknown test_env {env!r}; expected 'native' or 'docker:<image>'",
@@ -74,23 +150,122 @@ def assert_test_env_available(repo: str) -> str:
     )
 
 
+DEFAULT_TEST_ENV = "docker:sweep-tester:latest"
+
+
 def _get_test_env(repo: str) -> tuple[str, str | None]:
     """Resolve (test_env, setup_cmd) for a repo from retro_params.
 
-    test_env: "native" (default) or "docker:<image>" (e.g.
-              "docker:rust:1.94" for wild-class repos).
-    setup_cmd: shell command run inside the container BEFORE test_cmd
-               (e.g. "apt-get update && apt-get install -y clang lld").
-               None for native or when no setup needed.
+    Default is `docker:sweep-tester:latest` — the fat image built via
+    `sweep cache rebuild-image` that carries Rust+Go+Python+Node+C++
+    toolchains. Most OSS repos work in it.
 
-    Operators set these per repo via `sweep retro set <repo> test_env
-    docker:rust:1.94 --reason 'needs Linux+clang+lld'`. Future:
-    auto-infer from .github/workflows/ + Dockerfile."""
+    Overrides for the exceptions:
+      sweep retro set <repo> test_env docker:rust:nightly  # specific image
+      sweep retro set <repo> test_env native                # xcodebuild etc.
+
+    setup_cmd: shell command run inside the container BEFORE test_cmd
+               (e.g. "apt-get install -y libfoo-dev"). None when the
+               fat image already covers the deps."""
     params = retro_params.resolved(repo)
     return (
-        params.get("test_env", "native"),
+        params.get("test_env", DEFAULT_TEST_ENV),
         params.get("test_setup_cmd"),
     )
+
+
+BUILD_CACHE_ROOT = Path.home() / ".sweep" / "build-cache"
+# Soft cap on total build-cache size. When exceeded, oldest repo dirs
+# (by mtime — captures "when did cargo/go last write to target") are
+# wiped until under cap. 20GB fits ~5-7 active Rust repos plus headroom
+# for Go (modcache is smaller); raise via env if disk-rich.
+BUILD_CACHE_MAX_GB = int(os.environ.get("SWEEP_BUILD_CACHE_MAX_GB", "20"))
+
+
+def _du_bytes(path: Path) -> int:
+    """Total bytes under path (follows no symlinks). Cheap shell out
+    to du -sk; ~50ms warm even on multi-GB dirs."""
+    try:
+        r = subprocess.run(
+            ["du", "-sk", str(path)],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return 0
+        kb = int(r.stdout.split()[0])
+        return kb * 1024
+    except (subprocess.TimeoutExpired, ValueError, IndexError):
+        return 0
+
+
+def _prune_build_cache_if_full(max_gb: int = BUILD_CACHE_MAX_GB,
+                                protect: Path | None = None) -> dict:
+    """LRU-evict repo cache dirs with hysteresis: trigger at the cap,
+    prune down to a lower recover floor. Without hysteresis the cache
+    sits at 99-100% indefinitely (eviction fires the instant we
+    breach, then a single new test refills it). The dead band keeps
+    the cache below the warning threshold long enough for the
+    operator-visible bar to actually read as "headroom present."
+
+      trigger: total > max_gb        (e.g. > 20 GB)
+      recover: prune until total < max_gb * RECOVER_FRAC (e.g. < 16 GB)
+
+    Same TPS Trick #4 shape `should_idle` would use if it ever
+    needed it: two thresholds, one signal, one direction.
+
+    Ranking by mtime (write-time) rather than atime — atime is
+    relatime-coarse on Linux and unreliable across mount types on
+    macOS, but mtime accurately reflects "we wrote to target/" which
+    is the read-write signal that matters for build caches.
+
+    `protect` is the cache dir for the run that's about to fire — we
+    never evict the dir we're about to use, even if it ranks oldest
+    (e.g. a cold-restart on a previously-large cache could otherwise
+    nuke its own working set). Concurrency safety against parallel
+    attest runs is weaker but acceptable: SkillActor WIP=1 means
+    attest is serial within itself; manual backfill races are rare
+    and recoverable (next run cold-rebuilds the wiped dir)."""
+    import shutil
+    if not BUILD_CACHE_ROOT.exists():
+        return {"action": "none", "reason": "no cache root"}
+    total = _du_bytes(BUILD_CACHE_ROOT)
+    cap = max_gb * 1024**3
+    # Hysteresis: only trigger above the cap, then prune to the
+    # lower recover floor. 0.8 = 20% dead band.
+    RECOVER_FRAC = 0.8
+    recover_floor = int(cap * RECOVER_FRAC)
+    if total <= cap:
+        return {"action": "none", "size_gb": round(total / 1024**3, 2),
+                "cap_gb": max_gb,
+                "recover_gb": round(recover_floor / 1024**3, 2)}
+    # Above cap — prune to the recover floor, not the cap.
+    cap = recover_floor
+    dirs = sorted(
+        [d for d in BUILD_CACHE_ROOT.iterdir() if d.is_dir()],
+        key=lambda d: d.stat().st_mtime,
+    )
+    protect_resolved = protect.resolve() if protect else None
+    deleted: list[dict] = []
+    for d in dirs:
+        if total < cap:
+            break
+        if protect_resolved and d.resolve() == protect_resolved:
+            continue
+        size = _du_bytes(d)
+        try:
+            shutil.rmtree(d)
+        except OSError:
+            continue
+        total -= size
+        deleted.append({"path": str(d), "size_gb": round(size / 1024**3, 2)})
+    observe.event("build_cache_pruned",
+                  cap_gb=max_gb,
+                  final_size_gb=round(total / 1024**3, 2),
+                  deleted_count=len(deleted),
+                  deleted=deleted)
+    return {"action": "prune", "deleted": deleted,
+            "final_size_gb": round(total / 1024**3, 2),
+            "cap_gb": max_gb}
 
 
 async def _run_in_test_env(
@@ -98,18 +273,40 @@ async def _run_in_test_env(
 ) -> subprocess.CompletedProcess:
     """Run test_cmd in the right environment. Native = host shell;
     docker:<image> = container with worktree mounted at /work and a
-    persistent build cache mounted at /cache (CARGO_TARGET_DIR points
-    at it). Cache is per-repo under ~/.sweep/build-cache/<owner__repo>
-    so successive runs amortize compile cost.
+    persistent build cache mounted at /cache (CARGO_TARGET_DIR and
+    GOCACHE/GOMODCACHE all point at it). Cache is per-repo under
+    ~/.sweep/build-cache/<owner__repo> so successive runs amortize
+    compile cost; total cache size is capped via
+    _prune_build_cache_if_full (LRU by mtime).
 
     The setup_cmd runs once inside the container per invocation
     (cheap apt-get installs are mostly cached; first run is slow).
     No persistent setup-installed-state — we trade speed for
     determinism."""
     if test_env == "native":
+        # Native is the operator-opt-in path for repos that need host
+        # access (xcodebuild, kernel modules, GUI). For Xcode projects
+        # we redirect DerivedData into the same per-repo cache dir the
+        # docker branch uses, so xcodebuild's compiled outputs come
+        # under sweep's LRU eviction (and become visible in `sweep
+        # cache show`) instead of accumulating unbounded in
+        # ~/Library/Developer/Xcode/DerivedData.
+        wt = Path(worktree)
+        env = os.environ.copy()
+        is_xcode = any(wt.glob("*.xcodeproj")) or any(wt.glob("*.xcworkspace"))
+        if is_xcode:
+            cache_dir = BUILD_CACHE_ROOT / wt.name
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            _prune_build_cache_if_full(protect=cache_dir)
+            derived = cache_dir / "xcode-derived-data"
+            derived.mkdir(exist_ok=True)
+            # IDEDerivedDataPathOverride is the env-var equivalent of
+            # the `-derivedDataPath` xcodebuild flag — works even when
+            # the operator's test_cmd doesn't pass it explicitly.
+            env["IDEDerivedDataPathOverride"] = str(derived)
         return await asyncio.to_thread(
             subprocess.run, shlex.split(test_cmd),
-            cwd=worktree, capture_output=True, text=True,
+            cwd=worktree, capture_output=True, text=True, env=env,
         )
     if not test_env.startswith("docker:"):
         raise ApplicationError(
@@ -117,14 +314,23 @@ async def _run_in_test_env(
             non_retryable=True,
         )
     image = test_env.removeprefix("docker:")
-    cache_dir = Path.home() / ".sweep" / "build-cache" / Path(worktree).name
+    cache_dir = BUILD_CACHE_ROOT / Path(worktree).name
     cache_dir.mkdir(parents=True, exist_ok=True)
+    # LRU-prune before using the cache so we don't blow past the cap
+    # mid-run. Protect this run's cache_dir from eviction.
+    _prune_build_cache_if_full(protect=cache_dir)
     inner = f"{setup_cmd} && {test_cmd}" if setup_cmd else test_cmd
     docker_args = [
         "docker", "run", "--rm",
         "-v", f"{worktree}:/work", "-w", "/work",
         "-v", f"{cache_dir}:/cache",
+        # Cargo writes the compile output dir here.
         "-e", "CARGO_TARGET_DIR=/cache",
+        # Go's two caches: module download cache and build artifact
+        # cache. Harmless when the image isn't golang — Go honors them
+        # only when the toolchain is invoked.
+        "-e", "GOMODCACHE=/cache/gomod",
+        "-e", "GOCACHE=/cache/gobuild",
         image, "bash", "-c", inner,
     ]
     return await asyncio.to_thread(
@@ -147,6 +353,7 @@ async def kick_qa_card(repo: str, branch: str,
                        pr: int | None = None,
                        sender: str = "investigate",
                        attestation_hash: str | None = None,
+                       worktree: str | None = None,
                        incoming: Message | None = None) -> str | None:
     """Deposit a card on qa.jsonl and signal qa-actor. Called by
     investigate_cycle on the production lane when a fresh fix branch
@@ -165,6 +372,8 @@ async def kick_qa_card(repo: str, branch: str,
     payload: dict = {}
     if attestation_hash:
         payload["attestation_hash"] = attestation_hash
+    if worktree:
+        payload["worktree"] = worktree
     msg = Message(
         msg_id=msg_id,
         sender=sender,
@@ -241,6 +450,40 @@ def _capture(msg_id: str, name: str, content: str, *,
     )
 
 
+def _looks_like_test(path: str) -> bool:
+    """Heuristic: is this file a test file? Used by test_attestation to
+    extract the test-only slice of a fix-branch diff and apply it to
+    master, so PRs that add new tests get gated on "does the new test
+    fail on master" rather than "does the unchanged master test suite
+    pass." False positives here just mean we apply too much (worst
+    case: master fails for an unrelated reason and we still route to
+    reinvestigate, which is recoverable). False negatives are worse —
+    a missed test file means the gate keeps tripping at
+    test_passes_on_master."""
+    p = path.lower()
+    # Path-segment markers — directories that conventionally hold tests
+    # in every language ecosystem we attest against.
+    seg_markers = ("/test/", "/tests/", "/__tests__/", "/spec/", "/specs/")
+    if any(m in f"/{p}/" for m in seg_markers):
+        return True
+    # Filename suffixes / prefixes — language-specific test naming.
+    base = p.rsplit("/", 1)[-1]
+    if (
+        base.endswith("_test.go")           # Go
+        or base.endswith("_test.py")         # Python
+        or base.startswith("test_")          # Python (pytest discovery)
+        or ".test." in base                  # JS/TS Jest etc.
+        or ".spec." in base                  # JS/TS Mocha/Jasmine etc.
+        or base.endswith("_spec.rb")         # Ruby RSpec
+        or base.endswith("_test.exs")        # Elixir
+    ):
+        return True
+    # Rust convention: `#[cfg(test)]` lives in regular .rs files, but
+    # `tests/*.rs` (integration tests) and `benches/*.rs` are the
+    # path-shaped slice — covered by the seg_markers above.
+    return False
+
+
 @activity.defn
 async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     """Run test_cmd on master (must fail) and on fix branch (must pass)."""
@@ -303,6 +546,62 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
             f"{(master_co.stderr or '')[:300]}",
             non_retryable=True,
         )
+
+    # PR may ADD a new test alongside the fix. If we run the existing
+    # test suite as-is on master, the new test isn't there and master
+    # trivially passes — gate trips on `test_passes_on_master` despite
+    # the fix being real. Extract just the test-file changes from the
+    # fix branch and apply them onto master, so the new test runs
+    # against the unfixed code (where it must fail). havener#1033 was
+    # the witness: the PR's new test exercised math.Round behavior,
+    # but master's test_cmd alone never executed it.
+    test_diff_files = await _run([
+        "git", "diff", "--name-only", default, req.branch, "--",
+    ])
+    candidate_files = [f for f in (test_diff_files.stdout or "").splitlines() if f]
+    test_files = [f for f in candidate_files if _looks_like_test(f)]
+    log.append(f"changed_test_files={len(test_files)}/{len(candidate_files)}")
+
+    # No tests in PR is a distinct shape from "test passes on master."
+    # Raise its own verdict so the operator sees the real diagnosis
+    # ("PR ships without tests; can't attest") instead of the
+    # misleading "bug fixed upstream or test wrong" framing. The fix
+    # is to add a test, not to investigate whether the fix is real.
+    # evebox#369 was the witness — CLI flag added, no test exercising
+    # it; previously halted on test_passes_on_master with no clue why.
+    if candidate_files and not test_files:
+        raise ApplicationError(
+            f"no_tests_in_pr — PR changed {len(candidate_files)} files "
+            f"but none look like tests "
+            f"(first: {candidate_files[0]!r}). Without a test the "
+            f"fail-on-master/pass-on-fix gate can't run. Operator path: "
+            f"either write a test that fails on master + passes on the "
+            f"fix and re-attest, or close the PR as unverifiable.",
+            non_retryable=True,
+        )
+
+    if test_files:
+        diff_proc = await _run(
+            ["git", "diff", default, req.branch, "--"] + test_files
+        )
+        diff_text = diff_proc.stdout or ""
+        if diff_text.strip():
+            apply_proc = await asyncio.to_thread(
+                subprocess.run,
+                ["git", "apply", "--whitespace=nowarn", "--allow-empty", "-"],
+                cwd=worktree, input=diff_text, capture_output=True, text=True,
+            )
+            if apply_proc.returncode != 0:
+                # Patch couldn't apply — fall through to running master
+                # as-is. Surface why so the operator can read the log;
+                # don't halt, since the post-apply check below catches
+                # the real semantic problem (master must fail).
+                log.append(
+                    f"test_diff_apply_failed: {(apply_proc.stderr or '')[:200]}"
+                )
+            else:
+                log.append(f"applied_test_diff_bytes={len(diff_text)}")
+
     _heartbeat({"stage": "test_on_master"})
     master_run = await _run_in_test_env(
         req.test_cmd, worktree=worktree, test_env=test_env, setup_cmd=setup_cmd,
@@ -310,9 +609,15 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     log.append(f"master ({default}) exit={master_run.returncode} env={test_env}")
     if master_run.returncode == 0:
         raise ApplicationError(
-            "test_passes_on_master — bug fixed upstream or test wrong",
+            "test_passes_on_master — bug fixed upstream or test wrong "
+            f"(applied {len(test_files)} test files from fix branch)",
             non_retryable=True,
         )
+
+    # Restore master to clean state before checking out the fix branch,
+    # so the applied test-diff doesn't conflict with the checkout.
+    await _run(["git", "checkout", "--quiet", "HEAD", "--", "."])
+    await _run(["git", "clean", "-fdq"])
 
     _heartbeat({"stage": "checkout_fix"})
     fix_co = await _run(["git", "checkout", "--quiet", req.branch])
@@ -337,13 +642,14 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     att = _capture(req.msg_id, "test", body, worktree=req.worktree)
     att.verdict = "pass"
 
-    # Write attestations into OUR sweep repo, not the fork's worktree.
-    # Maintainers don't want our receipts polluting their PR diff; we
-    # publish them on our side instead. Layout:
+    # Write the attestation triple into OUR sweep repo's working tree,
+    # not the fork's worktree. Layout:
     #   <sweep>/attestations/<org>-<repo>/issue-<n>-{manifest,before,after}
-    # Per-repo dir, flat issue-prefixed files — easy to browse our
-    # growing list. The pin check in submit's gate compares the fork
-    # worktree's HEAD against manifest.head_sha at push time.
+    # Per-repo dir, flat issue-prefixed files — easy to browse.
+    # Local-only step: qa owns the test runs and the file write (it has
+    # the stdout). The commit + push to our sweep repo, the rendered
+    # public link, and the amend fan-out all live in attest_cycle —
+    # "qa pushes to their repo, attest pushes to our repo."
     try:
         from sweep.attestation_writer import write_attestation_files
         import platform
@@ -365,23 +671,6 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
             after_stdout=(fix_run.stdout or "") + "\n--- stderr ---\n" + (fix_run.stderr or ""),
             elapsed_seconds=time.time() - _test_start,
         )
-        # Auto-commit in the sweep repo. The babysitter / operator
-        # pushes our repo on its own cadence; the attestation lives
-        # publicly here, not on the maintainer's branch.
-        rel = str(attestation_dir.relative_to(sweep_repo))
-        add = subprocess.run(
-            ["git", "-C", str(sweep_repo), "add", rel],
-            capture_output=True, text=True, timeout=10,
-        )
-        if add.returncode == 0:
-            cmt = subprocess.run(
-                ["git", "-C", str(sweep_repo), "commit", "-m",
-                 f"attestation: {slug} ({req.test_cmd[:60]})"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if cmt.returncode == 0:
-                observe.event("attestation_committed", msg_id=req.msg_id,
-                              slug=slug, branch=req.branch)
     except Exception as e:
         observe.event("attestation_write_failed", msg_id=req.msg_id,
                       error_type=type(e).__name__, error=str(e)[:200])
@@ -391,12 +680,18 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
 
 _REVIEW_SYSTEM = (
     "You are a structural code reviewer. Read the diff and decide whether "
-    "the change is sound. Reply with a single verdict line of the form "
-    "`verdict: pass`, `verdict: fail`, or `verdict: revise`, followed by a "
-    "one-paragraph reason. Keep the reason under 120 words. "
-    "If the diff is unreadable, off-topic, or you cannot evaluate it, "
-    "output nothing. Empty is a legal answer; do not fabricate a verdict "
-    "you don't believe."
+    "the change is sound. Output JSON only (no prose, no markdown fences), "
+    "matching this schema:\n\n"
+    "{\n"
+    '  "verdict": "pass" | "fail" | "revise",\n'
+    '  "key_issues": [str],   // concrete concerns; empty list if clean\n'
+    '  "rationale": str       // one or two sentences, <120 words total\n'
+    "}\n\n"
+    "Most of the time you should be able to comply. When you can't (diff "
+    "unreadable, off-topic, can't evaluate), output an empty string — empty "
+    "is a legal answer and is preferable to fabricating a verdict you don't "
+    "believe. A downstream sonnet shim parses your output; native JSON saves "
+    "it work and is more reliable than prose extraction."
 )
 
 
@@ -408,15 +703,114 @@ def _user_prompt(req: QaOneEntryRequest, diff: str) -> str:
 
 
 def _parse_verdict(response: str) -> str:
-    """Pull `verdict: X` (case-insensitive). Default to 'stubbed' for non-Anthropic
-    providers whose wrapper is still a stub; treat anything else unparsed as 'revise'
-    so the cascade keeps moving rather than auto-passing on garbled output."""
+    """Best-effort verdict extraction from a single reviewer's raw text.
+    The authoritative fuse uses `extract_qa_verdicts` (sonnet shim) at
+    the qa_one_entry / qa_actor level; this regex stays only so each
+    individual GateAttestation has *some* verdict for observability when
+    the activity returns to its caller.
+
+    Reviewers are now prompted to output JSON ({"verdict": "...", ...});
+    try JSON first, fall back to the legacy `verdict: X` regex if the
+    reviewer didn't comply. Stubs return 'stubbed'; anything else
+    unparsed returns 'revise' so the cascade keeps moving rather than
+    auto-passing on garbled output."""
+    import json as _json
     if response.startswith("<stub:"):
         return "stubbed"
+    text = response.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:].lstrip()
+    try:
+        d = _json.loads(text)
+        v = str(d.get("verdict", "")).lower()
+        if v in ("pass", "fail", "revise"):
+            return v
+    except (_json.JSONDecodeError, AttributeError):
+        pass
     m = re.search(r"verdict\s*:\s*(pass|fail|revise)", response, re.IGNORECASE)
     if not m:
         return "revise"
     return m.group(1).lower()
+
+
+_SHIM_SYSTEM = (
+    "You are a structured-output parser for code review verdicts. You "
+    "receive two reviewers' raw prose and return JSON. Read each "
+    "reviewer's reasoning and extract the actual verdict (which may "
+    "contradict their literal 'verdict:' line if their reasoning says "
+    "otherwise). Then fuse the two into a single decisive verdict.\n\n"
+    "Output schema (JSON only, no prose, no markdown fences):\n"
+    "{\n"
+    '  "codex":  {"verdict": "pass|fail|revise", "key_issues": [str], "rationale": str},\n'
+    '  "claude": {"verdict": "pass|fail|revise", "key_issues": [str], "rationale": str},\n'
+    '  "fused":  {"verdict": "pass|fail|partial", "reason": str}\n'
+    "}\n\n"
+    "Fuse rules: any 'fail' → fused 'fail'. All 'pass' → fused 'pass'. "
+    "Any 'revise' without 'fail' → fused 'partial'. Reasons should be "
+    "one short sentence each. key_issues are concrete concerns named "
+    "in the prose; empty list if the reviewer was clean."
+)
+
+
+@activity.defn
+async def extract_qa_verdicts(codex_response: str,
+                               claude_response: str,
+                               msg_id: str | None = None,
+                               repo: str | None = None,
+                               pr: int | None = None) -> dict:
+    """Sonnet shim that turns two reviewers' raw prose into structured
+    verdicts + a fused decision. Replaces the regex parser in the fuse
+    path; each reviewer's GateAttestation still carries its own
+    regex-extracted verdict for activity-level observability.
+
+    JSON-only output enforced via the system prompt. If sonnet returns
+    malformed JSON, the activity raises ApplicationError(non_retryable)
+    so the actor's andon cord fires — we trust sonnet enough that
+    malformed output is an outage signal, not noise to swallow."""
+    import json as _json
+    from sweep import llm_io as _llm_io, models as _models
+
+    user = (
+        f"Reviewer A (codex):\n{codex_response}\n\n"
+        f"---\n\n"
+        f"Reviewer B (claude):\n{claude_response}\n\n"
+        f"---\n\n"
+        f"Return the JSON object now."
+    )
+    result = await _llm_io.call(
+        _models.resolve("sonnet"),
+        system=_SHIM_SYSTEM,
+        user=user,
+        msg_id=msg_id, repo=repo, pr=pr,
+        max_tokens=800, temperature=0.0,
+    )
+    text = (result.response or "").strip()
+    # Strip accidental markdown fences if the model adds them despite
+    # the system prompt. Cheap safety net; not a real parsing fallback.
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:].lstrip()
+    try:
+        data = _json.loads(text)
+    except _json.JSONDecodeError as e:
+        raise ApplicationError(
+            f"verdict shim returned malformed JSON: {e}; "
+            f"first 200 chars: {text[:200]!r}",
+            non_retryable=True,
+        ) from e
+    # Lightweight shape check — missing top-level keys are also a shim
+    # outage, not a default-to-pass situation.
+    for key in ("codex", "claude", "fused"):
+        if key not in data:
+            raise ApplicationError(
+                f"verdict shim missing top-level key {key!r}; got keys: "
+                f"{list(data.keys())}",
+                non_retryable=True,
+            )
+    return data
 
 
 @activity.defn
@@ -486,8 +880,16 @@ async def _claude_cli_review(system: str, user: str) -> str:
 
 @activity.defn
 async def gemini_review(req: QaOneEntryRequest, diff: str, round_num: int) -> GateAttestation:
-    """Send diff to adversary_2 (gemini by default; haiku under test). Captures
-    the raw response as the gate receipt."""
+    """Adversary_2 review via the model `adversary_2` role resolves to
+    (sonnet by default). Pairs with codex_review (adversary_1, codex
+    CLI) for the volley: codex brings OpenAI-side structural reasoning,
+    sonnet brings Anthropic-side review that diverges from opus (the
+    writer of the fix). Claude CLI is the SHIM role (extract_qa_verdicts),
+    not an adversary slot.
+
+    Function name kept (rename would ripple through worker/qa_actor/cli)
+    but the route uses llm_io and pays Anthropic API spend on each call
+    — small at 5-10 qa cycles/day. See models.py for cascade rationale."""
     if not req.msg_id:
         raise ApplicationError("msg_id required", non_retryable=True)
 
@@ -543,6 +945,24 @@ async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
         )
 
     start = time.time()
+
+    # synth_test — write a regression test if the fix lacks one. Runs
+    # before test_attestation so the gate sees the synthesized test in
+    # the diff and can verify it via fail-on-master/pass-on-fix. On
+    # punt (no issue ref, vague issue, etc.) the gate falls through to
+    # the existing no_tests_in_pr verdict. Same wiring as qa_actor's
+    # production path so qa_one_entry callers (reqa, terminal mode)
+    # also get the test-writing intercept.
+    if req.issue:
+        try:
+            from sweep.activities.synth_test import synth_test_for_fix
+            await synth_test_for_fix(
+                req.repo, req.branch, req.worktree, req.issue,
+                issue_number=req.issue, pr_body=None,
+            )
+        except Exception:
+            pass  # punt path; attest will emit no_tests_in_pr if still missing
+
     test_att = await test_attestation(req)
 
     diff_proc = subprocess.run(
@@ -573,13 +993,20 @@ async def qa_one_entry(req: QaOneEntryRequest) -> QaOneEntryResult:
     gemini_first = await gemini_review(req, diff, 1)
     gemini_last = gemini_first
 
-    sub_verdicts = {codex_att.verdict, gemini_last.verdict}
-    if "fail" in sub_verdicts:
-        verdict = "fail"
-    elif sub_verdicts <= {"pass", "stubbed"}:
-        verdict = "pass"
-    else:  # "revise" present without "fail"
-        verdict = "partial"
+    # Sonnet shim — authoritative verdict + structured per-reviewer
+    # extraction. Replaces the old regex+set-fuse path which couldn't
+    # tell "verdict: pass but reasoning lists three blockers" from a
+    # clean pass. Raw responses live in the artifact files captured by
+    # each review activity; read them back to feed the shim.
+    codex_text = Path(codex_att.artifact_path).read_text()
+    claude_text = Path(gemini_last.artifact_path).read_text()
+    shim = await extract_qa_verdicts(
+        codex_text, claude_text,
+        msg_id=req.msg_id, repo=req.repo, pr=req.issue,
+    )
+    verdict = shim["fused"]["verdict"]
+    codex_att.verdict = shim["codex"]["verdict"]
+    gemini_last.verdict = shim["claude"]["verdict"]
 
     result = QaOneEntryResult(
         msg_id=req.msg_id,

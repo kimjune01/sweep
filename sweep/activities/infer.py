@@ -95,11 +95,45 @@ async def infer_test_cmd(worktree: str, repo: str) -> str:
         f"Selected files (truncated):\n\n{signals or '(no recognizable manifest files)'}\n\n"
         "Canonical local test command:"
     )
-    try:
-        out = await asyncio.to_thread(llm_cli.call, system, user, timeout_s=120)
-    except Exception as e:
-        raise ApplicationError(f"infer_test_cmd LLM call failed: {e}",
-                               non_retryable=True)
+    # Retry-once on transient claude CLI flakiness (empty stdout,
+    # subprocess timeout, broken pipe). The first failure is almost
+    # always recoverable; halting the actor on it makes octave#94 a
+    # recurring rock when claude has a bad second. Second failure is
+    # a real signal — propagate as halt.
+    async def _try_once():
+        return await asyncio.to_thread(
+            llm_cli.call, system, user, timeout_s=120,
+        )
+
+    last_err: Exception | None = None
+    out = ""
+    for attempt in (1, 2):
+        try:
+            out = await _try_once()
+        except Exception as e:
+            last_err = e
+            if attempt == 1:
+                # Brief backoff between attempts so we're not racing
+                # the same flake.
+                await asyncio.sleep(2)
+                continue
+            raise ApplicationError(
+                f"infer_test_cmd LLM call failed (after retry): {e}",
+                non_retryable=True,
+            )
+        # Treat empty stdout the same way — it's the most common
+        # claude-CLI failure mode and the symptom that's been
+        # halting octave#94 repeatedly.
+        if not (out or "").strip():
+            if attempt == 1:
+                await asyncio.sleep(2)
+                continue
+            raise ApplicationError(
+                "infer_test_cmd LLM call failed (after retry): "
+                "claude returned empty stdout twice (auth/rate/binary?)",
+                non_retryable=True,
+            )
+        break
     cmd = out.strip().splitlines()[0].strip() if out else ""
     # Strip common LLM artifacts.
     for prefix in ("$ ", "> ", "`"):

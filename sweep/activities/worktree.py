@@ -96,6 +96,12 @@ async def record_andon(actor: str, msg_id: str, reason: str) -> None:
     }
     path.write_text(json.dumps(payload))
     set_paused(True)
+    # Observability: stoppage starts now. The wasteboard pairs this
+    # with `andon_cleared` to compute downtime per window. Without
+    # the event, stoppage is invisible to the longitudinal view.
+    from sweep import observe
+    observe.event("andon_recorded", actor=actor, msg_id=msg_id,
+                  reason=reason[:200], ts=payload["ts"])
 
 
 @activity.defn
@@ -109,16 +115,21 @@ async def clear_andon_marker(actor: str) -> None:
     line paused until they're all cleared.
     """
     from sweep.control_state import set_paused
+    from sweep import observe
     path = ANDON_DIR / f"{actor}.json"
+    cleared = False
     try:
         path.unlink()
+        cleared = True
     except FileNotFoundError:
         pass
     if not any(ANDON_DIR.glob("*.json")):
         set_paused(False)
+    if cleared:
+        observe.event("andon_cleared", actor=actor)
 
 
-def _ensure_worktree_blocking(repo: str, branch: str) -> str:
+def _ensure_worktree_blocking(repo: str, branch: str, pr: int | None = None) -> str:
     """Synchronous body of ensure_worktree. Six git/gh subprocesses end-
     to-end (up to ~minute on cold clone, 5–15s warm) — run via
     asyncio.to_thread so the worker's event loop doesn't stall on git I/O."""
@@ -147,12 +158,18 @@ def _ensure_worktree_blocking(repo: str, branch: str) -> str:
 
     co = _run(["git", "checkout", "--quiet", branch], cwd=path)
     if co.returncode != 0:
-        # Fork case: branch isn't on origin. Fall back to `gh pr checkout`
-        # using the PR-state-supplied branch name as the slug to look up.
-        gh_co = _run(["gh", "pr", "checkout", branch], cwd=path)
+        # Fork case: branch isn't on origin. Fall back to `gh pr checkout`.
+        # Prefer the PR number when caller supplied one — unambiguous for
+        # fork PRs (gh fetches refs/pull/<n>/head). Branch-name form only
+        # matches PRs whose head is on the upstream remote, which is
+        # exactly the case `git checkout` already covers; for fork PRs it
+        # 404s with "no pull requests found for branch ...".
+        gh_target = str(pr) if pr else branch
+        gh_co = _run(["gh", "pr", "checkout", gh_target], cwd=path)
         if gh_co.returncode != 0:
             raise ApplicationError(
-                f"skip: cannot check out {repo}@{branch}: "
+                f"skip: cannot check out {repo}@{branch} "
+                f"(gh pr checkout {gh_target}): "
                 f"{(co.stderr or '')[:150]} / {(gh_co.stderr or '')[:150]}",
                 non_retryable=True,
             )
@@ -214,6 +231,17 @@ def prune_evicted_worktree(repo: str) -> dict:
         except OSError as e:
             skipped.append(f"{wt}: {e}")
 
+    # 1b. Build cache — sibling of the worktree under ~/.sweep/build-cache/.
+    # Same naming convention (`_safe_dir`'s owner__repo). Wiping it on
+    # repo eviction reclaims disk for the actively-attested set.
+    bc = Path.home() / ".sweep" / "build-cache" / wt.name
+    if bc.exists():
+        try:
+            shutil.rmtree(bc)
+            removed.append(str(bc))
+        except OSError as e:
+            skipped.append(f"{bc}: {e}")
+
     # 2. Ad-hoc Documents/ clones. Operator may have cloned the repo
     # under one of several naming conventions; check all the plausible
     # ones but only remove dirs whose remote actually matches.
@@ -241,12 +269,14 @@ def prune_evicted_worktree(repo: str) -> dict:
 
 
 @activity.defn
-async def ensure_worktree(repo: str, branch: str) -> str:
+async def ensure_worktree(repo: str, branch: str, pr: int | None = None) -> str:
     """Return an absolute path to a working tree with `branch` checked out.
 
     Clones if missing. Fetches origin. Checks out `branch`. If the branch
     isn't on the upstream remote (PR from a fork), tries the GitHub
-    pull/<pr>/head ref form via `gh pr checkout`. Reset is hard so a
+    pull/<pr>/head ref form via `gh pr checkout`. Pass `pr` whenever the
+    caller knows it — the PR-number form of `gh pr checkout` works for
+    fork branches, the branch-name form does not. Reset is hard so a
     previous test_attestation's edits don't persist between runs.
     """
     if "/" not in repo:
@@ -254,4 +284,4 @@ async def ensure_worktree(repo: str, branch: str) -> str:
                                non_retryable=True)
     if not branch:
         raise ApplicationError("branch required", non_retryable=True)
-    return await asyncio.to_thread(_ensure_worktree_blocking, repo, branch)
+    return await asyncio.to_thread(_ensure_worktree_blocking, repo, branch, pr)

@@ -1,0 +1,618 @@
+group::ArgGroup::new (line 86) ... ok
+test clap_builder/src/builder/arg_group.rs - builder::arg_group::ArgGroup::requires (line 334) ... ok
+test clap_builder/src/builder/arg_group.rs - builder::arg_group::ArgGroup::id (line 100) ... ok
+test clap_builder/src/builder/arg_group.rs - builder::arg_group::ArgGroup::multiple (line 202) ... ok
+test clap_builder/src/builder/arg_group.rs - builder::arg_group::ArgGroup::requires_all (line 383) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::after_help (line 2016) ... ok
+test clap_builder/src/builder/arg_group.rs - builder::arg_group::ArgGroup::required (line 290) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::about (line 1963) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::alias (line 2680) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::after_long_help (line 2040) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::allow_external_subcommands (line 3183) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::allow_missing_positional (line 2491) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::color (line 1312) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::allow_missing_positional (line 2510) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::aliases (line 2779) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::disable_colored_help (line 1665) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::arg (line 152) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::allow_missing_positional (line 2550) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::arg_required_else_help (line 2401) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::allow_missing_positional (line 2530) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::before_help (line 2062) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::args_conflicts_with_subcommands (line 3303) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::author (line 1942) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::dont_delimit_trailing_values (line 1276) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::before_long_help (line 2084) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::bin_name (line 1893) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::debug_assert (line 601) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::args (line 195) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::get_matches (line 653) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::get_matches_from (line 746) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::defer (line 572) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::get_matches_mut (line 677) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::disable_help_flag (line 1585) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::help_expected (line 1713) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::disable_help_subcommand (line 1630) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::disable_version_flag (line 1466) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::disable_version_flag (line 1452) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::disable_help_flag (line 1571) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::infer_subcommands (line 1824) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::display_name (line 1910) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::external_subcommand_value_parser (line 3230) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::display_order (line 3070) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::get_external_subcommand_value_parser (line 4252) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::error (line 635) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::group (line 453) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::help_expected (line 1698) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::help_template (line 2291) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::groups (line 477) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::external_subcommand_value_parser (line 3256) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::help_template (line 2280) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::hide (line 3114) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::long_flag_aliases (line 2836) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::name (line 1859) ... ignored
+test clap_builder/src/builder/command.rs - builder::command::Command::long_version (line 2138) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::long_flag (line 2629) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::long_about (line 1990) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::next_line_help (line 1545) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::mut_arg (line 222) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::multicall (line 3539) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::max_term_width (line 1433) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::long_flag_alias (line 2736) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::multicall (line 3511) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::propagate_version (line 1513) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::ignore_errors (line 1207) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::mut_args (line 264) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::mut_subcommand (line 354) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::mut_group (line 312) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::new (line 127) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::no_binary_name (line 1176) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::mut_subcommands (line 395) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::styles (line 1351) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::print_help (line 927) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::override_usage (line 2180) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::print_long_help (line 958) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::render_long_help (line 1025) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::render_help (line 992) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::render_long_version (line 1111) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::override_usage (line 2190) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::override_help (line 2222) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::render_usage (line 1136) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::short_flag_alias (line 2708) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommand_help_heading (line 3650) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommand (line 516) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::short_flag_aliases (line 2807) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::short_flag (line 2587) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::try_get_matches_from_mut (line 847) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::try_get_matches (line 709) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::try_get_matches_from (line 793) - compile ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommand_negates_reqs (line 3396) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommand_help_heading (line 3677) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommand_negates_reqs (line 3414) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommand_required (line 3138) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommand_value_name (line 3584) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::render_version (line 1086) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommand_precedence_over_arg (line 3341) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommands (line 546) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::subcommand_value_name (line 3611) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::term_width (line 1395) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::visible_short_flag_aliases (line 3012) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::visible_short_flag_alias (line 2912) ... ok
+test clap_builder/src/builder/possible_value.rs - builder::possible_value::PossibleValue::alias (line 126) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::visible_alias (line 2882) ... ok
+test clap_builder/src/builder/possible_value.rs - builder::possible_value::PossibleValue::aliases (line 147) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::visible_long_flag_alias (line 2943) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::visible_aliases (line 2989) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::visible_long_flag_aliases (line 3037) ... ok
+test clap_builder/src/builder/possible_value.rs - builder::possible_value::PossibleValue (line 24) ... ok
+test clap_builder/src/builder/possible_value.rs - builder::possible_value::PossibleValue::hide (line 107) ... ok
+test clap_builder/src/builder/command.rs - builder::command::Command::version (line 2111) ... ok
+test clap_builder/src/builder/possible_value.rs - builder::possible_value::PossibleValue::matches (line 210) ... ok
+test clap_builder/src/builder/possible_value.rs - builder::possible_value::PossibleValue::new (line 63) ... ok
+test clap_builder/src/builder/possible_value.rs - builder::possible_value::PossibleValue::help (line 86) ... ok
+test clap_builder/src/builder/range.rs - builder::range::ValueRange::new (line 40) ... ok
+test clap_builder/src/builder/range.rs - builder::range::ValueRange::new (line 52) - should panic ... ok
+test clap_builder/src/builder/styling.rs - builder::styling::Styles (line 12) ... ok
+test clap_builder/src/builder/resettable.rs - builder::resettable::Resettable (line 21) ... ok
+test clap_builder/src/builder/range.rs - builder::range::ValueRange::takes_values (line 83) ... ok
+test clap_builder/src/builder/styled_str.rs - builder::styled_str::StyledStr (line 10) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::BoolishValueParser (line 1840) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::BoolishValueParser (line 1856) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::EnumValueParser (line 1047) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::FalseyValueParser (line 1745) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::NonEmptyStringValueParser (line 1956) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::FalseyValueParser (line 1761) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::NonEmptyStringValueParser (line 1940) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::TypedValueParser (line 671) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::PossibleValuesParser (line 1182) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::RangedU64ValueParser (line 1498) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::RangedI64ValueParser (line 1299) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::PossibleValuesParser (line 1166) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::RangedI64ValueParser (line 1281) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::RangedU64ValueParser (line 1480) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::TypedValueParser::map (line 777) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::TypedValueParser::try_map (line 822) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::UnknownArgumentValueParser (line 2131) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 23) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 348) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 317) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 379) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 441) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 275) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 410) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 502) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 472) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser (line 537) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser::new (line 89) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser::bool (line 127) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser::os_string (line 176) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::value_parser (line 2587) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParserFactory (line 2245) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::value_parser (line 2605) ... ok
+test clap_builder/src/derive.rs - derive::FromArgMatches::from_arg_matches (line 136) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser::path_buf (line 208) ... ok
+test clap_builder/src/derive.rs - derive::FromArgMatches::from_arg_matches_mut (line 184) ... ok
+test clap_builder/src/derive.rs - derive::FromArgMatches::from_arg_matches (line 148) ... ok
+test clap_builder/src/builder/value_parser.rs - builder::value_parser::ValueParser::string (line 154) ... ok
+test clap_builder/src/derive.rs - derive::FromArgMatches::from_arg_matches_mut (line 172) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::ArgumentConflict (line 169) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand (line 284) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::DisplayVersion (line 307) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::DisplayHelp (line 266) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::InvalidUtf8 (line 237) ... ok
+test clap_builder/src/error/mod.rs - error::Error<F>::print (line 254) - compile ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::InvalidValue (line 10) ... ok
+test clap_builder/src/error/mod.rs - error::Error<F>::render (line 285) - compile ... ok
+test clap_builder/src/macros.rs - macros::command (line 124) - compile ... ok
+test clap_builder/src/macros.rs - macros::crate_description (line 64) - compile ... ok
+test clap_builder/src/macros.rs - macros::crate_authors (line 33) - compile ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::MissingRequiredArgument (line 190) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::InvalidSubcommand (line 44) ... ok
+test clap_builder/src/macros.rs - macros::crate_name (line 94) - compile ... ok
+test clap_builder/src/macros.rs - macros::crate_version (line 6) - compile ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches (line 28) - compile ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::TooManyValues (line 109) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::MissingSubcommand (line 207) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::NoEquals (line 66) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::TooFewValues (line 127) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::UnknownArgument (line 26) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::WrongNumberOfValues (line 147) ... ok
+test clap_builder/src/error/mod.rs - error::Error<F>::new (line 111) ... ok
+test clap_builder/src/error/kind.rs - error::kind::ErrorKind::ValueValidation (line 85) ... ok
+test clap_builder/src/macros.rs - macros::arg (line 513) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::get_flag (line 162) ... ok
+test clap_builder/src/error/mod.rs - error::Error<F>::apply (line 160) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::get_occurrences (line 248) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::get_many (line 206) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::get_raw (line 285) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::contains_id (line 508) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::get_raw_occurrences (line 334) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::args_present (line 562) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::get_count (line 130) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::remove_subcommand (line 934) - compile ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::get_one (line 100) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::subcommand (line 875) - compile ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::ids (line 531) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::index_of (line 647) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::subcommand_name (line 1036) - compile ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::index_of (line 718) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::index_of (line 667) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::index_of (line 748) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::index_of (line 688) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::indices_of (line 813) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::remove_subcommand (line 957) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::indices_of (line 837) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::remove_many (line 429) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::remove_occurrences (line 470) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::indices_of (line 795) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::subcommand (line 896) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::subcommand_matches (line 998) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::value_source (line 592) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ArgMatches::remove_one (line 393) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::Values (line 1411) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::RawValues (line 1546) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::IdsRef (line 1366) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::ValuesRef (line 1478) ... ok
+test clap_builder/src/parser/matches/arg_matches.rs - parser::matches::arg_matches::Indices (line 1824) ... ok
+test clap_builder/src/util/color.rs - util::color::ColorChoice::Always (line 33) ... ok
+test clap_builder/src/util/color.rs - util::color::ColorChoice::Never (line 48) ... ok
+test clap_builder/src/util/color.rs - util::color::ColorChoice::Auto (line 17) ... ok
+
+test result: ok. 360 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+all doctests ran in 1.26s; merged doctests compilation took 0.96s
+
+running 12 tests
+test clap_complete/src/aot/generator/mod.rs - aot::generator::generate (line 263) ... ignored
+test clap_complete/src/aot/generator/mod.rs - aot::generator::generate_to (line 144) ... ignored
+test clap_complete/src/aot/generator/mod.rs - aot::generator::generate_to (line 170) ... ignored
+test clap_complete/src/aot/generator/mod.rs - aot::generator::generate_to (line 209) ... ignored
+test clap_complete/src/aot/shells/shell.rs - aot::shells::shell::Shell::from_env (line 129) - compile ... ok
+test clap_complete/src/aot/mod.rs - aot (line 17) - compile ... ok
+test clap_complete/src/lib.rs - (line 18) - compile ... ok
+test clap_complete/src/aot/generator/mod.rs - aot::generator::Generator::generate (line 51) ... ok
+test clap_complete/src/aot/generator/mod.rs - aot::generator::generate_to (line 124) ... ok
+test clap_complete/src/aot/shells/shell.rs - aot::shells::shell::Shell::from_shell_path (line 105) ... ok
+test clap_complete/src/aot/generator/mod.rs - aot::generator::Generator::try_generate (line 80) ... ok
+test clap_complete/src/aot/generator/mod.rs - aot::generator::Generator::file_name (line 23) ... ok
+
+test result: ok. 8 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.40s; merged doctests compilation took 0.16s
+
+running 2 tests
+test clap_complete_nushell/src/../README.md - ReadmeDoctests (line 18) ... ok
+test clap_complete_nushell/src/lib.rs - (line 5) ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.41s; merged doctests compilation took 0.15s
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 18 tests
+test clap_lex/src/ext.rs - ext::OsStrExt::split (line 161) ... ignored
+test clap_lex/src/lib.rs - RawArgs::cursor (line 179) - compile ... ok
+test clap_lex/src/lib.rs - RawArgs::from_args (line 144) - compile ... ok
+test clap_lex/src/lib.rs - RawArgs::new (line 161) - compile ... ok
+test clap_lex/src/lib.rs - RawArgs::remaining (line 218) - compile ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::strip_prefix (line 59) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::find (line 32) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::split_once (line 174) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::split (line 89) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::split (line 119) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::split (line 108) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::split (line 131) ... ok
+test clap_lex/src/lib.rs - (line 9) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::starts_with (line 74) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::find (line 43) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::split (line 140) - should panic ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::split (line 150) ... ok
+test clap_lex/src/ext.rs - ext::OsStrExt::contains (line 17) ... ok
+
+test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.46s; merged doctests compilation took 0.17s
+
+running 2 tests
+test clap_mangen/src/../README.md - (line 34) - compile ... ok
+test clap_mangen/src/../README.md - ReadmeDoctests (line 34) - compile ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.41s; merged doctests compilation took 0.14s
+
+--- stderr ---
+   Compiling clap_builder v4.6.0 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_builder)
+   Compiling clap v4.6.1 (/Users/junekim/.sweep/worktrees/clap-rs__clap)
+   Compiling clap_complete v4.6.3 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_complete)
+   Compiling clap_mangen v0.3.0 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_mangen)
+   Compiling clap_complete_nushell v4.6.0 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_complete_nushell)
+   Compiling clap_bench v0.0.0 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_bench)
+warning: use of deprecated function `<flatten::flatten_skipped_group::Args as clap::Args>::augment_args::old_attribute`: Attribute `#[clap(...)]` has been deprecated in favor of `#[arg(...)]`
+   --> tests/derive/flatten.rs:300:11
+    |
+300 |         #[clap(short)]
+    |           ^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: `clap` (test "derive") generated 1 warning
+    Finished `test` profile [optimized + debuginfo] target(s) in 7.19s
+     Running unittests src/lib.rs (target/debug/deps/clap-9891c58293837275)
+     Running unittests src/bin/stdio-fixture.rs (target/debug/deps/stdio_fixture-d66a6d1c5fe2e3ff)
+     Running tests/builder/main.rs (target/debug/deps/builder-c5a81041ed307500)
+     Running tests/derive/main.rs (target/debug/deps/derive-4fd367e52d9cfe2d)
+     Running tests/derive_ui.rs (target/debug/deps/derive_ui-72fc047984bf1afe)
+     Running tests/examples.rs (target/debug/deps/examples-e9d78217c75c5a6c)
+Testing examples/README.md ... ignored
+Testing examples/tutorial_builder/04_03_relations.md:2 ... ok 548ms 595us 500ns
+Testing examples/tutorial_builder/04_03_relations.md:20 ... ok 2ms 231us 250ns
+Testing examples/tutorial_builder/04_03_relations.md:29 ... ok 2ms 213us 583ns
+Testing examples/tutorial_builder/04_03_relations.md:32 ... ok 1ms 713us 500ns
+Testing examples/tutorial_builder/04_03_relations.md:40 ... ok 2ms 667ns
+Testing examples/tutorial_builder/04_03_relations.md:49 ... ok 1ms 897us 125ns
+Testing examples/tutorial_derive/02_app_settings.md:2 ... ok 763ms 366us 834ns
+Testing examples/demo.md:2 ... ok 1s 80ms 790us 417ns
+Testing examples/demo.md:13 ... ok 1ms 958us 41ns
+Testing examples/cargo-example-derive.md:8 ... ok 1s 299ms 686us 250ns
+Testing examples/cargo-example-derive.md:18 ... ok 2ms 86us 334ns
+Testing examples/cargo-example-derive.md:32 ... ok 1ms 764us 250ns
+Testing examples/cargo-example-derive.md:35 ... ok 1ms 984us 125ns
+Testing examples/tutorial_builder/04_01_possible.md:2 ... ok 1s 602ms 996us 834ns
+Testing examples/tutorial_builder/04_01_possible.md:14 ... ok 2ms 120us 583ns
+Testing examples/tutorial_builder/04_01_possible.md:17 ... ok 1ms 947us 500ns
+Testing examples/tutorial_builder/04_01_possible.md:20 ... ok 2ms 71us 125ns
+Testing examples/escaped-positional.md:7 ... ok 1s 840ms 388us 125ns
+Testing examples/escaped-positional.md:25 ... ok 2ms 283us 167ns
+Testing examples/escaped-positional.md:34 ... ok 1ms 958us 667ns
+Testing examples/escaped-positional.md:46 ... ok 1ms 707us 667ns
+Testing examples/escaped-positional.md:55 ... ok 1ms 745us 167ns
+Testing examples/tutorial_builder/04_02_validate.md:2 ... ok 2s 115ms 939us 583ns
+Testing examples/tutorial_builder/04_02_validate.md:14 ... ok 2ms 246us 625ns
+Testing examples/tutorial_builder/04_02_validate.md:17 ... ok 2ms 238us 459ns
+Testing examples/tutorial_builder/04_02_validate.md:23 ... ok 2ms 145us 250ns
+Testing examples/tutorial_derive/03_05_default_values.md:2 ... ok 2s 346ms 881us 875ns
+Testing examples/tutorial_derive/03_05_default_values.md:14 ... ok 1ms 971us 125ns
+Testing examples/tutorial_derive/03_05_default_values.md:17 ... ok 2ms 47us 41ns
+Testing examples/tutorial_builder/01_quick.md:2 ... ok 2s 638ms 212us 209ns
+Testing examples/tutorial_builder/01_quick.md:24 ... ok 2ms 67us 583ns
+Testing examples/tutorial_builder/01_quick.md:31 ... ok 1ms 802us 917ns
+Testing examples/tutorial_derive/03_03_positional.md:2 ... ok 3s 82ms 400us 750ns
+Testing examples/tutorial_derive/03_03_positional.md:14 ... ok 2ms 246us 917ns
+Testing examples/tutorial_derive/03_03_positional.md:23 ... ok 2ms 38us 667ns
+Testing examples/tutorial_derive/04_02_validate.md:2 ... ok 3s 301ms 881us 666ns
+Testing examples/tutorial_derive/04_02_validate.md:14 ... ok 2ms 75us 500ns
+Testing examples/tutorial_derive/04_02_validate.md:17 ... ok 1ms 673us 958ns
+Testing examples/tutorial_derive/04_02_validate.md:23 ... ok 1ms 752us 125ns
+Testing examples/escaped-positional-derive.md:7 ... ok 3s 616ms 123us 458ns
+Testing examples/escaped-positional-derive.md:25 ... ok 2ms 153us 750ns
+Testing examples/escaped-positional-derive.md:34 ... ok 2ms 171us 334ns
+Testing examples/escaped-positional-derive.md:46 ... ok 1ms 930us 917ns
+Testing examples/escaped-positional-derive.md:55 ... ok 1ms 791us 333ns
+Testing examples/tutorial_builder/04_04_custom.md:2 ... ok 3s 574ms 586us 875ns
+Testing examples/tutorial_builder/04_04_custom.md:20 ... ok 2ms 78us 417ns
+Testing examples/tutorial_builder/04_04_custom.md:28 ... ok 1ms 878us 917ns
+Testing examples/tutorial_builder/04_04_custom.md:31 ... ok 1ms 835us 500ns
+Testing examples/tutorial_builder/04_04_custom.md:39 ... ok 1ms 646us 958ns
+Testing examples/tutorial_builder/04_04_custom.md:48 ... ok 1ms 775us 250ns
+Testing examples/tutorial_derive/02_apps.md:2 ... ok 3s 583ms 513us 167ns
+Testing examples/tutorial_derive/02_apps.md:13 ... ok 1ms 862us 250ns
+Testing examples/cargo-example.md:8 ... ok 3s 476ms 743us
+Testing examples/cargo-example.md:18 ... ok 2ms 60us 167ns
+Testing examples/cargo-example.md:32 ... ok 2ms 141us 875ns
+Testing examples/cargo-example.md:35 ... ok 1ms 748us 834ns
+Testing examples/tutorial_derive/01_quick.md:2 ... ok 3s 377ms 39us 916ns
+Testing examples/tutorial_derive/01_quick.md:24 ... ok 2ms 7us 167ns
+Testing examples/tutorial_derive/01_quick.md:31 ... ok 1ms 659us
+Testing examples/find.md:4 ... ok 3s 582ms 662us 333ns
+Testing examples/find.md:22 ... ok 8ms 326us 792ns
+Testing examples/find.md:44 ... ok 7ms 901us 292ns
+Testing examples/tutorial_builder/03_04_subcommands.md:2 ... ok 3s 592ms 496us 500ns
+Testing examples/tutorial_builder/03_04_subcommands.md:15 ... ok 5ms 823us 209ns
+Testing examples/tutorial_builder/03_04_subcommands.md:27 ... ok 2ms 286us 750ns
+Testing examples/tutorial_builder/03_04_subcommands.md:37 ... ok 2ms 99us 625ns
+Testing examples/tutorial_builder/03_04_subcommands.md:56 ... ok 1ms 555us 750ns
+Testing examples/tutorial_builder/03_04_subcommands.md:59 ... ok 1ms 576us 125ns
+Testing examples/tutorial_derive/03_06_optional.md:2 ... ok 3s 569ms 828us 750ns
+Testing examples/tutorial_derive/03_06_optional.md:14 ... ok 5ms 56us
+Testing examples/tutorial_derive/03_06_optional.md:17 ... ok 3ms 343us
+Testing examples/tutorial_builder/02_app_settings.md:2 ... ok 3s 490ms 586us 916ns
+Testing examples/tutorial_builder/04_02_parse.md:2 ... ok 2s 851ms 146us 625ns
+Testing examples/tutorial_builder/04_02_parse.md:14 ... ok 2ms 83us 667ns
+Testing examples/tutorial_builder/04_02_parse.md:17 ... ok 1ms 759us 84ns
+Testing examples/tutorial_builder/04_02_parse.md:23 ... ok 3s 484ms 44us 291ns
+Testing examples/tutorial_derive/03_03_positional_mult.md:2 ... ok 3s 464ms 743us 42ns
+Testing examples/tutorial_derive/03_03_positional_mult.md:14 ... ok 6ms 732us 792ns
+Testing examples/tutorial_derive/03_03_positional_mult.md:17 ... ok 5ms 318us
+Testing examples/tutorial_derive/03_03_positional_mult.md:20 ... ok 4ms 627us 958ns
+Testing examples/tutorial_derive/04_03_relations.md:2 ... ok 3s 529ms 600us 167ns
+Testing examples/tutorial_derive/04_03_relations.md:20 ... ok 2ms 94us 542ns
+Testing examples/tutorial_derive/04_03_relations.md:29 ... ok 2ms 3us 750ns
+Testing examples/tutorial_derive/04_03_relations.md:32 ... ok 1ms 798us 459ns
+Testing examples/tutorial_derive/04_03_relations.md:40 ... ok 2ms 65us 125ns
+Testing examples/tutorial_derive/04_03_relations.md:49 ... ok 1ms 573us 500ns
+Testing examples/tutorial_derive/03_01_flag_bool.md:2 ... ok 3s 428ms 119us 417ns
+Testing examples/tutorial_derive/03_01_flag_bool.md:12 ... ok 2ms 107us 166ns
+Testing examples/tutorial_derive/03_01_flag_bool.md:15 ... ok 2ms 19us 584ns
+Testing examples/tutorial_derive/03_01_flag_bool.md:18 ... ok 1ms 752us 750ns
+Testing examples/tutorial_derive/03_04_subcommands.md:2 ... ok 3s 347ms 531us 83ns
+Testing examples/tutorial_derive/03_04_subcommands.md:15 ... ok 7ms 882us 42ns
+Testing examples/tutorial_derive/03_04_subcommands.md:27 ... ok 4ms 629us 708ns
+Testing examples/tutorial_derive/03_04_subcommands.md:35 ... ok 2ms 501us 708ns
+Testing examples/tutorial_derive/03_04_subcommands.md:55 ... ok 2ms 686us 875ns
+Testing examples/tutorial_derive/03_04_subcommands.md:58 ... ok 2ms 889us 83ns
+Testing examples/tutorial_derive/02_crate.md:2 ... ok 3s 339ms 633us 375ns
+Testing examples/tutorial_derive/02_crate.md:13 ... ok 1ms 903us 333ns
+Testing examples/tutorial_builder/03_03_positional.md:2 ... ok 3s 334ms 602us 833ns
+Testing examples/tutorial_builder/03_03_positional.md:14 ... ok 5ms 410us 459ns
+Testing examples/tutorial_builder/03_03_positional.md:17 ... ok 3ms 828us 375ns
+Testing examples/tutorial_builder/03_02_option_mult.md:2 ... ok 3s 466ms 916us 166ns
+Testing examples/tutorial_builder/03_02_option_mult.md:12 ... ok 2ms 45us 375ns
+Testing examples/tutorial_builder/03_02_option_mult.md:15 ... ok 1ms 858us 542ns
+Testing examples/tutorial_builder/03_02_option_mult.md:18 ... ok 1ms 819us
+Testing examples/tutorial_builder/03_02_option_mult.md:21 ... ok 3s 327ms 702us 416ns
+Testing examples/typed-derive/fn_parser.md:3 ... ok 224ms 426us 375ns
+Testing examples/typed-derive/fn_parser.md:14 ... ok 4ms 213us 458ns
+Testing examples/typed-derive/fn_parser.md:17 ... ok 2ms 747us 709ns
+Testing examples/typed-derive/fn_parser.md:23 ... ok 2ms 294us 959ns
+Testing examples/typed-derive/builtin.md:3 ... ok 3s 340ms 713us 375ns
+Testing examples/typed-derive/builtin.md:15 ... ok 4ms 128us 959ns
+Testing examples/typed-derive/builtin.md:18 ... ok 2ms 464us 958ns
+Testing examples/typed-derive/builtin.md:21 ... ok 2ms 53us
+Testing examples/typed-derive/builtin.md:28 ... ok 2ms 639us 500ns
+Testing examples/typed-derive/builtin.md:39 ... ok 1ms 977us 833ns
+Testing examples/typed-derive/builtin.md:42 ... ok 2ms 269us 916ns
+Testing examples/typed-derive/builtin.md:45 ... ok 2ms 343us 333ns
+Testing examples/typed-derive/builtin.md:52 ... ok 1ms 990us 834ns
+Testing examples/typed-derive/custom.md:3 ... ok 2ms 235us 292ns
+Testing examples/typed-derive/custom.md:22 ... ok 1ms 937us 709ns
+Testing examples/typed-derive/custom.md:25 ... ok 2ms 337us 708ns
+Testing examples/typed-derive/custom.md:28 ... ok 1ms 730us 542ns
+Testing examples/typed-derive/custom.md:34 ... ok 1ms 742us 917ns
+Testing examples/typed-derive/implicit.md:3 ... ok 2ms 591us 125ns
+Testing examples/typed-derive/implicit.md:34 ... ok 1ms 935us 958ns
+Testing examples/typed-derive/implicit.md:37 ... ok 2ms 243us 666ns
+Testing examples/typed-derive/implicit.md:47 ... ok 2ms 199us 875ns
+Testing examples/typed-derive/implicit.md:54 ... ok 1ms 960us 167ns
+Testing examples/typed-derive/implicit.md:57 ... ok 2ms 51us
+Testing examples/typed-derive/implicit.md:67 ... ok 2ms 10us 375ns
+Testing examples/typed-derive/implicit.md:70 ... ok 2ms 377us 41ns
+Testing examples/typed-derive/implicit.md:80 ... ok 1ms 890us 584ns
+Testing examples/typed-derive/implicit.md:83 ... ok 1ms 871us 542ns
+Testing examples/typed-derive/implicit.md:90 ... ok 1ms 680us 708ns
+Testing examples/git-derive.md:7 ... ok 3s 144ms 902us 833ns
+Testing examples/git-derive.md:24 ... ok 7ms 494us 875ns
+Testing examples/git-derive.md:40 ... ok 6ms 175us 416ns
+Testing examples/git-derive.md:55 ... ok 4ms 244us 209ns
+Testing examples/git-derive.md:67 ... ok 3ms 223us 417ns
+Testing examples/git-derive.md:74 ... ok 2ms 678us 208ns
+Testing examples/git-derive.md:101 ... ok 3ms 53us 709ns
+Testing examples/git-derive.md:108 ... ok 2ms 535us 875ns
+Testing examples/git-derive.md:117 ... ok 2ms 202us 292ns
+Testing examples/git-derive.md:120 ... ok 2ms 766us 917ns
+Testing examples/git-derive.md:123 ... ok 2ms 332us 208ns
+Testing examples/git-derive.md:126 ... ok 1ms 933us 792ns
+Testing examples/git-derive.md:133 ... ok 2ms 421us 125ns
+Testing examples/git-derive.md:140 ... ok 2ms 207us 917ns
+Testing examples/git-derive.md:154 ... ok 1ms 861us 500ns
+Testing examples/git-derive.md:157 ... ok 2ms 142us 916ns
+Testing examples/git-derive.md:160 ... ok 2ms 220us 209ns
+Testing examples/git-derive.md:163 ... ok 2ms 259us 250ns
+Testing examples/git-derive.md:166 ... ok 1ms 893us 417ns
+Testing examples/git-derive.md:169 ... ok 1ms 898us 250ns
+Testing examples/tutorial_builder/03_05_default_values.md:2 ... ok 3s 123ms 808us 375ns
+Testing examples/tutorial_builder/03_05_default_values.md:14 ... ok 6ms 258us 667ns
+Testing examples/tutorial_builder/03_05_default_values.md:17 ... ok 4ms 743us 750ns
+Testing examples/tutorial_derive/04_01_enum.md:2 ... ok 3s 128ms 227us 875ns
+Testing examples/tutorial_derive/04_01_enum.md:22 ... ok 7ms 713us 500ns
+Testing examples/tutorial_derive/04_01_enum.md:34 ... ok 2ms 942us 625ns
+Testing examples/tutorial_derive/04_01_enum.md:37 ... ok 1ms 953us 625ns
+Testing examples/tutorial_derive/04_01_enum.md:40 ... ok 2ms 355us 250ns
+Testing examples/tutorial_derive/04_02_parse.md:2 ... ok 2ms 461us 667ns
+Testing examples/tutorial_derive/04_02_parse.md:14 ... ok 2ms 366us 667ns
+Testing examples/tutorial_derive/04_02_parse.md:17 ... ok 2ms 49us 875ns
+Testing examples/tutorial_derive/04_02_parse.md:23 ... ok 1ms 803us 250ns
+Testing examples/tutorial_builder/02_apps.md:2 ... ok 3s 148ms 44us 208ns
+Testing examples/tutorial_builder/02_apps.md:13 ... ok 6ms 541us 917ns
+Testing examples/git.md:5 ... ok 3s 145ms 555us 209ns
+Testing examples/git.md:22 ... ok 7ms 215us 500ns
+Testing examples/git.md:38 ... ok 5ms 64us 42ns
+Testing examples/git.md:53 ... ok 2ms 392us 666ns
+Testing examples/git.md:65 ... ok 2ms 886us 667ns
+Testing examples/git.md:72 ... ok 3ms 474us 209ns
+Testing examples/git.md:99 ... ok 2ms 918us 708ns
+Testing examples/git.md:106 ... ok 3ms 5us 375ns
+Testing examples/git.md:115 ... ok 2ms 57us 583ns
+Testing examples/git.md:118 ... ok 1ms 904us 791ns
+Testing examples/git.md:121 ... ok 2ms 178us 792ns
+Testing examples/git.md:124 ... ok 2ms 267us 625ns
+Testing examples/git.md:131 ... ok 2ms 257us 84ns
+Testing examples/git.md:138 ... ok 2ms 514us 709ns
+Testing examples/git.md:152 ... ok 1ms 970us 666ns
+Testing examples/git.md:155 ... ok 1ms 771us 834ns
+Testing examples/git.md:158 ... ok 1ms 979us 917ns
+Testing examples/git.md:161 ... ok 1ms 967us 458ns
+Testing examples/git.md:164 ... ok 1ms 767us 250ns
+Testing examples/git.md:167 ... ok 1ms 885us 84ns
+Testing examples/tutorial_derive/03_02_option_mult.md:2 ... ok 2ms 160us 875ns
+Testing examples/tutorial_derive/03_02_option_mult.md:12 ... ok 1ms 818us 625ns
+Testing examples/tutorial_derive/03_02_option_mult.md:15 ... ok 1ms 726us 708ns
+Testing examples/tutorial_derive/03_02_option_mult.md:18 ... ok 1ms 580us 208ns
+Testing examples/tutorial_derive/03_02_option_mult.md:21 ... ok 1ms 722us 250ns
+Testing examples/tutorial_builder/02_crate.md:2 ... ok 3s 117ms 110us 292ns
+Testing examples/tutorial_builder/02_crate.md:13 ... ok 2ms 303us 833ns
+Testing examples/tutorial_derive/04_04_custom.md:2 ... ok 3s 151ms 498us 416ns
+Testing examples/tutorial_derive/04_04_custom.md:20 ... ok 7ms 470us 708ns
+Testing examples/tutorial_derive/04_04_custom.md:28 ... ok 5ms 38us 584ns
+Testing examples/tutorial_derive/04_04_custom.md:31 ... ok 4ms 632us 625ns
+Testing examples/tutorial_derive/04_04_custom.md:39 ... ok 3ms 790us 542ns
+Testing examples/tutorial_derive/04_04_custom.md:48 ... ok 3ms 365us 834ns
+Testing examples/tutorial_derive/03_01_flag_count.md:2 ... ok 3s 153ms 441us 542ns
+Testing examples/tutorial_derive/03_01_flag_count.md:12 ... ok 2ms 50us 750ns
+Testing examples/tutorial_derive/03_01_flag_count.md:15 ... ok 1ms 785us 42ns
+Testing examples/tutorial_derive/03_01_flag_count.md:18 ... ok 1ms 811us 209ns
+Testing examples/derive_ref/interop_tests.md:6 ... ok 250ms 775us 334ns
+Testing examples/derive_ref/interop_tests.md:16 ... ok 2ms 87us 416ns
+Testing examples/derive_ref/interop_tests.md:26 ... ok 1ms 937us 166ns
+Testing examples/derive_ref/interop_tests.md:36 ... ok 2ms 9us 791ns
+Testing examples/derive_ref/interop_tests.md:49 ... ok 3s 575ms 879us 42ns
+Testing examples/derive_ref/interop_tests.md:55 ... ok 1ms 871us 583ns
+Testing examples/derive_ref/interop_tests.md:63 ... ok 1ms 804us 708ns
+Testing examples/derive_ref/interop_tests.md:71 ... ok 2ms 55us 333ns
+Testing examples/derive_ref/interop_tests.md:82 ... ok 1ms 986us 167ns
+Testing examples/derive_ref/interop_tests.md:95 ... ok 3s 434ms 817us 833ns
+Testing examples/derive_ref/interop_tests.md:111 ... ok 2ms 135us 42ns
+Testing examples/derive_ref/interop_tests.md:124 ... ok 2ms 424us 42ns
+Testing examples/derive_ref/interop_tests.md:141 ... ok 2ms 580us 959ns
+Testing examples/derive_ref/interop_tests.md:154 ... ok 1ms 850us 250ns
+Testing examples/derive_ref/interop_tests.md:168 ... ok 2ms 163us 708ns
+Testing examples/derive_ref/interop_tests.md:186 ... ok 2ms 120us 625ns
+Testing examples/derive_ref/interop_tests.md:199 ... ok 3s 228ms 289us 541ns
+Testing examples/derive_ref/interop_tests.md:212 ... ok 5ms 625us 584ns
+Testing examples/derive_ref/interop_tests.md:225 ... ok 3ms 465us 625ns
+Testing examples/derive_ref/interop_tests.md:240 ... ok 2ms 316us 166ns
+Testing examples/multicall-hostname.md:6 ... ok 3s 210ms 711us 833ns
+Testing examples/tutorial_builder/03_03_positional_mult.md:2 ... ok 3s 257ms 554us 834ns
+Testing examples/tutorial_builder/03_03_positional_mult.md:14 ... ok 5ms 376us 833ns
+Testing examples/tutorial_builder/03_03_positional_mult.md:17 ... ok 4ms 340us
+Testing examples/tutorial_builder/03_03_positional_mult.md:20 ... ok 3ms 251us 333ns
+Testing examples/multicall-busybox.md:6 ... ok 3s 254ms 436us 583ns
+Testing examples/multicall-busybox.md:9 ... ok 3ms 113us 42ns
+Testing examples/multicall-busybox.md:18 ... ok 3ms 241us 42ns
+Testing examples/multicall-busybox.md:26 ... ok 3ms 85us 833ns
+Testing examples/tutorial_builder/03_01_flag_count.md:2 ... ok 3s 19ms 307us 292ns
+Testing examples/tutorial_builder/03_01_flag_count.md:12 ... ok 4ms 384us 125ns
+Testing examples/tutorial_builder/03_01_flag_count.md:15 ... ok 3ms 139us 458ns
+Testing examples/tutorial_builder/03_01_flag_count.md:18 ... ok 3ms 623us 167ns
+Testing examples/tutorial_builder/03_06_required.md:2 ... ok 3s 215ms 385us 500ns
+Testing examples/tutorial_builder/03_06_required.md:14 ... ok 1ms 903us 208ns
+Testing examples/tutorial_builder/03_06_required.md:23 ... ok 1ms 749us
+Testing examples/tutorial_builder/03_02_option.md:2 ... ok 3s 143ms 97us 500ns
+Testing examples/tutorial_builder/03_02_option.md:12 ... ok 1ms 869us 250ns
+Testing examples/tutorial_builder/03_02_option.md:15 ... ok 1ms 872us 542ns
+Testing examples/tutorial_builder/03_02_option.md:18 ... ok 1ms 997us 834ns
+Testing examples/tutorial_builder/03_02_option.md:21 ... ok 1ms 601us 709ns
+Testing examples/tutorial_builder/03_02_option.md:24 ... ok 1ms 988us 417ns
+Testing examples/tutorial_builder/03_02_option.md:27 ... ok 1ms 984us 542ns
+Testing examples/tutorial_builder/03_01_flag_bool.md:2 ... ok 3s 209ms 425us 333ns
+Testing examples/tutorial_builder/03_01_flag_bool.md:12 ... ok 1ms 851us 792ns
+Testing examples/tutorial_builder/03_01_flag_bool.md:15 ... ok 1ms 639us 208ns
+Testing examples/tutorial_builder/03_01_flag_bool.md:18 ... ok 1ms 777us 84ns
+Testing examples/tutorial_derive/03_02_option.md:2 ... ok 3s 203ms 156us 542ns
+Testing examples/tutorial_derive/03_02_option.md:12 ... ok 1ms 788us 83ns
+Testing examples/tutorial_derive/03_02_option.md:21 ... ok 1ms 624us 500ns
+Testing examples/tutorial_derive/03_02_option.md:24 ... ok 1ms 844us 417ns
+Testing examples/tutorial_derive/03_02_option.md:27 ... ok 3ms 118us 500ns
+Testing examples/tutorial_derive/03_02_option.md:30 ... ok 2ms 439us 791ns
+Testing examples/tutorial_derive/03_02_option.md:33 ... ok 2ms 162us 416ns
+Testing examples/pacman.md:5 ... ok 3s 227ms 850us 84ns
+Testing examples/pacman.md:12 ... ok 2ms 332us 375ns
+Testing examples/pacman.md:19 ... ok 2ms 195us 83ns
+Testing examples/pacman.md:26 ... ok 2ms 24us 42ns
+Testing examples/pacman.md:29 ... ok 2ms 138us 375ns
+Testing examples/pacman.md:37 ... ok 2ms 77us 250ns
+Testing examples/pacman.md:51 ... ok 1ms 769us 209ns
+Testing examples/pacman.md:68 ... ok 1ms 748us 541ns
+Testing examples/tutorial_builder/04_01_enum.md:2 ... ok 3s 183ms 17us 625ns
+Testing examples/tutorial_builder/04_01_enum.md:22 ... ok 1ms 888us
+Testing examples/tutorial_builder/04_01_enum.md:34 ... ok 1ms 820us
+Testing examples/tutorial_builder/04_01_enum.md:37 ... ok 1ms 853us 542ns
+Testing examples/tutorial_builder/04_01_enum.md:40 ... ok 1ms 838us 250ns
+     Running tests/macros.rs (target/debug/deps/macros-bfe2fc97186b3186)
+     Running tests/ui.rs (target/debug/deps/ui-ee4d5bb602fcdc05)
+Testing tests/ui/V_flag_stdout.toml ... ok 223ms 873us 500ns
+Testing tests/ui/version_flag_stdout.toml ... ok 223ms 906us 500ns
+Testing tests/ui/error_stderr.toml ... ok 223ms 958us 708ns
+Testing tests/ui/help_flag_stdout.toml ... ok 223ms 918us 916ns
+Testing tests/ui/h_flag_stdout.toml ... ok 224ms 149us 541ns
+Testing tests/ui/help_cmd_stdout.toml ... ok 224ms 33us 709ns
+Testing tests/ui/arg_required_else_help_stderr.toml ... ok 224ms 213us 208ns
+     Running unittests examples/tutorial_builder/05_01_assert.rs (target/debug/examples/05_01_assert-18055319cae39911)
+     Running unittests examples/tutorial_derive/05_01_assert.rs (target/debug/examples/05_01_assert_derive-49bcd9f3f3c04309)
+     Running unittests src/lib.rs (target/debug/deps/clap_bench-596875f342ae74f6)
+     Running unittests src/lib.rs (target/debug/deps/clap_builder-1dc1ccfcc705ccac)
+     Running unittests src/lib.rs (target/debug/deps/clap_complete-985b10e4128ce29c)
+     Running tests/examples.rs (target/debug/deps/examples-eb2152d2acef72ab)
+There are no trycmd tests enabled yet
+     Running tests/testsuite/main.rs (target/debug/deps/testsuite-d1a82842f0564d0a)
+     Running unittests src/lib.rs (target/debug/deps/clap_complete_nushell-16c905b20423f0fd)
+     Running tests/common.rs (target/debug/deps/common-4085ad9a9af92992)
+     Running tests/completion.rs (target/debug/deps/completion-cd10128ae8e87524)
+     Running tests/nushell.rs (target/debug/deps/nushell-80866fad11946f38)
+     Running unittests src/lib.rs (target/debug/deps/clap_derive-9b379acc0f319660)
+     Running unittests src/lib.rs (target/debug/deps/clap_lex-d657205949ee158f)
+     Running tests/testsuite/main.rs (target/debug/deps/testsuite-0cc790f262eaec84)
+     Running unittests src/lib.rs (target/debug/deps/clap_mangen-9483d141891f4be2)
+     Running tests/testsuite/main.rs (target/debug/deps/testsuite-e00c318d7e0d3371)
+   Doc-tests clap
+   Doc-tests clap_bench
+   Doc-tests clap_builder
+   Doc-tests clap_complete
+   Doc-tests clap_complete_nushell
+   Doc-tests clap_derive
+   Doc-tests clap_lex
+   Doc-tests clap_mangen

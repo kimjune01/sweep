@@ -55,47 +55,57 @@ Seven rounds of adversarial bug hunt (`bug-hunt.md` is the current report). 30 b
 
 ## Up next
 
-Ordered by readiness, not strict priority.
+**Dual-mandate filter** (2026-05-17 grooming): every item ordered by whether it moves both axes — 📈 merge rate + 🔬 falsifiable hypothesis. Ergonomics-only (🛠) demoted to "Later" or "Ergonomics (single-operator deferral)" below. Refactor-only items (code purity, no value delta) demoted to "Defer until witness."
 
-### 1. clig.dev ergonomics pass — `BOOTSTRAP-CLIG.md`
+### 📈🔬 Dual-axis (do these first)
 
-Self-contained prompt for a fresh session. Ten sections: help-text examples, exit codes (0/1/2), stdout/stderr split, `--json` on read commands, confirmation prompts on destructive ops, `NO_COLOR`, tab completion, `--version`, `-q / --quiet`, misuse-vs-traceback messages. CLI-only; substrate untouched.
+#### 1. Pre-investigate: discussion as prework
 
-### 2. Retro skill markdown — `~/.claude/skills/retro/skill.md`
+📈 cuts re-discovery; PR body references prior maintainer thinking. 🔬 falsifier: pre-investigate cards merge at same rate as bare-investigate cards over N≥20 pairs → kill the pre-pass. See HYPOTHESIS_GRAPH H24 + the "From bulk-attest practice round" section below.
 
-The `/retro` skill currently has the old prose. Replace with: read events via `sweep observe events`, read counters via `sweep observe counters`, draft four SOAP sections, call `sweep retro record --subjective ... --plan ...`. `scripts/draft-retro.py` is the working prototype to lift from.
+#### 2. Maintainer-ROI ranking (H24 implementation)
 
-### 3. Inbox writer side — close round 7's high-severity gap
+📈 sorts the budget toward higher-prior bets. 🔬 H24 has explicit falsifiers (ROI score correlates with components but not merge rate → refit; ROI score correlates with neither → kill the feature). Slots between sift and triage as a sort key. Witness: bulk-attest practice round's wide variance in outcome wasn't predicted by language/size, but did correlate with rough ROI proxies.
 
-Pre-existing architectural debt. `_acks.jsonl` and `_started.jsonl` have no writers; every message stays in `queued` forever. The cockpit's `in_flight` and `done` columns are structurally permanent zeros.
+#### 3. Adversarial cascade in qa
 
-Proposed shape: actors emit `observe.event("actor_started" / "actor_completed", msg_id=...)`. `inbox_state.py` derives buckets by replaying events instead of reading separate jsonl files. Three files collapse to one; the cursor we already have demarcates retro's reading window.
+📈 catches bugs round-1 misses, lifts merge-on-real-fix rate. 🔬 falsifier: round-2/round-3 produce zero additional verdicts vs round-1 over N≥50 cards → cascade is theater, cut it. `qa_volley_hist` is the instrumentation already in place. Wire the round-2/round-3 retry loop in `qa_actor.py`.
 
-### 4. PrStateWorkflow migration
+#### 4. /compose skill
 
-Round 7 M1. The Temporal workflow still calls the coupled `deliver_to_inbox`; the decoupled `deposit_classified` + `route_classified` pair is only used by the CLI. Migrate the workflow so the documented benefit (routing rule changes don't require re-classification) actually applies under cron.
+📈 PR body quality is a known merge predictor (H17 hypothesis-graph footer; same axis applies to compose-written sections). 🔬 falsifier: PRs whose compose template-provenance differs from skill-provenance merge at the same rate → template is enough, kill the skill. Wiring is in place (qa → attest → compose → submit + idempotent splice); the skill replaces the template.
 
-### 5. Adversarial cascade in qa
+#### 5. Auto-infer test_env / test_cmd / test_setup_cmd
 
-`qa_volley_hist` is always `:1` because the codex → gemini → codex cascade isn't implemented yet. Wire the round-2/round-3 retry loop in `qa_actor.py` so the histogram becomes non-degenerate and reviewer disagreement actually drives more rounds.
+📈 every new repo currently needs 3 manual `sweep retro set` invocations before its first attest; that friction throttles the substrate's reach. 🔬 falsifier: heuristic-inferred params produce attest verdicts at the same rate as operator-set ones → ship the heuristic; otherwise the LLM-inference fallback. Detect from lockfiles (pnpm-lock.yaml, Cargo.lock, go.sum, Gemfile.lock) + workflow YAMLs.
 
-### 6. Force-push producer
+#### 6. Codex/gemini attestations under `attestations/<slug>/` umbrella
 
-Renderer is ready (⬆️ in the inbox); no producer yet. Candidates:
-- `pr_state` detects "rebase" / "force-push" / "squash" in review comments.
-- `drip` escalates to respondable when its automated push hits non-fast-forward.
-- Branch-protection / `CONTRIBUTING.md` parsing for repos that require linear history.
+📈 multi-family review footer in PR body extends the H17 hypothesis ("hypothesis-graph link in PR body raises merge rate") with a second receipt class. 🔬 measurable lift over PRs with attestation footer only. Today qa publishes the test triple; codex/gemini verdicts stay substrate-private. Symmetric work — publish `codex-attestation.json` + `gemini-attestation.json` (verdict + sha256, not full transcript; avoids bot-shaped-communication critique).
 
-Pick one, prototype, see if it earns its keep.
+#### 7. Force-push producer
 
-### 7. Onboarding
+📈 PRs that need rebase / force-push block merge until the operator notices; surfacing them in the inbox shortens the human latency. 🔬 falsifier: surfaced force-push intents that the operator clears at the same rate as ambient noticing → channel was already adequate. Renderer is ready (⬆️); candidates: pr_state comment scan, drip non-fast-forward escalation, CONTRIBUTING.md parse.
 
-Friction we keep hitting and a newcomer would hit harder. README's quick-start covers commands; this covers the gap between "ran the commands" and "knows what's happening."
+#### 8. Pokayoke migration
 
-- **Hardlink-vs-symlink convention.** Quick-start mixes both: state-dir uses `ln -s`, skill files and HYPOTHESIS_GRAPH use `ln` (hard). Hardlinks silently detach on `git checkout` of a different version (working tree gets a new inode; the `~/.sweep` side keeps pointing at the old). Pick a rule per file class and document the failure mode. Likely: symlinks for skill files (point at versioned source), hardlinks only for files actively edited on both sides.
-- **`~/.sweep/` directory map.** What lives where, what's ephemeral cache (`cache/`), what's append-only log (`events.jsonl`), what's pager state (`retros/`), what's tamper-evident (`attestations/`). One section in README or a `STATE.md` next to it. Currently a newcomer has to grep.
-- **TUI ↔ CLI relationship.** `sweep-tui` shells out to `sweep` for every action; if `sweep` isn't on PATH the TUI dies with an opaque "executable file not found." Make this explicit in README's TUI section (the install step now fixes the symptom but not the explanation).
-- **First-cycle walkthrough.** README §5 is a command catalog. Newcomer wants narrative: clone → install → `prospect` produces what → triage filters how → drip queues → push → retro folds → repeat. One annotated example PR through the whole loop, with a screenshot of `sweep cockpit` at each stage.
+📈 indirect — collapses scattered intake checks into one contract, so new wrong-shape classes only require one new function + entry in per-actor list. 🔬 measurable: drop in `andon_unexpected` events (the rejection-as-third-outcome trichotomy lands properly). Module shipped 2026-05-17; callers (attest, SkillActor, qa, compose) still have ad-hoc inline checks. Sequence: attest → SkillActor universal → qa → compose.
+
+### Defer until witness (no current pain)
+
+- **Inbox writer side** (was #3). Cockpit's in_flight/done columns are zeros; that's cosmetic, doesn't change a merge. Pre-existing architectural debt with no measurable impact on shipped PRs.
+- **PrStateWorkflow migration** (was #4). Decoupled deposit_classified + route_classified pair already works via CLI; the workflow-side migration is code purity. Defer until the documented benefit (routing rule changes without re-classification) is actually needed.
+- **respond/post external-state tracking.** Defensive; observed failure rate ~0.
+- **Branch-on-remote sanity check generalization.** investigate_cycle handles its case; generalization is defensive. Defer until witness ghost-branch case repeats outside investigate.
+
+### Ergonomics (single-operator deferral)
+
+These improve operator quality-of-life without moving the merge-rate or hypothesis-test axes. Single operator currently; they earn their keep when a second operator joins.
+
+- **clig.dev ergonomics pass** (was #1). CLI polish: exit codes, --json, confirmations, NO_COLOR, completion, --version, --quiet. BOOTSTRAP-CLIG.md self-contained.
+- **Retro skill markdown** (was #2). Replaces old prose with `sweep observe events`-driven SOAP drafting. Operator-facing.
+- **Onboarding** (was #7). Hardlink/symlink convention; ~/.sweep/ directory map; TUI/CLI relationship; first-cycle walkthrough. README §5 is currently a command catalog, not a narrative.
+- **Documentation: operator escape hatches.** When operator bypasses andon manually. Onboarding-adjacent.
 
 ## Later
 
@@ -104,21 +114,18 @@ Friction we keep hitting and a newcomer would hit harder. README's quick-start c
 - **TUI kanban item selection.** `sweep-tui` currently exposes the two pipeline-wide flags as a horizontal action bar. Per-item actions (select a PR row in the kanban, ack / open in browser / clear from inbox) would let the TUI cover the swim-lane operator surface too. Out of scope until the bar version earns its keep.
 - **Wish front door for remote control.** Wrap `sweep-tui` in [Charm Wish](https://github.com/charmbracelet/wish) so `ssh sweep@factory` lands directly in the TUI with no shell in between, no local binary install, no login session. Today's path (`ssh factory; sweep-tui`) already works; Wish collapses it into one hop. Make sense when sweep runs unattended on a remote box and the operator wants a single-command control plane. ~50 lines of Go, one `sweep-tui --serve :2222` flag. Defer until there's a real remote deployment that wants it.
 
-### From monoidal-contract audit (2026-05-17)
+### Shipped during 2026-05-17 grooming pass
 
-These came out of the per-actor contract vibes-check. Substrate is mostly clean; the items below are honest loose joints.
+- `sweep evict flush --repo X` — walks every actor inbox jsonl and drops cards for the evicted repo. Paired with the activity-entry short-circuit on SkillActor.
+- `sweep retro remediation-prompt` — scans events + andon markers for fix-class shapes (no_tests_in_pr, stale-andon-marker), writes bootstrap prompts to `~/.sweep/remediation-prompts/`. Next pattern: `test_setup_cmd` inference from lockfile presence.
+- `sweep cache rebuild-image` + `sweep-tester:latest` — fat docker image (Rust+Go+Python+Node+C++ toolchain) as the default `test_env`, replacing per-language image overrides.
+- `test_attestation` upgrade — applies test-only diff from fix branch onto master before the master-side gate, so PRs that ADD a test get gated on "does the new test fail on master" rather than the misleading "test suite passes on master" trivial outcome.
+- `no_tests_in_pr` verdict — distinct routing path (non-halting; sinks the PR with structured reason). Distinguishes "PR adds no test" from "test exists but passes on master." Pairs with the remediation-prompt write-tests bootstrap.
+- `sweep qa backfill-bulk` — bulk-enqueues open authored PRs into qa.jsonl with sink-pair / eviction filters and auto-sinks the approved ones.
 
-- **/compose skill.** compose-actor is a passthrough today — no PR title/body is actually composed; /drip --push writes one inline. Wiring is in place (qa → compose → submit), so when the skill lands the actor immediately produces a real artifact (payload['pr_title'], payload['pr_body']). Until then the gap is benign: drip's inline writer keeps working.
-- **respond/post external-state tracking.** Both actors' artifacts live on github (PR URL, comment URL). Idempotency relies on gh's own dedup. Mid-call crashes can leave inconsistent state. Improvement: record the gh-returned URL into a local sidecar (`~/.sweep/published/<repo>__<pr>.json`) after success; refuse re-create when sidecar exists with matching head SHA. Cheap; deferred because the failure rate observed is ~0 today.
-- **Auto-infer test_env per repo.** Today `test_env` is operator-set via `sweep retro set --key test_env`. Phase B: heuristic auto-detect from `.github/workflows/*.yml` (look for `runs-on: ubuntu-…` or `container:` keys) and Dockerfile presence. Phase C: LLM inference under `infer_test_env(worktree, repo)` sibling to `infer_test_cmd`. Defer until N>5 repos need manual config and the pattern is clear.
-- **Codex/gemini attestations under `attestations/<slug>/` umbrella.** Today test_attestation publishes to the worktree; codex_review + gemini_review still write only to `~/.sweep/attestations/<msg_id>/` (substrate-private). Symmetric work: write `codex-attestation.json` + `gemini-attestation.json` (verdict + sha256, NOT full transcript — avoids the bot-shaped-communication critique) into `attestations/<slug>/` so the manifest carries the full review chain publicly.
-- **Branch-on-remote sanity check generalization.** investigate_cycle now ls-remotes the fix branch before kicking qa (catches the [[O1]] ghost-branch case). Similar pattern would help other actors that depend on remote state being a particular shape — submit's `_final_checks` could ls-remote the PR's base ref before declaring it mergeable, etc.
+### Defer until witness (continued)
 
-### From punch list following O8 (publish-or-perish, 2026-05-17)
-
-Items 1–4 shipped (qa→compose handoff, container test_env per repo, persistent build cache, retro_params plumbing). Item 5 outstanding:
-
-- **Documentation: operator escape hatches.** When does the operator bypass the andon manually? `sweep qa one` (single-PR dev run), direct `cargo test` in the worktree (debugging a specific failure), `sweep dry off` (resume after structural fix). Each has a legitimate use; the doc names which and warns against the rest. Write this when the next operator-onboarding happens.
+- **Branch-on-remote sanity check generalization.** investigate_cycle now ls-remotes the fix branch before kicking qa (catches the [[O1]] ghost-branch case). Similar pattern would help other actors that depend on remote state being a particular shape — submit's `_final_checks` could ls-remote the PR's base ref before declaring it mergeable. Generalization deferred until the witness pattern repeats outside investigate.
 
 ## Flagged, not doing (yet)
 

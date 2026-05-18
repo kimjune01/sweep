@@ -48,6 +48,8 @@ def _parse_repo_pr(subject_url: str) -> tuple[str, int] | None:
         return None
 
 
+
+
 @activity.defn
 async def poll_github_notifications(since_iso: str | None = None) -> dict:
     """Fetch unread PR notifications. Returns a dict with `threads`
@@ -86,20 +88,65 @@ async def poll_github_notifications(since_iso: str | None = None) -> dict:
     threads: list[dict] = []
     for t in raw:
         subject = t.get("subject") or {}
-        if subject.get("type") != "PullRequest":
+        s_type = subject.get("type")
+        s_url = subject.get("url") or ""
+        thread_id = str(t.get("id", ""))
+        updated_at = t.get("updated_at", "")
+        reason = t.get("reason", "")
+
+        if s_type == "PullRequest":
+            parsed = _parse_repo_pr(s_url)
+            if not parsed:
+                continue
+            repo, pr = parsed
+            threads.append({
+                "kind": "pullrequest",
+                "thread_id": thread_id,
+                "repo": repo,
+                "pr": pr,
+                "subject_url": s_url,
+                "updated_at": updated_at,
+                "reason": reason,
+            })
+        elif s_type in ("CheckSuite", "WorkflowRun"):
+            # CheckSuite / WorkflowRun resolution (subject → repo, sha,
+            # PR) lives in `check.kick_check_from_subject` — keeping
+            # this module a dumb emitter. We forward the raw subject
+            # URL and let the check actor enrich.
+            repo = _parse_repo_from_subject_url(s_url)
+            if not repo:
+                continue
+            threads.append({
+                "kind": "checksuite",
+                "thread_id": thread_id,
+                "repo": repo,
+                "pr": 0,  # check actor resolves
+                "subject_url": s_url,
+                "updated_at": updated_at,
+                "reason": reason,
+            })
+        else:
+            # Issues, discussions, releases, etc. — not in remit/check's
+            # scope. Silently drop; the unread bit stays so a future
+            # widening could pick them up.
             continue
-        parsed = _parse_repo_pr(subject.get("url") or "")
-        if not parsed:
-            continue
-        repo, pr = parsed
-        threads.append({
-            "thread_id": str(t.get("id", "")),
-            "repo": repo,
-            "pr": pr,
-            "updated_at": t.get("updated_at", ""),
-            "reason": t.get("reason", ""),
-        })
     return {"threads": threads, "poll_interval_s": POLL_INTERVAL_S}
+
+
+def _parse_repo_from_subject_url(subject_url: str) -> str | None:
+    """`.../repos/owner/name/<resource>/...` → "owner/name". Used for
+    CheckSuite / WorkflowRun subject URLs where the trailing segment
+    is the resource id, not a PR number. PR-side parsing stays in
+    `_parse_repo_pr`."""
+    marker = "/repos/"
+    i = subject_url.find(marker)
+    if i < 0:
+        return None
+    tail = subject_url[i + len(marker):]
+    parts = tail.split("/")
+    if len(parts) < 2:
+        return None
+    return f"{parts[0]}/{parts[1]}"
 
 
 @activity.defn

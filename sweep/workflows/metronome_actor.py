@@ -32,7 +32,11 @@ with workflow.unsafe.imports_passed_through():
 ACTOR_NAME = "metronome"
 # Wake at least this often to re-evaluate the schedule even if no
 # entry is due — covers schedule edits applied via worker restart.
-MAX_SLEEP = timedelta(minutes=15)
+# MAX_SLEEP must be ≤ the shortest cadence in SCHEDULE — otherwise
+# sub-MAX_SLEEP cadences are silently degraded to MAX_SLEEP. Currently
+# usage runs at 5min cadence (the shortest); set MAX_SLEEP to match.
+# If a shorter cadence ever lands in SCHEDULE, lower this in lockstep.
+MAX_SLEEP = timedelta(minutes=5)
 MIN_SLEEP = timedelta(seconds=10)
 
 

@@ -35,8 +35,14 @@ from sweep.cli import tui as _tui
 from sweep.cli import waste as _waste
 from sweep.cli import wish as _wish
 from sweep.cli import pr as _pr
+from sweep.cli import project_info as _project_info
 from sweep.cli.andon import andon_app
 from sweep.cli.attest import attest_app
+from sweep.cli.broom import broom_app
+from sweep.cli.cache import cache_app
+from sweep.cli.compose import compose_app
+from sweep.cli.evict import evict_app
+from sweep.cli.cerify import cerify_app
 from sweep.cli.control import dry_app, pause_app
 from sweep.cli.lifecycle import down_app, status_app, up_app
 from sweep.cli.drip import drip_app
@@ -59,6 +65,11 @@ app.add_typer(qa_app, name="qa")
 app.add_typer(sift_app, name="sift")
 app.add_typer(inbox_app, name="inbox")
 app.add_typer(attest_app, name="attest")
+app.add_typer(broom_app, name="broom")
+app.add_typer(cache_app, name="cache")
+app.add_typer(compose_app, name="compose")
+app.add_typer(evict_app, name="evict")
+app.add_typer(cerify_app, name="cerify")
 app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
 app.add_typer(slop_offer_app, name="slop-offer")
@@ -74,6 +85,7 @@ _hygraph.register(app)
 _lanes.register(app)
 _leakdog.register(app)
 _pr.register(app)
+_project_info.register(app)
 _claim.register(app)
 _investigate.register(app)
 _missing.register(app)

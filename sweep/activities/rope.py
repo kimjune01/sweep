@@ -46,8 +46,15 @@ ROPE_INBOX = Path.home() / ".sweep" / "inbox" / "rope.jsonl"
 ROPE_TARGET_FILE = Path.home() / ".sweep" / "control" / "rope_target"
 ROPE_COOLDOWN_FILE = Path.home() / ".sweep" / "control" / "rope_cooldown"
 ROPE_LAST_FIRED_FILE = Path.home() / ".sweep" / "state" / "rope_last_fired"
+ROPE_SMOOTHED_DEPTH_FILE = Path.home() / ".sweep" / "state" / "rope_smoothed_depth.json"
 DEFAULT_TARGET = 2
 DEFAULT_COOLDOWN_S = 60
+# EWMA weight on the latest observation. 0.3 ≈ "instantaneous depth
+# accounts for 30% of the smoothed reading; the prior 70% is history."
+# Higher = more responsive, more bursty. Lower = smoother, slower to
+# react to real drains. 0.3 picks a middle that catches sustained
+# drops within ~3 ticks but ignores single-tick spikes.
+EWMA_ALPHA = 0.3
 
 
 def _read_target() -> int:
@@ -131,6 +138,36 @@ async def kick_rope_card(sender: str = "idle",
     return await _signal_actor("rope", msg)
 
 
+def _update_smoothed_depths(samples: dict[str, int]) -> dict[str, float]:
+    """EWMA update on per-actor smoothed depth. Reads the prior
+    smoothed value from disk, applies `smoothed = alpha*sample + (1-
+    alpha)*prior`, writes back, returns the new smoothed dict.
+
+    First-ever sample seeds the smoothed value at the sample itself
+    (avoids a cold-start lag from `prior=0` over-firing initially).
+    """
+    import json as _json
+    prior: dict[str, float] = {}
+    if ROPE_SMOOTHED_DEPTH_FILE.exists():
+        try:
+            prior = _json.loads(ROPE_SMOOTHED_DEPTH_FILE.read_text())
+        except (_json.JSONDecodeError, OSError):
+            prior = {}
+    new: dict[str, float] = {}
+    for actor, sample in samples.items():
+        p = prior.get(actor)
+        if p is None:
+            new[actor] = float(sample)
+        else:
+            new[actor] = EWMA_ALPHA * sample + (1 - EWMA_ALPHA) * p
+    try:
+        ROPE_SMOOTHED_DEPTH_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ROPE_SMOOTHED_DEPTH_FILE.write_text(_json.dumps(new))
+    except OSError:
+        pass
+    return new
+
+
 @activity.defn
 async def rope_cycle(msg: Message) -> dict:
     """One controller tick. Read scout.jsonl depth, compare to target,
@@ -171,18 +208,31 @@ async def rope_cycle(msg: Message) -> dict:
                       scout=scout_d, triage=triage_d)
         return {"fired": False, "reason": "depth_read_failed"}
 
-    if scout_d >= target or triage_d >= target:
+    # EWMA-smoothed depth — dampens the bang-bang oscillation visible
+    # in the 4hr trend. Single-tick spikes (cards landing/draining in
+    # bursts) don't trigger a fire; sustained low depth across ~3
+    # ticks does. Cyclic causality: fire → depth rises → quiet →
+    # depth dips → fire. Smoothing flattens the cycle.
+    smoothed = _update_smoothed_depths({"scout": scout_d, "triaged": triage_d})
+    scout_d_s = smoothed["scout"]
+    triage_d_s = smoothed["triaged"]
+
+    if scout_d_s >= target or triage_d_s >= target:
         observe.event("rope_drop",
                       scout_depth=scout_d, triage_depth=triage_d,
+                      scout_smoothed=round(scout_d_s, 2),
+                      triage_smoothed=round(triage_d_s, 2),
                       target=target, sender=msg.sender or "unknown")
         return {"fired": False, "scout_depth": scout_d,
                 "triage_depth": triage_d, "target": target,
-                "reason": "above_target"}
+                "reason": "above_target_smoothed"}
 
     wf_id = await kick_scout_card(f"rope-{msg.sender or 'idle'}", incoming=msg)
     _record_fire(now)
     observe.event("rope_fired",
                   scout_depth=scout_d, triage_depth=triage_d,
+                  scout_smoothed=round(scout_d_s, 2),
+                  triage_smoothed=round(triage_d_s, 2),
                   target=target, cooldown_s=cooldown_s,
                   sender=msg.sender or "unknown",
                   scout_wf=wf_id or "(no-signal)")

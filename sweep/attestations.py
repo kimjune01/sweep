@@ -47,6 +47,13 @@ class CallRow:
     response: str
     response_id: str | None
     chain_hash: str
+    # Anthropic prompt-cache token counts. Default 0 for non-Anthropic
+    # providers and for legacy rows pre-dating the migration. Cache
+    # creation is billed at 1.25× input rate; cache reads at 0.1×.
+    # Without recording these the wasteboard undercounts spend severely
+    # whenever `cache_system=True` is used at any volume.
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
 
 
 @dataclass
@@ -79,7 +86,9 @@ CREATE TABLE IF NOT EXISTS calls (
     prompt         TEXT NOT NULL,
     response       TEXT NOT NULL,
     response_id    TEXT,
-    chain_hash     TEXT NOT NULL
+    chain_hash     TEXT NOT NULL,
+    cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_input_tokens     INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_ts    ON calls(ts);
 CREATE INDEX IF NOT EXISTS idx_msg   ON calls(msg_id);
@@ -88,10 +97,28 @@ CREATE INDEX IF NOT EXISTS idx_model ON calls(model_id);
 """
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent column adds for legacy DBs that pre-date the cache
+    token columns. SQLite's `ALTER TABLE ADD COLUMN` is no-op-safe only
+    if you check first; we catch the duplicate error and move on."""
+    for col, ddl in (
+        ("cache_creation_input_tokens",
+         "ALTER TABLE calls ADD COLUMN cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0"),
+        ("cache_read_input_tokens",
+         "ALTER TABLE calls ADD COLUMN cache_read_input_tokens INTEGER NOT NULL DEFAULT 0"),
+    ):
+        try:
+            conn.execute(ddl)
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+
+
 def _conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.executescript(_SCHEMA)
+    _migrate(conn)
     return conn
 
 
@@ -132,7 +159,9 @@ def lookup_by_key(key: str) -> CallRow | None:
 def record_call(*, key: str, model_id: str, model_nick: str, provider: str,
                 duration_ms: int, input_tokens: int, output_tokens: int,
                 msg_id: str | None, repo: str | None, pr: int | None,
-                prompt: str, response: str, response_id: str | None) -> CallRow:
+                prompt: str, response: str, response_id: str | None,
+                cache_creation_input_tokens: int = 0,
+                cache_read_input_tokens: int = 0) -> CallRow:
     """Insert a new call row with chain_hash linked to the previous.
 
     Two concurrent record_call invocations (e.g. codex_review and
@@ -151,6 +180,7 @@ def record_call(*, key: str, model_id: str, model_nick: str, provider: str,
     conn = sqlite3.connect(str(DB_PATH), isolation_level=None, timeout=10)
     try:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
         conn.execute("BEGIN IMMEDIATE")
         try:
             prev = _last_chain_hash(conn)
@@ -159,11 +189,13 @@ def record_call(*, key: str, model_id: str, model_nick: str, provider: str,
                 """INSERT INTO calls (
                     key, model_id, model_nick, provider, ts, duration_ms,
                     input_tokens, output_tokens, msg_id, repo, pr,
-                    prompt, response, response_id, chain_hash
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    prompt, response, response_id, chain_hash,
+                    cache_creation_input_tokens, cache_read_input_tokens
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (key, model_id, model_nick, provider, ts, duration_ms,
                  input_tokens, output_tokens, msg_id, repo, pr,
-                 prompt, response, response_id, chain_hash),
+                 prompt, response, response_id, chain_hash,
+                 cache_creation_input_tokens, cache_read_input_tokens),
             )
             conn.execute("COMMIT")
         except Exception:
@@ -177,6 +209,8 @@ def record_call(*, key: str, model_id: str, model_nick: str, provider: str,
         output_tokens=output_tokens, msg_id=msg_id, repo=repo, pr=pr,
         prompt=prompt, response=response, response_id=response_id,
         chain_hash=chain_hash,
+        cache_creation_input_tokens=cache_creation_input_tokens,
+        cache_read_input_tokens=cache_read_input_tokens,
     )
 
 

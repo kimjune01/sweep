@@ -25,6 +25,7 @@ HUMAN_GLYPHS = {
     "force-push":   "⬆️",
     "manual-merge": "🤝",
     "sign-off":     "🖋",
+    "retro-summary": "📊",
 }
 
 
@@ -49,15 +50,34 @@ def operator_inbox_lines() -> list[str]:
     msgs = sorted(s.get("queued", []) + s.get("in_flight", []),
                   key=lambda m: m.get("ts", ""))
     for m in msgs:
-        repo = m.get("repo", "?")
-        pr = m.get("pr") or "-"
         intent = m.get("intent", "")
         payload = m.get("payload") or {}
-        reason = payload.get("reason", "")
-        url = f"https://github.com/{repo}/pull/{pr}"
         glyph = HUMAN_GLYPHS.get(intent, "·")
-        suffix = f" — {reason}" if reason else ""
-        lines.append(f"- {glyph} [{repo}#{pr}]({url}){suffix}")
+        repo = m.get("repo")
+        pr = m.get("pr")
+        # Per-PR cards: render the GitHub link the operator clicks
+        # to act on it. Repo+pr are the per-PR contract.
+        if repo and pr:
+            url = f"https://github.com/{repo}/pull/{pr}"
+            reason = payload.get("reason", "")
+            suffix = f" — {reason}" if reason else ""
+            lines.append(f"- {glyph} [{repo}#{pr}]({url}){suffix}")
+            continue
+        # Pipeline-wide cards (retro-summary, future system notes):
+        # no PR to link to. Render a short label + an excerpt from the
+        # payload so the operator can decide whether to drill in.
+        ts = (m.get("ts") or "")[:16].replace("T", " ")
+        if intent == "retro-summary":
+            tail = (payload.get("stdout_tail") or "").strip()
+            first_line = next((ln for ln in tail.splitlines() if ln.strip()),
+                              "no summary")
+            excerpt = first_line[:140] + ("…" if len(first_line) > 140 else "")
+            since = payload.get("since", "?")
+            lines.append(f"- {glyph} retro {ts} (since {since}) — {excerpt}")
+            continue
+        # Unknown shape with no per-PR identity: render the intent +
+        # timestamp so it's at least discoverable, not silently lying.
+        lines.append(f"- {glyph} {intent or 'unknown-intent'} {ts}")
     return lines
 
 
@@ -68,18 +88,19 @@ def operator_inbox_lines() -> list[str]:
 _ARCHITECTURE_DIAGRAM = """\
 ```
  production
-   rope ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ compose ▸ submit ▸ push
-    ▲              └──┬──┘          │
-    │                 ▼             ▼
+   rope ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ attest ▸ compose ▸ submit ▸ push
+    ▲              └──┬──┘                       │
+    │                 ▼                          ▼
     │              immunize ▸ tissue ▸ post
     │
     └── idle signals from investigate / qa (rope regulates scout depth)
 
  engagement (post-submit)
-   notifs ▸ remit ┬▸ respond      auto: rebase / close / clarify
-                  ├▸ qa           re-attest on CI flip
-                  ├▸ investigate  maintainer raised a new in-PR concern
-                  └▸ human        you — the manual peer to respond
+   notifs ▸ remit ┬▸ respond         auto: rebase / close / clarify
+                  ├▸ reqa ▸ attest   re-attest on CI flip
+                  ├▸ reinvestigate   maintainer raised a new in-PR concern
+                  ├▸ amend           splice attestation footer into PR body
+                  └▸ human           you — the manual peer to respond
 
  side-channels
    leakdog ▸ bless ┬▸ tissue-drafts ▸ post

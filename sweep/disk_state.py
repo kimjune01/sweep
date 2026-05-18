@@ -21,9 +21,14 @@ STATE = Path.home() / ".sweep" / "state" / "disk.json"
 # but quickly enough that a heavy worktree-create-then-discard cycle
 # updates within an operator's cockpit-glance window.
 BG_REFRESH_TTL = 5 * 60.0
-# Worktrees is the single tracked path today. Add more paths here if
-# we ever want per-subsystem breakdowns.
-PATHS = [Path.home() / ".sweep" / "worktrees"]
+# Tracked paths for the wasteboard's disk-pressure panel. Add more
+# subsystems here as they grow large enough to matter for operator
+# capacity planning.
+PATHS = [
+    Path.home() / ".sweep" / "worktrees",
+    Path.home() / ".sweep" / "build-cache",
+    Path.home() / ".sweep" / "repos",
+]
 
 
 def _du_bytes(path: Path) -> int | None:

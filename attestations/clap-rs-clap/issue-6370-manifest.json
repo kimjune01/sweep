@@ -1,0 +1,18 @@
+{
+  "kind": "test_attestation",
+  "name": "issue-6370",
+  "test_cmd": "cargo test --features \"deprecated derive cargo env unicode string wrap_help unstable-ext\" --workspace",
+  "expected_test_name": "3604-suggest-remove-double-dash",
+  "head_sha": "e8ea665a871d77c81a1fbef53d44aadc57135901",
+  "host": "darwin-arm64",
+  "test_env": "native",
+  "elapsed_seconds": 65.47449016571045,
+  "after": {
+    "bytes": 50000,
+    "sha256": "b49bfe91a1fa4f4d462779c9f7e379cc41a7bef337ff5428dc025481d484a134"
+  },
+  "before": {
+    "bytes": 50000,
+    "sha256": "cc80e4dcac1d47c83ab570c9e708916a429227783a7c8b52f4b03d7cff2a2222"
+  }
+}

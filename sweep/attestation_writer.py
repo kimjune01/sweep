@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 
@@ -92,3 +93,37 @@ def write_attestation_files(
         json.dumps(manifest, indent=2) + "\n"
     )
     return manifest
+
+
+_REMOTE_RE = re.compile(
+    r"(?:git@github\.com[:/]|https?://github\.com/)([^/]+/[^/.]+)(?:\.git)?/?$"
+)
+
+
+def _parse_owner_repo(remote_url: str) -> str | None:
+    m = _REMOTE_RE.search(remote_url.strip())
+    return m.group(1) if m else None
+
+
+def render_attestation_links_md(
+    *,
+    remote_url: str,
+    commit_sha: str,
+    org_repo: str,
+    name: str,
+    has_before: bool = True,
+) -> str | None:
+    """Render the triple-link footer pinned to ``commit_sha`` in the
+    sweep repo at ``remote_url``. Returns None if the remote URL can't
+    be parsed — the caller should treat that as "no public link."
+    """
+    owner_repo = _parse_owner_repo(remote_url)
+    if not owner_repo:
+        return None
+    base = f"https://github.com/{owner_repo}/blob/{commit_sha}/attestations/{org_repo}"
+    parts = []
+    if has_before:
+        parts.append(f"[Failing tests before]({base}/{name}-before.txt)")
+    parts.append(f"[Passing tests after]({base}/{name}-after.txt)")
+    parts.append(f"[How the tests ran]({base}/{name}-manifest.json)")
+    return " / ".join(parts)

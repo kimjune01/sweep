@@ -18,6 +18,26 @@ from sweep import attestations
 from sweep.models import ModelInfo
 
 
+def _strip_codex_envelope(raw: str) -> str:
+    """Extract the assistant response from `codex exec -` output.
+
+    Codex emits a transcript: a header (session id + separator), the
+    `user` block, a `codex` block with the response, then a `tokens used`
+    footer. We want just the codex block. Falling back to the raw output
+    if the markers aren't present keeps the call returning *something*
+    rather than empty on a CLI format change."""
+    if "codex" not in raw or "tokens used" not in raw:
+        return raw.strip()
+    # Split on the literal `codex\n` line marking the response section;
+    # take everything up to the `tokens used` footer.
+    parts = raw.split("\ncodex\n", 1)
+    if len(parts) < 2:
+        return raw.strip()
+    body = parts[1]
+    body = body.split("\ntokens used\n", 1)[0]
+    return body.strip()
+
+
 async def call(
     model: ModelInfo,
     system: str,
@@ -106,14 +126,77 @@ async def call(
         )
         input_tokens = resp.usage.input_tokens
         output_tokens = resp.usage.output_tokens
+        # Anthropic's usage object reports cache_creation and cache_read
+        # as separate fields; neither is included in input_tokens. Cache
+        # creation is billed at 1.25× input rate, reads at 0.1×. Without
+        # capturing these the wasteboard severely undercounts spend
+        # whenever cache_system=True is used — sift's hot path was the
+        # witness, ~$90/day in cache_creation that didn't show on the
+        # wasteboard at all. getattr with default 0 keeps the wrapper
+        # backward-compatible with SDK versions that don't report them.
+        cache_creation_tokens = getattr(
+            resp.usage, "cache_creation_input_tokens", 0) or 0
+        cache_read_tokens = getattr(
+            resp.usage, "cache_read_input_tokens", 0) or 0
         response_id = resp.id
+    elif model.provider == "openai":
+        # Codex via CLI. The OpenAI SDK path would require a separate
+        # API key and billing channel; shelling to `codex exec -` rides
+        # the operator's existing Codex subscription instead. Token
+        # counts aren't exposed by the CLI, so we leave them 0 — the
+        # wasteboard's "API cost" panel only sums Anthropic providers
+        # anyway, so undercounting OpenAI doesn't move the $$ display.
+        import asyncio as _asyncio
+        import subprocess as _subprocess
+        combined = f"{system}\n\n---\n\n{user}"
+        t0 = time.time()
+        try:
+            proc = await _asyncio.to_thread(
+                _subprocess.run,
+                ["codex", "exec", "-"],
+                input=combined, capture_output=True, text=True,
+                timeout=180,
+            )
+        except FileNotFoundError as e:
+            from sweep import observe
+            observe.event("llm_error", msg_id=msg_id, repo=repo, pr=pr,
+                          model=model.model_id, provider="openai",
+                          error_type="FileNotFoundError",
+                          error_message=f"codex CLI not on PATH ({e})")
+            raise
+        except _subprocess.TimeoutExpired as e:
+            from sweep import observe
+            observe.event("llm_error", msg_id=msg_id, repo=repo, pr=pr,
+                          model=model.model_id, provider="openai",
+                          error_type="TimeoutExpired",
+                          error_message="codex exec exceeded 180s")
+            raise RuntimeError("codex exec timed out") from e
+        duration_ms = int((time.time() - t0) * 1000)
+        if proc.returncode != 0:
+            from sweep import observe
+            observe.event("llm_error", msg_id=msg_id, repo=repo, pr=pr,
+                          model=model.model_id, provider="openai",
+                          error_type="NonZeroExit",
+                          error_message=(proc.stderr or proc.stdout or "")[:400])
+            raise RuntimeError(
+                f"codex exec rc={proc.returncode}: "
+                f"{(proc.stderr or proc.stdout or '')[:200]}"
+            )
+        response_text = _strip_codex_envelope(proc.stdout or "")
+        input_tokens = 0
+        output_tokens = 0
+        cache_creation_tokens = 0
+        cache_read_tokens = 0
+        response_id = None
     else:
-        # Codex/Gemini wrappers TBD — fall back to a stub so the chain still
+        # Gemini wrapper TBD — fall back to a stub so the chain still
         # links and the attestation log records the *attempt*.
         duration_ms = 0
         response_text = f"<stub: {model.provider} wrapper not implemented>"
         input_tokens = 0
         output_tokens = 0
+        cache_creation_tokens = 0
+        cache_read_tokens = 0
         response_id = None
 
     row = attestations.record_call(
@@ -130,6 +213,8 @@ async def call(
         prompt=f"SYSTEM: {system}\n\nUSER: {user}",
         response=response_text,
         response_id=response_id,
+        cache_creation_input_tokens=cache_creation_tokens,
+        cache_read_input_tokens=cache_read_tokens,
     )
     return attestations.CallResult(
         key=row.key,

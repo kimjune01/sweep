@@ -203,6 +203,29 @@ def _passes_lightweight_filter(repo: RepoCandidate) -> bool:
     # H2a standing gate — big cold-org repos need standing we don't have.
     if repo.stars > BIG_REPO_STAR_THRESHOLD and not warm_orgs.is_warm(org):
         return False
+    # Host-arch compatibility — drop repos whose CI has no runs-on
+    # entry this host can satisfy (Windows-only, self-hosted-only).
+    # Declarative read of .github/workflows/, cached transitively via
+    # gh_io (~1h TTL); per-repo cost is once per cache window
+    # regardless of how many issues sift sees from the same repo.
+    # Catches the obvious cases; arch-specific test gates (wild-class)
+    # still fall through to attest's runtime precondition.
+    try:
+        from sweep import host_compat
+        compat = host_compat.check(repo.name_with_owner)
+        if compat.verdict == "incompatible":
+            observe.event(
+                "sift_host_incompat_drop",
+                repo=repo.name_with_owner, reason=compat.reason[:200],
+                runs_on=compat.runs_on[:5],
+            )
+            return False
+    except Exception as e:
+        # Fail-soft: the rest of the substrate has its own gates.
+        observe.event("sift_host_compat_probe_failed",
+                      repo=repo.name_with_owner,
+                      error_type=type(e).__name__, error=str(e)[:200])
+
     # AGENTS.md / CONTRIBUTING AI-policy probe — only "hostile" filters;
     # "required" / "permissive" / "unknown" all pass. Result is cached
     # 24h in gh_io so this is one API call per repo per day.
@@ -592,7 +615,16 @@ async def should_triage_issue(issue_payload: dict) -> dict:
             repo=issue_payload.get("repo", ""),
             pr=issue_payload.get("number"),
             max_tokens=8, temperature=0.0,
-            cache_system=True,  # hot path; system bytes stable across ticks
+            # cache_system was True here, but the ephemeral cache TTL is
+            # 5 min and sift's per-issue ticks land minutes apart across
+            # repos — almost every call wrote a fresh cache entry that
+            # was never read. Witness: 2026-05-16 burned ~$90/day in
+            # cache_creation tokens (1.25× input rate) without showing
+            # on the wasteboard (cache tokens were unrecorded then).
+            # Turning the cache off saves the write tax outright; if we
+            # later want it back, batch sift into 5-min windows so the
+            # cache actually amortizes.
+            cache_system=False,
         )
         tokens = (result.response or "").strip().upper().split()
         verdict = tokens[0] if tokens else "NO"

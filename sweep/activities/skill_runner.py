@@ -23,6 +23,7 @@ When adding a skill actor:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 
@@ -37,31 +38,99 @@ from sweep.types import Message
 # recording, so semantics are unchanged.
 _SHIM_BIN = "/Users/junekim/Documents/sweep/bin"
 
+# Skills directory. Codex runner reads markdown directly from here
+# (Claude runner loads it implicitly via its slash-command system).
+_SKILLS_DIR = "/Users/junekim/Documents/sweep/skills"
+
+
+def _codex_skill_prompt(slash_argv: list[str]) -> str:
+    """Render a skill's markdown body + the invocation args as a single
+    prompt string for `codex exec -`. Strips the Claude-specific
+    frontmatter (--- block) since codex doesn't parse it. The argv tail
+    (everything after the slash command) becomes a closing "Task:" line
+    so codex sees the same arguments the Claude runner would.
+
+    Falls back to the raw argv joined as a one-line prompt if the skill
+    file is missing — preserves the behavior of "run something" even
+    when the skill content can't be loaded."""
+    import os as _os
+    if not slash_argv:
+        return ""
+    head = slash_argv[0].lstrip("/")
+    args = " ".join(slash_argv[1:])
+    skill_path = _os.path.join(_SKILLS_DIR, f"{head}.md")
+    try:
+        with open(skill_path) as f:
+            body = f.read()
+    except OSError:
+        return f"Run skill /{head} with args: {args}"
+    if body.startswith("---"):
+        end = body.find("\n---", 3)
+        if end != -1:
+            body = body[end + 4:].lstrip()
+    return f"{body}\n\n---\n\nTask: {args}\n"
+
 
 async def _run_skill(slash_argv: list[str], label: str,
                      timeout_s: int = 600,
-                     caller: str | None = None) -> dict:
-    """Shell out to claude with a slash command. Common plumbing for
-    every skill-actor activity. Returns rc + stdout tail; raises
-    non-retryable ApplicationError on missing claude / timeout / failure
-    so the calling actor's andon cord engages.
+                     caller: str | None = None,
+                     runner: str = "claude",
+                     extra_env: dict[str, str] | None = None) -> dict:
+    """Shell out to a skill runner with a slash-style command. Common
+    plumbing for every skill-actor activity. Returns rc + stdout tail;
+    raises non-retryable ApplicationError on missing CLI / timeout /
+    failure so the calling actor's andon cord engages.
 
     Subprocess runs on a thread (`asyncio.to_thread`) so the worker's
     asyncio loop stays free to poll Temporal during long /investigate
     runs. Without this, a single 30-min skill call freezes every other
     actor and Temporal sees the worker as gone ("no poller seen").
+
+    Runner choice:
+      - "claude"  → `claude --print "/<skill> args..."` (default). Loads
+                    the skill's frontmatter (allowed-tools, etc.) and
+                    runs as a full Claude Code session with tool access.
+      - "codex"   → Read the skill markdown directly, strip frontmatter,
+                    append the argv as the user task, pipe to
+                    `codex exec -`. Codex runs the same instructions
+                    using its own tool model. Used when investigate_primary
+                    resolves to codex (the openai provider).
     """
-    cmd = ["claude", "--print", " ".join(slash_argv)]
+    if runner == "codex":
+        cmd = ["codex", "exec", "-"]
+        codex_input = _codex_skill_prompt(slash_argv)
+    else:
+        cmd = ["claude", "--print", " ".join(slash_argv)]
+        codex_input = None
     # Inject gh shim onto PATH + tag the caller so every gh call inside
     # the subprocess gets attributed to this actor's budget. Without
     # this, the LLM's gh calls vanish from per-actor accounting.
     env = os.environ.copy()
     env["PATH"] = _SHIM_BIN + os.pathsep + env.get("PATH", "")
     env["SWEEP_BUDGET_CALLER"] = caller or label
+    if extra_env:
+        env.update(extra_env)
+    # Append one line per claude invocation so the wasteboard can
+    # surface the 5h-quota burn rate. The Claude Code SaaS quota is
+    # invisible to us (no programmatic API); subprocess-call count is
+    # the cheapest proxy. Append-only; never read in the hot path.
+    try:
+        import datetime as _dt
+        from pathlib import Path as _Path
+        _log = _Path.home() / ".sweep" / "claude_calls.jsonl"
+        _log.parent.mkdir(parents=True, exist_ok=True)
+        with open(_log, "a") as _f:
+            _f.write(json.dumps({
+                "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                "label": label,
+                "argv": slash_argv,
+            }) + "\n")
+    except Exception:
+        pass
     try:
         result = await asyncio.to_thread(
             subprocess.run, cmd, capture_output=True, text=True,
-            timeout=timeout_s, env=env,
+            timeout=timeout_s, env=env, input=codex_input,
         )
     except FileNotFoundError as e:
         raise ApplicationError(
@@ -419,7 +488,14 @@ async def _kick_human_decision(repo: str, pr: int, *,
 async def _investigate_cycle_inner(msg: Message) -> dict:
     ref = f"{msg.repo}#{msg.pr}"
     from sweep import budget as _budget, observe, skill_result
-    _budget.record_subprocess_estimate("investigate")
+    # Honor the caller's budget key: reinvestigate_cycle sets caller
+    # to "reinvestigate" before delegating; production-lane callers
+    # leave it as "investigate" (default). Without this both lanes
+    # share the investigate budget and one floods the other.
+    caller = _budget.current_caller()
+    if caller not in _budget.SUBPROCESS_ESTIMATE:
+        caller = "investigate"
+    _budget.record_subprocess_estimate(caller)
 
     # Note the artifact's mtime BEFORE running so we can detect a
     # fresh write vs an old file. Artifact path convention:
@@ -427,8 +503,36 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
     artifact = _investigate_artifact_path(msg.repo, msg.pr)
     before_mtime = artifact.stat().st_mtime if artifact.exists() else 0.0
 
+    # Runner choice is data-driven: whichever model is configured for the
+    # `investigate_primary` role decides which CLI executes the skill.
+    # Default is codex (set in models.py); override via
+    # SWEEP_MODEL_INVESTIGATE_PRIMARY=opus to swap back to claude.
+    from sweep import models as _models
+    primary = _models.default_for("investigate_primary")
+    runner = "codex" if primary.provider == "openai" else "claude"
+
+    # Pre-fetch the gh context pack so the skill doesn't have to do its
+    # own gh issue/PR lookups. Reduces the gh-call budget the skill
+    # consumes (those calls were invisible to per-actor accounting),
+    # makes context deterministic across runs, and shaves tool-use
+    # round-trips. See sweep/activities/investigate_prep.py for what's
+    # in the pack and what's deliberately left for the skill to fetch.
+    extra_env: dict[str, str] = {}
+    try:
+        from sweep.activities.investigate_prep import write_context_pack
+        ctx_path = write_context_pack(msg.repo, int(msg.pr), msg.msg_id)
+        extra_env["INVESTIGATE_CONTEXT"] = str(ctx_path)
+        observe.event("investigate_context_packed", repo=msg.repo,
+                      issue=msg.pr, ctx_path=str(ctx_path),
+                      ctx_bytes=ctx_path.stat().st_size)
+    except Exception as e:
+        observe.event("investigate_context_pack_failed", repo=msg.repo,
+                      issue=msg.pr, error_type=type(e).__name__,
+                      error=str(e)[:200])
+
     result = await _run_skill(["/investigate", ref], label="investigate",
-                              timeout_s=1800)
+                              timeout_s=1800, runner=runner,
+                              extra_env=extra_env)
 
     # Artifact-first: /investigate's canonical contract is the
     # hypothesis graph file. When it exists, read it and classify
@@ -509,14 +613,15 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                                 capture_output=True, text=True, timeout=10,
                             )
                             if ls.returncode == 0 and ls.stdout.strip():
-                                # Route through attest (behavioral gate)
-                                # not qa (adversarial review). Attest
-                                # runs test_attestation; on pass it
-                                # forwards to qa carrying the
-                                # attestation_hash. Same shape pr-state
-                                # uses for engagement-lane CI cards.
-                                from sweep.activities.attest import kick_attest_card
-                                await kick_attest_card(
+                                # Route to qa first (adversarial review,
+                                # may edit the branch), then qa forwards
+                                # to attest for the test gate, then attest
+                                # forwards to compose for the PR body.
+                                # Previous shape (investigate → attest → qa)
+                                # double-attested because qa_actor still
+                                # ran test_attestation internally.
+                                from sweep.activities.qa import kick_qa_card
+                                await kick_qa_card(
                                     msg.repo, branch,
                                     sender="investigate",
                                     incoming=msg,

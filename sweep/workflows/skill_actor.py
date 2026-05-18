@@ -113,6 +113,31 @@ class SkillActor:
                 await workflow.sleep(timedelta(seconds=10))
             msg = self._pending.pop(0)
 
+            # Short-circuit cards for evicted repos. Operator marked
+            # the repo out-of-rotation; any in-flight card from before
+            # the eviction should noop instead of running the cycle.
+            # Covers every SkillActor-based actor (attest, compose,
+            # reqa, reinvestigate, amend, etc.) in one place.
+            if msg.repo:
+                try:
+                    evicted = await workflow.execute_activity(
+                        "is_repo_evicted_activity", args=[msg.repo],
+                        start_to_close_timeout=timedelta(seconds=5),
+                        retry_policy=RetryPolicy(maximum_attempts=2),
+                    )
+                except Exception:
+                    evicted = False
+                if evicted:
+                    workflow.logger.info(
+                        "evicted_skip: actor=%s msg_id=%s repo=%s",
+                        activity_name, msg.msg_id, msg.repo,
+                    )
+                    await workflow.execute_activity(
+                        mark_acked, args=[msg.msg_id],
+                        start_to_close_timeout=timedelta(seconds=5),
+                    )
+                    continue
+
             await workflow.execute_activity(
                 mark_started, args=[msg.msg_id],
                 start_to_close_timeout=timedelta(seconds=5),

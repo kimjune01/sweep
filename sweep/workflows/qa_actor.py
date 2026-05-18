@@ -26,6 +26,17 @@ from temporalio.exceptions import ApplicationError
 # should match.
 MAX_IN_FLIGHT = 5
 
+# Pull-shaped backpressure on the qa→attest interface. qa dispatches
+# faster than attest can drain (multi-LLM review ≈ 2-3 min/card; full
+# test_attestation ≈ 1-15 min/card). Without this ceiling, qa pulls
+# from its inbox and stuffs attest.jsonl unboundedly. With it, qa
+# blocks before pulling once attest's pending queue hits the ceiling,
+# letting the bottleneck regulate the rest of the line.
+# 3 = (1 in-flight in attest + up to 2 buffered). Small enough to keep
+# attest from sitting idle on transient stalls, low enough that a
+# permanently-stuck attest can't snowball.
+ATTEST_PENDING_CEILING = 3
+
 def _skip_marker(e: BaseException) -> str | None:
     """Return the skip-message string if any link in e's cause chain is
     an ApplicationError whose message starts with 'skip:'. None means
@@ -41,15 +52,17 @@ def _skip_marker(e: BaseException) -> str | None:
 
 
 with workflow.unsafe.imports_passed_through():
+    from pathlib import Path
     from sweep.activities.infer import infer_test_cmd
     from sweep.activities.qa import (
         codex_review,
+        extract_qa_verdicts,
         gemini_review,
-        test_attestation,
     )
+    from sweep.activities.synth_test import synth_test_for_fix
+    from sweep.activities.attest import attest_pending_depth, kick_attest_card
     from sweep.activities.pause_gate import should_idle
     from sweep.activities.rope import kick_rope_card
-    from sweep.activities.compose import kick_compose_card
     from sweep.activities.worktree import (
         clear_andon_marker,
         ensure_worktree,
@@ -116,11 +129,43 @@ class QaActor:
                 retry_policy=RetryPolicy(maximum_attempts=2),
             ):
                 await workflow.sleep(timedelta(seconds=10))
+            # Pull-shaped backpressure on the qa→attest interface.
+            # Don't dispatch when attest is saturated; let the
+            # bottleneck regulate. Same kanban primitive as rope→scout.
+            while await workflow.execute_activity(
+                attest_pending_depth,
+                start_to_close_timeout=timedelta(seconds=10),
+                retry_policy=RetryPolicy(maximum_attempts=2),
+            ) >= ATTEST_PENDING_CEILING:
+                await workflow.sleep(timedelta(seconds=10))
             msg = self._pending.pop(0)
             self.in_flight += 1
             asyncio.create_task(self._process_one(msg))
 
     async def _process_one(self, msg: Message) -> None:
+        # Short-circuit cards for evicted repos. Same activity-entry
+        # guarantee attest_cycle uses; catches any in-flight cards
+        # that landed before the operator marked the repo evicted.
+        try:
+            evicted = await workflow.execute_activity(
+                "is_repo_evicted_activity", args=[msg.repo],
+                start_to_close_timeout=timedelta(seconds=5),
+                retry_policy=RetryPolicy(maximum_attempts=2),
+            )
+            if evicted:
+                workflow.logger.info(
+                    "evicted_skip: msg_id=%s repo=%s", msg.msg_id, msg.repo,
+                )
+                await workflow.execute_activity(
+                    mark_acked, args=[msg.msg_id],
+                    start_to_close_timeout=timedelta(seconds=5),
+                )
+                return
+        except Exception:
+            # Best-effort short-circuit; fall through to normal
+            # processing if the check itself errors.
+            pass
+
         try:
             req = QaOneEntryRequest(
                 msg_id=msg.msg_id,
@@ -139,19 +184,28 @@ class QaActor:
                 start_to_close_timeout=timedelta(seconds=5),
             )
             try:
-                # Worktree first: ensure we have a checked-out copy of
-                # (repo, branch) on this machine. Self-heals across
-                # machine moves and dropped checkouts. Non-retryable
-                # failures here pull the andon cord via the outer except.
-                worktree_path = await workflow.execute_activity(
-                    ensure_worktree,
-                    args=[req.repo, req.branch],
-                    start_to_close_timeout=timedelta(minutes=3),
-                    retry_policy=RetryPolicy(
-                        maximum_attempts=2,
-                        non_retryable_error_types=["ApplicationError"],
-                    ),
-                )
+                # Worktree first. Honor an operator-supplied worktree
+                # on the payload (same shape as attest_cycle): useful
+                # when the fix branch lives on a fork the substrate's
+                # upstream clone can't reach. Otherwise ensure_worktree
+                # clones/fetches and self-heals across machine moves.
+                if req.worktree and Path(req.worktree).is_dir():
+                    worktree_path = req.worktree
+                else:
+                    worktree_path = await workflow.execute_activity(
+                        ensure_worktree,
+                        args=[req.repo, req.branch, req.issue],
+                        # 10 min ceiling: large monorepos (chisel ~1.7GB,
+                        # servo ~2.9GB, grafana ~3.7GB) routinely take
+                        # 5-8 min for cold-clone over residential
+                        # network. 3min was the original optimistic
+                        # value; chisel#5311's timeout was the witness.
+                        start_to_close_timeout=timedelta(minutes=10),
+                        retry_policy=RetryPolicy(
+                            maximum_attempts=2,
+                            non_retryable_error_types=["ApplicationError"],
+                        ),
+                    )
                 # Test command: routed messages have an empty test_cmd
                 # because remit has no idea what the repo's convention
                 # is. infer_test_cmd asks the orchestrate LLM, then caches
@@ -174,20 +228,36 @@ class QaActor:
                     issue=req.issue,
                 )
 
-                # Each sub-activity is independently called via
-                # workflow.execute_activity — own retry policy, own timeout,
-                # own event in workflow history. Lets you iterate on
-                # codex_review in isolation without rebuilding qa_one_entry.
-                test_att = await workflow.execute_activity(
-                    test_attestation,
-                    req,
-                    start_to_close_timeout=timedelta(minutes=5),
-                    retry_policy=RetryPolicy(
-                        initial_interval=timedelta(seconds=5),
-                        maximum_attempts=2,
-                        non_retryable_error_types=["ApplicationError"],
-                    ),
-                )
+                # synth_test — if the fix lacks a regression test, ask
+                # the synth agent to write one against the unfixed code
+                # (the fix is hidden from the writer; see memory/
+                # feedback_writer_naive_of_verifier.md). On punt, fall
+                # through; attest will emit no_tests_in_pr as before and
+                # evict will draft+apology. On success, the committed
+                # test rides downstream to attest's fail-on-master gate
+                # for independent verification.
+                if req.issue:
+                    try:
+                        await workflow.execute_activity(
+                            synth_test_for_fix,
+                            args=[req.repo, req.branch, req.worktree,
+                                  req.issue, req.issue, None],
+                            start_to_close_timeout=timedelta(minutes=12),
+                            retry_policy=RetryPolicy(
+                                maximum_attempts=1,
+                                non_retryable_error_types=["ApplicationError"],
+                            ),
+                        )
+                    except Exception:
+                        # Punt path. Attest sees no test, emits the
+                        # existing no_tests_in_pr verdict, evict handles.
+                        pass
+
+                # qa is pure review (+ allowed edits via the skill); the
+                # test gate lives in the downstream attest actor now. The
+                # earlier in-actor test_attestation call was a pre-split
+                # vestige that double-tested every pass-bound card.
+                test_att = None
 
                 diff = await workflow.execute_activity(
                     "git_diff_for_branch",
@@ -210,9 +280,29 @@ class QaActor:
                 )
                 gemini_last = gemini_first  # real volley iterates more rounds
 
+                # Sonnet shim — authoritative verdict + structured per-
+                # reviewer extraction. Replaces the old "verdict=pass"
+                # placeholder with a real fuse over both reviewers'
+                # prose. Malformed JSON from the shim raises non-
+                # retryable → andon, per project decision to trust the
+                # shim and pull the cord on outage.
+                codex_text = Path(codex_att.artifact_path).read_text()
+                claude_text = Path(gemini_last.artifact_path).read_text()
+                shim = await workflow.execute_activity(
+                    extract_qa_verdicts,
+                    args=[codex_text, claude_text, req.msg_id, req.repo, req.issue],
+                    start_to_close_timeout=timedelta(seconds=60),
+                    retry_policy=RetryPolicy(
+                        maximum_attempts=1,
+                        non_retryable_error_types=["ApplicationError"],
+                    ),
+                )
+                codex_att.verdict = shim["codex"]["verdict"]
+                gemini_last.verdict = shim["claude"]["verdict"]
+
                 self.last_outcome = QaOneEntryResult(
                     msg_id=req.msg_id,
-                    verdict="pass",
+                    verdict=shim["fused"]["verdict"],
                     bugs_found=0,
                     test_attestation=test_att,
                     codex=codex_att,
@@ -221,24 +311,20 @@ class QaActor:
                     elapsed_seconds=0.0,
                 )
 
-                # Production-lane handoff: verdict=pass + a real branch
-                # means the fix is verified and the attestation is
-                # committed (test_attestation auto-commits the
-                # attestations/ dir). Kick compose to write the PR
-                # message; compose → submit applies the final gate
-                # (submit's _attestation_gate re-verifies independently
-                # before /drip is invoked). Without this kick the
-                # production lane dead-ends here.
+                # Production-lane handoff: qa is now upstream of attest.
+                # Pass the (possibly qa-edited) branch to attest, which
+                # runs the test gate and on pass forwards to compose.
+                # Without this kick the production lane dead-ends here.
                 try:
                     if req.branch and req.branch not in ("HEAD", "main", "master"):
                         await workflow.execute_activity(
-                            kick_compose_card,
-                            args=[req.repo, req.branch, req.issue, "qa", None, msg],
+                            kick_attest_card,
+                            args=[req.repo, req.branch, req.issue, "qa", msg],
                             start_to_close_timeout=timedelta(seconds=10),
                         )
                 except Exception as e:
                     workflow.logger.warning(
-                        "kick_compose failed: msg_id=%s err=%s",
+                        "kick_attest failed: msg_id=%s err=%s",
                         msg.msg_id, str(e)[:200],
                     )
             except Exception as e:

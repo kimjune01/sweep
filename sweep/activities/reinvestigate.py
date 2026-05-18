@@ -86,9 +86,16 @@ async def reinvestigate_cycle(msg: Message) -> dict:
             non_retryable=True,
         )
 
-    from sweep import observe
+    from sweep import budget as _budget, observe
     from sweep.activities.skill_runner import investigate_cycle
     from sweep.activities.reqa import kick_reqa_card
+
+    # Tag caller so gh-io subprocess attribution lands on reinvestigate's
+    # budget, not investigate's. Critical for the budget split: without
+    # this, the inner subprocess estimate still records against
+    # "investigate" via the hardcoded record_subprocess_estimate call
+    # in _investigate_cycle_inner.
+    _budget.set_caller("reinvestigate")
 
     # Delegate to the shared investigate flow. investigate_cycle emits
     # its own `investigate_done` event for the artifact; we add a

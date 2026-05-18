@@ -1,10 +1,10 @@
-"""UsagePoller — fire `probe_claude_usage` every 30 minutes.
+"""UsagePoller — fire `probe_claude_usage` every 5 minutes.
 
-30min cadence gives ~10 samples per 5h subscription window — fine
-resolution for an operator who's checking "how much is left." Andon
-on parse failure: if Claude Code reformats the /usage output, halt
-the poller so the operator notices the staleness within one cycle
-rather than seeing a frozen number for days.
+5min cadence gives ~60 samples per 5h subscription window. We over-
+sample on purpose: the /usage panel is flaky (sometimes returns
+nothing), and a single failed read shouldn't leave the wasteboard
+stale for 30 minutes. The probe writes its last good answer to disk;
+flaky reads are logged and ignored — the cache survives.
 
 Mirrors the older actor-puller shape but is much simpler (no demand
 gating — usage info is always wanted while the pipeline is up).
@@ -22,7 +22,7 @@ with workflow.unsafe.imports_passed_through():
     from sweep.activities.usage_probe import probe_claude_usage
 
 
-POLL_MINUTES = 30
+POLL_MINUTES = 5
 
 
 @workflow.defn

@@ -6,10 +6,15 @@ because the line is paused, this actor's own budget andon is held, or
 budget, and dry mode into honest "no new work" signals, applied at the
 inbox-pull point — never mid-skill.
 
-Dry mode is narrowly scoped: only submit-actor gates on it, because dry
-means "no new public commitments" — once a PR is out there, the
-maintainer is on real-world time and we owe them a response regardless
-of operator pause/dry. Only the new-PR-create path (submit) honors dry.
+Dry mode is narrowly scoped: only submit-actor gates on it, because
+dry means "no new public commitments." `gh pr edit` is silent under
+default GitHub notification settings (description edits don't ping
+watchers / reviewers / authors), so amend runs through dry. Edits
+still appear in the PR's activity timeline, which a maintainer
+scrolling back will see — that's the residual "invisible cost" —
+but it's not a notification surface. Engagement actors (respond,
+reqa) likewise don't honor dry — once a PR is out there, the
+maintainer is on real-world time and we owe them a reply.
 
 Cheap: two filesystem stats per call.
 """
@@ -37,5 +42,29 @@ async def should_idle(actor_name: str) -> bool:
     # operator inspects via `sweep inbox actor submit`; `sweep dry off`
     # drains. No special code path for dry — just time.
     if budget_key == "submit" and control_state.is_dry():
+        return True
+    # Ping/post/tissue: the `post_disabled` flag is the single safety
+    # latch for every maintainer-visible action. When set, these
+    # actors park at the inbox boundary — cards accumulate in their
+    # jsonl files rather than being consumed-then-skipped, so flipping
+    # the flag back off drains the held queue as a single burst-on-
+    # resume. Without this, "skipped while disabled" is lossy.
+    if budget_key in ("ping", "post", "tissue"):
+        from pathlib import Path as _P
+        if (_P.home() / ".sweep" / "control" / "post_disabled").exists():
+            return True
+    # Per-actor pause file. Operator drops
+    # `~/.sweep/control/actor_paused/<actor>` to temporarily halt a
+    # single actor without affecting the rest of the line (vs global
+    # `sweep pause on` which idles everyone). Use case: operator-paced
+    # heijunka — let one over-burning actor drain its queue gradually
+    # while others keep working. Distinct from `~/.sweep/control/paused`
+    # which is the global pause flag set by record_andon.
+    from pathlib import Path as _P
+    if (_P.home() / ".sweep" / "control" / "actor_paused" / budget_key).exists():
+        return True
+    # Per-actor throttle (operator-paced heijunka). Config + counter
+    # logic live in `budget.is_throttled`; pause_gate just consults.
+    if budget.is_throttled(budget_key):
         return True
     return budget.is_blocked(budget_key)

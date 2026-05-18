@@ -18,6 +18,7 @@ noun ("within remit") captures the scope ownership.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 from dataclasses import asdict
@@ -96,6 +97,19 @@ async def remit_cycle(msg: Message) -> dict:
     )
 
     state = await gh_pr_view(msg.repo, int(msg.pr))
+
+    # Trigger override: when a `check` actor card lands here ahead of
+    # the live `statusCheckRollup` updating, the gh fetch may still
+    # show ci=pending while we already know a specific check failed.
+    # Honor `payload.trigger == "ci_check_failed"` by forcing the
+    # derived `ci`/`failing_check` to match what the upstream emitter
+    # observed. Without this, the external-ratification signal silently
+    # races and re-derives to whatever gh happens to show right now.
+    payload = msg.payload or {}
+    if payload.get("trigger") == "ci_check_failed":
+        check_name = str(payload.get("check_name") or "") or state.failing_check
+        state = dataclasses.replace(state, ci="failing", failing_check=check_name)
+
     classified = await classify_one_pr(state)
     delivered = await deliver_to_inbox(classified)
     observe.event("remit_delivered", repo=msg.repo, pr=msg.pr,

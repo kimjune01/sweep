@@ -20,9 +20,26 @@ from pathlib import Path
 import typer
 
 from sweep.cli._common import (
-    RESPOND_ACTOR_ID,
+    AMEND_ACTOR_ID,
+    ATTEST_ACTOR_ID,
+    BLESS_ACTOR_ID,
+    CHECK_ACTOR_ID,
+    COMPOSE_ACTOR_ID,
+    HEART_ACTOR_ID,
+    IMMUNIZE_ACTOR_ID,
     INVESTIGATE_ACTOR_ID,
+    POST_ACTOR_ID,
     QA_ACTOR_ID,
+    REINVESTIGATE_ACTOR_ID,
+    REMIT_ACTOR_ID,
+    REQA_ACTOR_ID,
+    RESPOND_ACTOR_ID,
+    RETRO_ACTOR_ID,
+    ROPE_ACTOR_ID,
+    SCOUT_ACTOR_ID,
+    SIFT_ACTOR_ID,
+    SUBMIT_ACTOR_ID,
+    TISSUE_ACTOR_ID,
     TRIAGE_ACTOR_ID,
 )
 from sweep.system import TEMPORAL_ADDR
@@ -38,11 +55,54 @@ ANDON_DIR = Path.home() / ".sweep" / "control" / "andon"
 
 
 # actor (skill activity name or "qa") → workflow id to signal clear_andon on.
+# Every SkillActor-based workflow needs an entry here, else `sweep andon clear`
+# can't reach it. Accept both the bare actor name ("attest") and the
+# activity-name form ("attest_cycle") so the operator doesn't need to
+# remember which the workflow registered under.
 _CLEAR_TARGETS = {
-    "qa":                 QA_ACTOR_ID,
-    "triage_cycle":       TRIAGE_ACTOR_ID,
-    "respond_cycle":      RESPOND_ACTOR_ID,
-    "investigate_cycle":  INVESTIGATE_ACTOR_ID,
+    "qa":                  QA_ACTOR_ID,
+    "triage":              TRIAGE_ACTOR_ID,
+    "triage_cycle":        TRIAGE_ACTOR_ID,
+    "respond":             RESPOND_ACTOR_ID,
+    "respond_cycle":       RESPOND_ACTOR_ID,
+    "investigate":         INVESTIGATE_ACTOR_ID,
+    "investigate_cycle":   INVESTIGATE_ACTOR_ID,
+    "reinvestigate":       REINVESTIGATE_ACTOR_ID,
+    "reinvestigate_cycle": REINVESTIGATE_ACTOR_ID,
+    "reqa":                REQA_ACTOR_ID,
+    "reqa_cycle":          REQA_ACTOR_ID,
+    "attest":              ATTEST_ACTOR_ID,
+    "attest_cycle":        ATTEST_ACTOR_ID,
+    "amend":               AMEND_ACTOR_ID,
+    "amend_cycle":         AMEND_ACTOR_ID,
+    "check":               CHECK_ACTOR_ID,
+    "check_cycle":         CHECK_ACTOR_ID,
+    "heart":               HEART_ACTOR_ID,
+    "heart_cycle":         HEART_ACTOR_ID,
+    "ping":                "ping-actor",
+    "ping_cycle":          "ping-actor",
+    "retro":               RETRO_ACTOR_ID,
+    "retro_cycle":         RETRO_ACTOR_ID,
+    "sift":                SIFT_ACTOR_ID,
+    "sift_cycle":          SIFT_ACTOR_ID,
+    "scout":               SCOUT_ACTOR_ID,
+    "scout_cycle":         SCOUT_ACTOR_ID,
+    "tissue":              TISSUE_ACTOR_ID,
+    "tissue_cycle":        TISSUE_ACTOR_ID,
+    "post":                POST_ACTOR_ID,
+    "post_cycle":          POST_ACTOR_ID,
+    "immunize":            IMMUNIZE_ACTOR_ID,
+    "immunize_cycle":      IMMUNIZE_ACTOR_ID,
+    "bless":               BLESS_ACTOR_ID,
+    "bless_cycle":         BLESS_ACTOR_ID,
+    "remit":               REMIT_ACTOR_ID,
+    "remit_cycle":         REMIT_ACTOR_ID,
+    "submit":              SUBMIT_ACTOR_ID,
+    "submit_cycle":        SUBMIT_ACTOR_ID,
+    "compose":             COMPOSE_ACTOR_ID,
+    "compose_cycle":       COMPOSE_ACTOR_ID,
+    "rope":                ROPE_ACTOR_ID,
+    "rope_cycle":          ROPE_ACTOR_ID,
 }
 
 
@@ -86,7 +146,9 @@ def andon_clear(actor: str = typer.Argument(..., help="Actor name (e.g. triage_c
         # Watchdog clear: remove the marker and lift the pause if this
         # was the last one (same coupling as clear_andon_marker).
         from sweep.control_state import set_paused
+        from sweep import observe
         marker.unlink()
+        observe.event("andon_cleared", actor=actor)
         if not any(ANDON_DIR.glob("*.json")):
             set_paused(False)
         print(f"cleared watchdog andon for {actor} (marker removed)")

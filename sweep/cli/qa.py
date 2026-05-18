@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import uuid
 from dataclasses import asdict
 
@@ -80,6 +81,213 @@ def qa_full(
     """Run qa_one_entry end-to-end (composer, no Temporal)."""
     req = build_req(repo, branch, worktree, test_cmd, msg_id)
     print_json(asdict(asyncio.run(qa_one_entry(req))))
+
+
+@qa_app.command("backfill")
+def qa_backfill(
+    repo: str = typer.Option(..., help="owner/repo"),
+    pr: int = typer.Option(..., help="PR number"),
+    branch: str = typer.Option(None, help="PR head branch. Looked up from gh if omitted."),
+    worktree: str = typer.Option(
+        None, help="Path to a local checkout that has the fix branch + "
+                   "default branch reachable. Required for fork-branch PRs "
+                   "since the substrate's upstream clone can't reach them."),
+    sender: str = typer.Option("backfill", help="Sender tag recorded on the card"),
+) -> None:
+    """Kick a qa card directly. New entry into the production lane,
+    bypassing investigate. Pairs with `sweep attest backfill` and
+    `sweep compose backfill` for end-to-end manual triggering."""
+    import asyncio
+    from pathlib import Path
+    from sweep import gh_io
+    from sweep.activities.qa import kick_qa_card
+
+    if branch is None:
+        meta = gh_io.pr_view(repo, pr, fields="headRefName")
+        branch = (meta or {}).get("headRefName") if isinstance(meta, dict) else None
+        if not branch:
+            raise typer.Exit(f"could not resolve branch for {repo}#{pr}")
+
+    if worktree and not Path(worktree).is_dir():
+        raise typer.Exit(f"worktree {worktree!r} does not exist")
+
+    async def _kick() -> str | None:
+        return await kick_qa_card(
+            repo=repo, branch=branch, pr=pr, sender=sender,
+            worktree=worktree,
+        )
+
+    wf_id = asyncio.run(_kick())
+    if wf_id is None:
+        print("deposited card on qa.jsonl but signal failed "
+              "(actor unwired or temporal down). The card persists "
+              "and will be drained on next worker start.")
+    else:
+        print(f"kicked qa for {repo}#{pr} on {branch}")
+        if worktree:
+            print(f"  using local worktree: {worktree}")
+        print(f"  watch: tail -f ~/.sweep/events.jsonl | grep {repo}")
+
+
+@qa_app.command("backfill-bulk")
+def qa_backfill_bulk(
+    limit: int = typer.Option(50, help="Cap on PRs to enqueue"),
+    only_with_tests: bool = typer.Option(
+        True, "--only-with-tests/--all",
+        help="Only enqueue PRs whose diff contains test files "
+             "(per the same _looks_like_test heuristic attest uses). "
+             "Strong predictor of attestable outcome."),
+    dry: bool = typer.Option(False, "--dry", help="Print plan, don't kick"),
+    skip_evicted: bool = typer.Option(
+        True, "--skip-evicted/--include-evicted",
+        help="Honor ~/.sweep/control/sift_evicted.txt"),
+) -> None:
+    """Bulk-enqueue open authored PRs to the qa inbox. Reads `gh
+    search prs --author <you> --state open`, filters via heuristics,
+    kicks each as a separate qa card. The substrate processes them
+    serially (with backpressure at qa→attest); failures route via the
+    new no_tests_in_pr / test_passes_on_master / test_fails_on_fix
+    verdicts; sinks accumulate for `sweep evict process-sink`.
+    """
+    import asyncio
+    import fnmatch
+    from pathlib import Path
+    from sweep import gh_io
+    from sweep.activities.qa import kick_qa_card
+    from sweep.activities.qa import _looks_like_test
+
+    # Load eviction list (fnmatch patterns; comments / blanks skipped).
+    evicted_patterns: list[str] = []
+    if skip_evicted:
+        for txt in (
+            Path.home() / ".sweep" / "control" / "sift_evicted.txt",
+            Path.home() / ".sweep" / "control" / "sift_kill_list.txt",
+        ):
+            if not txt.exists():
+                continue
+            for line in txt.read_text().splitlines():
+                s = line.split("#", 1)[0].strip()
+                if s:
+                    evicted_patterns.append(s)
+
+    def _is_evicted(repo: str) -> bool:
+        return any(fnmatch.fnmatch(repo, p) for p in evicted_patterns)
+
+    # Load sink as the canonical "we're done with this" set. Skipping
+    # sunk (repo, pr) pairs catches every disposition we've made —
+    # approved-by-member, drafted+evicted, no_tests_in_pr — without
+    # us having to enumerate the reasons here. Local-only check.
+    sink_path = Path.home() / ".sweep" / "inbox" / "sink.jsonl"
+    sunk_pairs: set[tuple[str, int]] = set()
+    if sink_path.exists():
+        for line in sink_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+                r, p = row.get("repo"), row.get("pr")
+                if r and p:
+                    sunk_pairs.add((r, int(p)))
+            except Exception:
+                continue
+
+    user = (gh_io.api("user", ttl=86400) or {}).get("login") or ""
+    if not user:
+        raise typer.Exit("could not resolve gh user")
+    prs = gh_io.search_prs(
+        f"author:{user}", state="open", limit=min(limit * 2, 100),
+        fields="repository,number,title,url,createdAt,updatedAt",
+        ttl=60,
+    )
+    if not isinstance(prs, list):
+        raise typer.Exit("gh search prs returned non-list")
+
+    plan: list[tuple[str, int, str]] = []
+    auto_sunk: list[tuple[str, int, str]] = []
+    for p in prs:
+        repo = (p.get("repository") or {}).get("nameWithOwner") or ""
+        num = p.get("number")
+        if not repo or not num:
+            continue
+        if _is_evicted(repo):
+            continue
+        if (repo, int(num)) in sunk_pairs:
+            continue
+        # Per-PR shape filter via gh pr view (cached).
+        try:
+            view = gh_io.pr_view(repo, int(num),
+                                  fields="isDraft,reviewDecision,headRefName",
+                                  ttl=300)
+        except Exception:
+            continue
+        if view.get("isDraft"):
+            continue
+        # APPROVED → sink (maintainer's court, out of our rotation).
+        # Auto-sinking here avoids the wasted attest cycle AND makes
+        # the sink the single source of truth for "PRs we're done
+        # with." Same shape that remit's classifier uses for the
+        # APPROVED + MERGEABLE + green path.
+        if view.get("reviewDecision") == "APPROVED":
+            auto_sunk.append((repo, int(num), "approved — maintainers court"))
+            continue
+        branch = view.get("headRefName") or ""
+        if not branch:
+            continue
+        if only_with_tests:
+            # Cheap diff name-only check.
+            try:
+                r = subprocess.run(
+                    ["gh", "pr", "diff", str(num), "--repo", repo,
+                     "--name-only"],
+                    capture_output=True, text=True, timeout=15,
+                )
+                if r.returncode != 0:
+                    continue
+                files = [f for f in (r.stdout or "").splitlines() if f]
+                if not any(_looks_like_test(f) for f in files):
+                    continue
+            except Exception:
+                continue
+        plan.append((repo, int(num), branch))
+        if len(plan) >= limit:
+            break
+
+    print(f"plan: {len(plan)} PRs to enqueue"
+          f"{' (only-with-tests)' if only_with_tests else ''}")
+    for repo, num, br in plan:
+        print(f"  {repo}#{num}  {br}")
+    if auto_sunk:
+        print(f"\nauto-sink: {len(auto_sunk)} approved PRs → sink.jsonl")
+        for repo, num, reason in auto_sunk:
+            print(f"  {repo}#{num}  ({reason})")
+    if dry:
+        return
+
+    # Persist auto-sink rows before kicking. Even if the qa kicks
+    # fail, the sink reflects the operator's decision.
+    if auto_sunk:
+        import datetime as _dt
+        sink = Path.home() / ".sweep" / "inbox" / "sink.jsonl"
+        sink.parent.mkdir(parents=True, exist_ok=True)
+        ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        with open(sink, "a") as f:
+            for repo, num, reason in auto_sunk:
+                f.write(json.dumps({
+                    "ts": ts, "repo": repo, "pr": num,
+                    "reason": reason, "state": "OPEN_APPROVED",
+                }) + "\n")
+
+    async def _kick_all():
+        for repo, num, br in plan:
+            wf = await kick_qa_card(
+                repo=repo, branch=br, pr=num,
+                sender="bulk-backfill",
+            )
+            print(f"  kicked qa for {repo}#{num} on {br}  wf={wf}")
+
+    asyncio.run(_kick_all())
+    print(f"\nenqueued {len(plan)} card(s) into qa.jsonl, "
+          f"sunk {len(auto_sunk)} approved")
 
 
 # ----- Temporal QaActor controls

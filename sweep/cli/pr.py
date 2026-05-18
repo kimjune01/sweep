@@ -39,10 +39,36 @@ EVENTS_LIMIT = 4
 
 REPOS_DIR = Path.home() / ".sweep" / "repo-hypotheses"
 ATTESTATIONS_DIR = Path.home() / ".sweep" / "attestations"
+RECENT_LANES_FILE = Path.home() / ".sweep" / "state" / "recent_lanes.json"
 
 REF_RE = re.compile(r"(?:closes|fixes|resolves|fix|close|resolve)\s+#(\d+)",
                     re.IGNORECASE)
 PR_ARG_RE = re.compile(r"^([\w.-]+/[\w.-]+)#(\d+)$")
+INT_RE = re.compile(r"^\d+$")
+
+
+def _resolve_index(idx: int) -> tuple[str, int]:
+    """Resolve `sweep pr N` against the most recent lanes render.
+    1-based to match glow's reference numbering. Raises typer.BadParameter
+    on a missing file (no lanes call yet) or out-of-range index."""
+    if not RECENT_LANES_FILE.exists():
+        raise typer.BadParameter(
+            f"no recent lanes index at {RECENT_LANES_FILE}; "
+            "run `sweep lanes` first"
+        )
+    try:
+        entries = json.loads(RECENT_LANES_FILE.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        raise typer.BadParameter(f"recent lanes index unreadable: {e}") from e
+    if not (1 <= idx <= len(entries)):
+        raise typer.BadParameter(
+            f"index {idx} out of range; lanes showed {len(entries)} PRs"
+        )
+    e = entries[idx - 1]
+    repo, pr = e.get("repo"), e.get("pr")
+    if not repo or not pr:
+        raise typer.BadParameter(f"index {idx} has incomplete data: {e}")
+    return repo, int(pr)
 
 
 def register(app: typer.Typer) -> None:
@@ -51,15 +77,21 @@ def register(app: typer.Typer) -> None:
 
 
 def pr_view(
-    ref: str = typer.Argument(..., help="owner/repo#N"),
+    ref: str = typer.Argument(..., help="owner/repo#N, or integer N from the last `sweep lanes`"),
 ) -> None:
-    """Per-PR drill-down — title, hypothesis, state, origin, receipts, events."""
-    m = PR_ARG_RE.match(ref)
-    if not m:
-        raise typer.BadParameter(
-            f"expected owner/repo#N, got {ref!r}",
-        )
-    repo, pr = m.group(1), int(m.group(2))
+    """Per-PR drill-down — title, hypothesis, state, origin, receipts, events.
+
+    An integer ref resolves against the most recent `sweep lanes` render
+    (1-based, matching glow's auto-numbering)."""
+    if INT_RE.match(ref):
+        repo, pr = _resolve_index(int(ref))
+    else:
+        m = PR_ARG_RE.match(ref)
+        if not m:
+            raise typer.BadParameter(
+                f"expected owner/repo#N or an integer index, got {ref!r}",
+            )
+        repo, pr = m.group(1), int(m.group(2))
 
     data = _fetch_pr(repo, pr)
     _render(repo, pr, data)

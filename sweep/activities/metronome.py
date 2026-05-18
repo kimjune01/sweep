@@ -30,6 +30,23 @@ STATE_FILE = Path.home() / ".sweep" / "metronome" / "last_fired.json"
 # cadence-driven kicks land here without new workflow code.
 SCHEDULE: list[tuple[str, timedelta]] = [
     ("retro", timedelta(hours=24)),
+    ("heart", timedelta(minutes=15)),
+    ("usage", timedelta(minutes=5)),
+    # evict — drain sink.jsonl entries (draft+apology for unattestable,
+    # self-close for test_passes_on_master / other authoritative). Same
+    # cadence as usage so the post_disabled latch is honored uniformly.
+    ("evict", timedelta(minutes=10)),
+    # ping — hourly eligibility re-check on parked drafts. Maintainer
+    # ping timing matters at hour-scale (9am-vs-2am their TZ); finer
+    # cadence is over-precision. The hourly tick wakes the eligibility
+    # scan; held drafts whose scheduled_for has passed get processed,
+    # the rest stay parked another hour.
+    ("ping", timedelta(hours=1)),
+    # broom — daily 5S sweep of ~/.sweep/ files. Drops acked inbox
+    # messages, dangling ack/started tombstones, age-old events / sink /
+    # budget entries, rotates oversized logs. Per-file policies live in
+    # sweep/broom.py; tunables under ~/.sweep/control/retain/<name>.
+    ("broom", timedelta(hours=24)),
 ]
 
 
@@ -55,6 +72,102 @@ async def _kick(target: str) -> None:
     if target == "retro":
         from sweep.activities.retro import kick_retro_card
         await kick_retro_card(sender="metronome")
+    elif target == "heart":
+        from sweep.activities.heart import kick_heart_card
+        await kick_heart_card(sender="metronome")
+    elif target == "usage":
+        # No inbox/actor for usage — it's a stateless probe. Call the
+        # activity body directly; the call records claude-quota events
+        # the wasteboard and cockpit read. Replaces the separate
+        # UsagePoller workflow.
+        from sweep.activities.usage_probe import probe_claude_usage
+        try:
+            await probe_claude_usage()
+        except Exception as e:
+            observe.event("metronome_usage_probe_failed",
+                          error_type=type(e).__name__, error=str(e)[:200])
+    elif target == "evict":
+        # Drain sink: draft+apology or self-close per reason. Honors
+        # post_disabled (the CLI's own gh calls do the post; if the
+        # operator has the flag set, those drafts/closes don't fire,
+        # but the metronome safely re-tries every 10min).
+        try:
+            from sweep.cli.evict import _read_sink, _apology_for, \
+                _should_self_close, _is_do_not_evict, \
+                _gh_pr_state, _close_with_comment, _draft_and_comment
+            from pathlib import Path as _P
+            if (_P.home() / ".sweep" / "control" / "post_disabled").exists():
+                observe.event("metronome_evict_skipped_post_disabled")
+                return
+            rows = _read_sink()
+            latest: dict[tuple[str, int], dict] = {}
+            for r in rows:
+                if r.get("repo") and r.get("pr"):
+                    latest[(r["repo"], int(r["pr"]))] = r
+            drafted = closed = skipped = failed = 0
+            for (repo, pr), r in sorted(latest.items()):
+                reason = r.get("reason", "?")
+                if _is_do_not_evict(reason):
+                    skipped += 1
+                    continue
+                state = _gh_pr_state(repo, pr)
+                if state is None or state.get("state") != "OPEN":
+                    skipped += 1
+                    continue
+                if state.get("reviewDecision") == "APPROVED":
+                    skipped += 1
+                    continue
+                comment = _apology_for(reason)
+                if _should_self_close(reason):
+                    ok, _ = _close_with_comment(repo, pr, comment)
+                    closed += 1 if ok else 0
+                    failed += 0 if ok else 1
+                else:
+                    if state.get("isDraft"):
+                        skipped += 1
+                        continue
+                    ok, _ = _draft_and_comment(repo, pr, comment)
+                    drafted += 1 if ok else 0
+                    failed += 0 if ok else 1
+            observe.event("metronome_evict_cycle",
+                          drafted=drafted, closed=closed,
+                          skipped=skipped, failed=failed)
+        except Exception as e:
+            observe.event("metronome_evict_failed",
+                          error_type=type(e).__name__, error=str(e)[:200])
+    elif target == "broom":
+        # 5S sweep — drop acked inbox, dangling tombstones, aged
+        # events/sink/budget, rotate logs. Stays in-process (no
+        # actor/inbox); the broom module is pure file I/O.
+        try:
+            from sweep import broom as _broom
+            results = _broom.sweep_all(dry_run=False)
+            summary = _broom.summary(results)
+            observe.event("metronome_broom_cycle", **summary)
+        except Exception as e:
+            observe.event("metronome_broom_failed",
+                          error_type=type(e).__name__, error=str(e)[:200])
+    elif target == "ping":
+        # Hourly eligibility re-check: walk ping.jsonl, for each draft
+        # whose scheduled_for has passed AND that hasn't already been
+        # drafted (per ping_drafted ledger), run the deterministic
+        # precondition (attestation manifest + gh CI + post_disabled)
+        # and draft to human inbox. Honors post_disabled — if set,
+        # noop the whole scan, drafts stay parked until the latch
+        # clears AND their scheduled_for is past.
+        try:
+            from sweep.activities.ping import (
+                _scan_due_drafts_and_emit,
+            )
+            result = await _scan_due_drafts_and_emit()
+            observe.event("metronome_ping_scan",
+                          checked=result.get("checked", 0),
+                          drafted=result.get("drafted", 0),
+                          skipped_not_due=result.get("skipped_not_due", 0),
+                          skipped_already_drafted=result.get("skipped_already_drafted", 0))
+        except Exception as e:
+            observe.event("metronome_ping_failed",
+                          error_type=type(e).__name__, error=str(e)[:200])
     else:
         observe.event("metronome_unknown_target", target=target)
 

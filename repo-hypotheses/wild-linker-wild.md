@@ -79,6 +79,62 @@ AI allowed with human in the loop. Must understand changes fully. Short PRs, one
 2. Or convert to draft + scope expansion: implement SYMVER linker-script parsing. Substantially larger; wild maintainers' "start small, one PR at a time" policy argues against bundling.
 3. Do not push more commits from this account before the operator weighs in — wild is on the human-only communication list per davidlattimore's 2026-05-14 note.
 
+#### 2026-05-17 — CI now green at c086b437, but via test-restriction not fix
+
+| H | claim | evidence | verdict |
+|---|---|---|---|
+| H_g | the green CI at c086b437 invalidates H_f | inspect what commits 7f12118c + c086b437 actually changed | **falsified — divergent** |
+
+**Evidence trajectory:**
+1. Commit 7f12118c added `//#SkipLinker:ld`, `//#Arch:x86_64`, `//#RunEnabled:false` to the test. That makes the test framework stop running ld.bfd against it and pin to one arch — it does not change the test's payload.
+2. Commit c086b437 is a clippy-driven `if … if let` → `if … && let` collapse in elf.rs:729. Functionally identical to the previous guard. No new path tested.
+3. The test source at HEAD is byte-identical to the version H_f analyzed: still `--shared ./version-node-not-found.map` (no `--version-script=`), still SYMVER-grammar map body. With `RunEnabled:false`, only the link step runs and only on wild — the test now only asserts "wild emits this exact error string when handed an unparseable map file as `--shared` input," which is a different claim than #1915.
+4. SYMVER linker-script parsing is still absent from libwild (grep -rE "SYMVER" libwild/src → still one comment hit). The actual #1915 repro path is still not exercised.
+
+**Net:** CI green ≠ fix validated. The greening came from telling the test framework to ignore the cases where the test was failing, not from making the fix correct. H_f's disposition (close, or scope-expand to add SYMVER parsing) is unchanged. Wild remains on human-only.txt; halt here for operator decision.
+
+#### 2026-05-17 20:39 — operator posted "I dug deeper and made the fixes needed" reply to marxin
+
+| H | claim | evidence | verdict |
+|---|---|---|---|
+| H_h | the 2026-05-17 commits (7f12118c + c086b437 + attestations) constitute "the fixes needed" for #1915 | re-check against H_f | **falsified — divergent** |
+
+**Evidence:** H_f and H_g already classified this commit pair. 7f12118c is test-suppression (`RunEnabled:false`, `Arch:x86_64`, `SkipLinker:ld`); c086b437 is a clippy collapse on the same guard. Neither adds SYMVER linker-script parsing, which is what #1915 actually exercises. Attestation files prove the test framework now skips the failing cases, not that the fix addresses the issue body.
+
+**Frontier (open, human-gated):** the operator reply asserts the work is done. The graph asserts it isn't. Marxin hasn't replied. Three resolutions remain (close / scope-expand / wait); the operator's reply has narrowed toward "wait and see if marxin re-engages." No remote action from this skill — wild on human-only.txt. Halt for operator + marxin's next move.
+
+**Reframe note:** the failure mode this investigation captured is the [retro-named pattern](feedback_no_unrequested_features.md-adjacent): pipeline shipped a test that didn't validate what it claimed, the operator's follow-up reply restates "fixed" without addressing the H_f re-read. The graph is the durable artifact; the PR thread is downstream of it.
+
+#### 2026-05-18 — davidlattimore APPROVED at c086b437; all CI green
+
+| H | claim | evidence | verdict |
+|---|---|---|---|
+| H_i | maintainer approval invalidates H_f/H_g/H_h's "fix doesn't address #1915" framing | davidlattimore (MEMBER) submitted APPROVED review 2026-05-18T00:11:50Z on c086b437; 23/23 CI checks green; marxin's CHANGES_REQUESTED not re-asserted | **partial — divergent toward "graph overclaimed"** |
+
+**Evidence trajectory:**
+1. The maintainer has full context on wild's SYMVER linker-script gap — they wrote the linker-script parser. An approval from them is not a rubber-stamp; it's an authoritative judgment that this PR's narrow change (guard fix in `create_dynamic_symbol_definition` + test pinned to x86_64 with `RunEnabled:false`) is acceptable as-is.
+2. The graph (H_f) framed the elf.rs guard tweak as "speculative — wrong code path." But the path *is* reached when a synthetic dynamic symbol carries a `version_name` that doesn't resolve. The repro in #1915 hits this via `gcc -shared` driving GNU ld through a different upstream path; wild reaches the same uninitialized-version-table state via its own input handling. The fix is narrow but real.
+3. The test as shipped (`RunEnabled:false`) doesn't *execute* the linked output, but it does *link* the offending input and assert wild emits the expected error string rather than panicking or silently accepting. That's a legitimate regression guard for the elf.rs change, even though it isn't the full #1915 repro the issue body describes.
+4. SYMVER linker-script parsing is still absent — but that's a separate scope-expansion, not a precondition for this PR. Maintainer evidently agrees: scope was the right size.
+
+**Reframe:** the graph's H_f confidence was overclaimed. Abduction ("fix targets wrong code path") was treated as confirmed-divergent on Claude-only deduction without a perturbation that distinguished "wrong path entirely" from "narrow correct path that doesn't cover all of #1915." The maintainer's approval is the inductive evidence that retires the overclaim.
+
+**What the graph got right:** the test as originally shipped (pre-7f12118c) genuinely failed on aarch64 and was structurally malformed (no `--version-script=` flag, wrong map grammar). 7f12118c's `RunEnabled:false` + arch-pin is a scope reduction, not a fix to the test payload — that critique stands. The maintainer accepted the reduced scope; we should not have.
+
+**Lesson for skill (feedback candidate):** H_f-style "fix is speculative, wrong path" conclusions need an inductive perturbation before being marked confirmed. Reading the code and grepping for SYMVER is deduction; it can't distinguish "no path reaches this code" from "this path is reached by a different route I haven't traced." Without a perturbation that actually exercises the master branch with a minimal repro and observes the panic location, the abduction stays at ~70% confidence, not "confirmed divergent against the fix."
+
+**Halt:** PR approved, mergeable, CI green, on maintainer's queue to merge. No further investigation action. Wild remains on `human-only.txt`; if marxin re-engages or davidlattimore requests changes, operator handles. Graph closes for this PR's lifecycle unless merge is reverted or follow-up issue cites this PR.
+
+#### 2026-05-17 re-check — mergeable is BLOCKED, not "ready"
+
+| H | claim | evidence | verdict |
+|---|---|---|---|
+| H_j | the PR can merge as-is on davidlattimore's approval alone | `gh pr view --json mergeStateStatus,reviewDecision` at c086b437 | **falsified — divergent** |
+
+**Evidence:** live `reviewDecision: CHANGES_REQUESTED`, `mergeStateStatus: BLOCKED`. marxin's 2026-05-17 CHANGES_REQUESTED review (`Have you tested the change before you opened the PR?`) is still the dominant review state because GitHub blocks merge while any non-dismissed CHANGES_REQUESTED stands, regardless of subsequent approvals. davidlattimore's APPROVED stacks but does not clear marxin's block. All 23 CI checks green at c086b437.
+
+**Net:** H_i's "mergeable, on maintainer's queue to merge" overstated. Actual state: approved by one maintainer, still blocked by collaborator's CHANGES_REQUESTED. Merge requires marxin to either dismiss/revise the review, or davidlattimore to override. No action for this skill — wild is on `human-only.txt`. Frontier remains "wait for marxin re-engagement or maintainer override." Halt stands.
+
 ## Issues Evaluated but Not Selected
 
 ### #1909 - PROVIDE/PROVIDE_HIDDEN support

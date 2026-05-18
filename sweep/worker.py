@@ -40,7 +40,13 @@ from sweep.activities.submit import kick_submit_card, submit_cycle
 from sweep.activities.compose import compose_cycle, kick_compose_card
 from sweep.activities.reinvestigate import kick_reinvestigate_card, reinvestigate_cycle
 from sweep.activities.reqa import kick_reqa_card, reqa_cycle
-from sweep.activities.attest import attest_cycle, kick_attest_card
+from sweep.activities.attest import attest_cycle, attest_pending_depth, kick_attest_card
+from sweep.activities.amend import amend_cycle, kick_amend_card
+from sweep.activities.check import (
+    check_cycle, kick_check_card, kick_check_from_subject,
+)
+from sweep.activities.heart import heart_cycle, kick_heart_card
+from sweep.activities.ping import kick_ping_card, ping_cycle
 from sweep.activities.metronome import metronome_tick, kick_metronome_card
 from sweep.activities.retro import retro_cycle, kick_retro_card
 from sweep.activities.respond import kick_respond_card
@@ -51,9 +57,12 @@ from sweep.activities.tissue import tissue_cycle, post_cycle
 from sweep.activities.usage_probe import probe_claude_usage
 from sweep.activities.qa import (
     codex_review,
+    extract_qa_verdicts,
     gemini_review,
+    is_repo_evicted_activity,
     test_attestation,
 )
+from sweep.activities.synth_test import synth_test_for_fix
 from sweep.activities.worktree import (
     clear_andon_marker,
     ensure_worktree,
@@ -83,6 +92,12 @@ async def _amain() -> None:
         activities=[
             # qa
             test_attestation, codex_review, gemini_review,
+            extract_qa_verdicts,
+            is_repo_evicted_activity,
+            # synth_test — qa's test-writing step. Writer is shown the
+            # issue + unfixed code only; fix diff hidden by design (see
+            # memory/feedback_writer_naive_of_verifier.md).
+            synth_test_for_fix,
             # inference + first-mover claim
             infer_test_cmd, claim_issue,
             # skill-shelling actors (respond + triage + investigate via SkillActor)
@@ -119,7 +134,28 @@ async def _amain() -> None:
             # doesn't tangle with "did the fix actually pass?" — same
             # principle as hiding the attestation from the producer.
             # Routes: pass→qa, fail+1st→investigate, fail+2nd→human.
-            attest_cycle, kick_attest_card,
+            attest_cycle, kick_attest_card, attest_pending_depth,
+            # amend — idempotent PR-description editor. Marker-wrapped
+            # blocks per kind (attestation today; screenshots / sections
+            # later); re-runs replace in place. Runs through dry mode
+            # because `gh pr edit` is silent (no notifications).
+            amend_cycle, kick_amend_card,
+            # check — upstream CI watcher. Fetches /commits/{sha}/check-runs
+            # and routes each failed check to remit so the post-submit
+            # engagement loop picks it up. Mirrors GitHub's vocabulary;
+            # distinct from `attest` (local belief) — `check` is the
+            # external ratification CI provides.
+            check_cycle, kick_check_card, kick_check_from_subject,
+            # heart — periodic heartbeat fired by metronome. Cheap;
+            # writes one line per beat to ~/.sweep/sweep-log/heart.jsonl
+            # so cockpit / monitors / the operator can read "line is
+            # alive" without inspecting actor depths.
+            heart_cycle, kick_heart_card,
+            # ping — both-greens correlator. Drafts a polite ping to
+            # the maintainer when attest manifest pinned-SHA matches
+            # gh check-runs all-green. Deterministic per-SHA
+            # idempotency via ~/.sweep/control/ping_drafted.jsonl.
+            ping_cycle, kick_ping_card,
             # metronome — cadence kicker. Self-timing actor (not a
             # daemon) that fires kick_<target>_card on schedule. retro
             # is the first cadence-driven target.

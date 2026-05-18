@@ -353,6 +353,51 @@ def api_graphql(query: str, *, ttl: int = 300) -> dict:
     return result if isinstance(result, dict) else {}
 
 
+_FAILING_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required"}
+
+
+def _failing_check_names(check_runs: list[dict]) -> list[str]:
+    return [r.get("name", "?") for r in check_runs
+            if r.get("conclusion") in _FAILING_CONCLUSIONS]
+
+
+def default_branch_failing_checks(repo: str, *, ttl: int = 300) -> dict:
+    """Failing check-runs on the repo's default branch tip.
+
+    Returns ``{branch, failing, total}``. ``failing`` is the *baseline*
+    attestation's relative postcondition compares against: a check that
+    fails on the fix only counts as a regression if it isn't already
+    failing on master.
+    """
+    if "/" not in repo:
+        raise ValueError(f"repo must be owner/repo, got {repo!r}")
+    head = api(f"/repos/{repo}", ttl=ttl)
+    default = (head or {}).get("default_branch") or "main"
+    runs = api(f"/repos/{repo}/commits/{default}/check-runs?per_page=100",
+                ttl=ttl)
+    items = (runs or {}).get("check_runs", []) if isinstance(runs, dict) else []
+    return {"branch": default, "failing": _failing_check_names(items),
+            "total": len(items)}
+
+
+def pr_failing_checks(repo: str, pr: int, *, ttl: int = 120) -> dict:
+    """Failing check-runs on the PR's head commit.
+
+    Returns ``{head_sha, failing, total}``. Empty check-runs (CI gated
+    on contributors, or repo has no CI) returns ``total=0`` — caller
+    decides whether to fall back to a local-mode check or just proceed.
+    """
+    pr_meta = pr_view(repo, pr, fields="headRefOid", ttl=ttl)
+    head_sha = pr_meta.get("headRefOid") if isinstance(pr_meta, dict) else None
+    if not head_sha:
+        return {"head_sha": None, "failing": [], "total": 0}
+    runs = api(f"/repos/{repo}/commits/{head_sha}/check-runs?per_page=100",
+                ttl=ttl)
+    items = (runs or {}).get("check_runs", []) if isinstance(runs, dict) else []
+    return {"head_sha": head_sha, "failing": _failing_check_names(items),
+            "total": len(items)}
+
+
 def repo_ai_policy(repo: str, *, ttl: int = 24 * 3600) -> str:
     """Probe AGENTS.md / CONTRIBUTING for explicit AI-tool policies.
 

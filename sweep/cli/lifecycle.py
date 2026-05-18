@@ -112,7 +112,8 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         TISSUE_ACTOR_ID, TRIAGE_ACTOR_ID, USAGE_POLLER_ID, POST_ACTOR_ID,
         REMIT_ACTOR_ID, SUBMIT_ACTOR_ID, COMPOSE_ACTOR_ID, ROPE_ACTOR_ID,
         REINVESTIGATE_ACTOR_ID, REQA_ACTOR_ID, ATTEST_ACTOR_ID,
-        METRONOME_ACTOR_ID, RETRO_ACTOR_ID,
+        AMEND_ACTOR_ID, HEART_ACTOR_ID, METRONOME_ACTOR_ID, RETRO_ACTOR_ID,
+        CHECK_ACTOR_ID, PING_ACTOR_ID,
     )
     from sweep.system import TEMPORAL_ADDR
     from sweep.workflows.leakdog import LeakdogDaemon
@@ -151,6 +152,10 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (REINVESTIGATE_ACTOR_ID, SkillActor.run,    ("reinvestigate_cycle",)),
         (REQA_ACTOR_ID,         SkillActor.run,     ("reqa_cycle",)),
         (ATTEST_ACTOR_ID,       SkillActor.run,     ("attest_cycle",)),
+        (AMEND_ACTOR_ID,        SkillActor.run,     ("amend_cycle",)),
+        (CHECK_ACTOR_ID,        SkillActor.run,     ("check_cycle",)),
+        (HEART_ACTOR_ID,        SkillActor.run,     ("heart_cycle",)),
+        (PING_ACTOR_ID,         SkillActor.run,     ("ping_cycle",)),
         (METRONOME_ACTOR_ID,    MetronomeActor.run, ()),
         (RETRO_ACTOR_ID,        SkillActor.run,     ("retro_cycle",)),
         (SIFT_ACTOR_ID,        SkillActor.run,     ("sift_cycle",)),
@@ -159,7 +164,10 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (POST_ACTOR_ID,         SkillActor.run,     ("post_cycle",)),
         (IMMUNIZE_ACTOR_ID,     SkillActor.run,     ("immunize_cycle",)),
         (BLESS_ACTOR_ID,        SkillActor.run,     ("bless_cycle",)),
-        (USAGE_POLLER_ID,       UsagePoller.run,    ()),
+        # Usage probing folded into metronome (5min cadence). Keeping
+        # UsagePoller spawn commented for one cycle in case the new
+        # metronome target needs a backout window; delete after.
+        # (USAGE_POLLER_ID,       UsagePoller.run,    ()),
         (NOTIFICATION_POLLER_ID, NotificationPoller.run, ()),
         (LEAKDOG_DAEMON_ID,     LeakdogDaemon.run,  ()),
     ]
@@ -213,6 +221,12 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "attest", SkillActor.deliver, ATTEST_ACTOR_ID)
     if drained:
         anomalies.append(f"{ATTEST_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "amend", SkillActor.deliver, AMEND_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{AMEND_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "heart", SkillActor.deliver, HEART_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{HEART_ACTOR_ID}: drained {drained} pending")
     drained = await _drain_inbox(client, "metronome", MetronomeActor.deliver, METRONOME_ACTOR_ID)
     if drained:
         anomalies.append(f"{METRONOME_ACTOR_ID}: drained {drained} pending")

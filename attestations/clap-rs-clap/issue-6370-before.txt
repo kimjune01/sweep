@@ -1,0 +1,1014 @@
+ts::exclusive_with_required_unless_present_all ... ok
+test conflicts::flag_conflict ... ok
+test conflicts::flag_conflict_2 ... ok
+test conflicts::exclusive_with_required_unless_present_any ... ok
+test conflicts::flag_conflict_with_all ... ok
+test conflicts::flag_conflicts_with_subcommand_long_flag ... ok
+test conflicts::flag_conflicts_with_subcommand_precedent ... ok
+test conflicts::flag_conflicts_with_subcommand_short_flag ... ok
+test conflicts::get_arg_conflicts_with_group ... ok
+test conflicts::group_conflicts_with_default_arg ... ok
+test conflicts::group_conflicts_with_arg ... ok
+test conflicts::group_conflicts_with_default_value ... ok
+test conflicts::group_in_conflicts_with ... ok
+test conflicts::group_conrflicts_with_subcommands ... ok
+test conflicts::not_exclusive_with_defaults ... ok
+test conflicts::not_exclusive_with_group ... ok
+test conflicts::option_conflicts_with_subcommand ... ok
+test conflicts::positional_conflicts_with_subcommand ... ok
+test conflicts::positional_conflicts_with_subcommand_precedent ... ok
+test conflicts::subcommand_conflict_negates_required ... ok
+test conflicts::required_group_conflicts_with_arg ... ok
+test conflicts::three_conflicting_arguments ... ok
+test conflicts::self_conflicting_arg - should panic ... ok
+test conflicts::two_conflicting_arguments ... ok
+test default_missing_vals::default_missing_value_flag_value ... ok
+test default_missing_vals::default_missing_value_per_occurrence ... ok
+test default_missing_vals::delimited_missing_value ... ok
+test default_missing_vals::opt_default ... ok
+test default_missing_vals::opt_default_user_override ... ok
+test default_missing_vals::opt_missing ... ok
+test default_missing_vals::opt_present_with_empty_value ... ok
+test default_missing_vals::opt_present_with_missing_value ... ok
+test default_missing_vals::opt_present_with_value ... ok
+test default_missing_vals::valid_index ... ok
+test default_vals::conditional_reqs_pass ... ok
+test default_vals::default_has_index ... ok
+test default_vals::default_if_arg_present_no_arg_with_default ... ok
+test default_vals::default_if_arg_present_no_arg_with_default_user_override ... ok
+test default_vals::default_if_arg_present_no_arg_with_value_with_default_user_override_fail ... ok
+test default_vals::default_if_arg_present_with_default ... ok
+test default_vals::default_if_arg_present_no_default_user_override ... ok
+test default_vals::default_if_arg_present_no_default ... ok
+test default_vals::default_if_arg_present_with_default_user_override ... ok
+test default_vals::default_if_arg_present_with_value_no_arg_with_default ... ok
+test default_vals::default_if_arg_present_with_value_no_arg_with_default_fail ... ok
+test default_vals::default_if_arg_present_with_value_no_default ... ok
+test default_vals::default_if_arg_present_with_value_no_default_fail ... ok
+test default_vals::default_if_arg_present_no_arg_with_value_with_default_user_override ... ok
+test default_vals::default_if_arg_present_with_value_no_default_user_override ... ok
+test default_vals::default_if_arg_present_with_value_with_default ... ok
+test default_vals::default_if_arg_present_with_value_with_default_user_override ... ok
+test default_vals::default_ifs_arg_present ... ok
+test default_vals::default_ifs_arg_present_order ... ok
+test default_vals::default_ifs_arg_present_user_override ... ok
+test default_vals::default_independent_of_trailing ... ok
+test default_vals::default_vals_donnot_show_in_smart_usage ... ok
+test default_vals::default_value_ifs_os ... ok
+test default_vals::default_values_if_arg_present_no_arg_with_value_with_default_user_override ... ok
+test default_vals::default_values_if_arg_present_no_arg_with_value_with_default_user_override_fail ... ok
+test default_vals::default_values_if_arg_present_with_value_no_arg_with_default ... ok
+test default_vals::default_values_if_arg_present_with_value_no_arg_with_default_fail ... ok
+test default_vals::default_values_if_arg_present_with_value_no_default ... ok
+test default_vals::default_values_if_arg_present_with_value_no_default_fail ... ok
+test default_vals::default_values_if_arg_present_with_value_no_default_user_override ... ok
+test default_vals::default_values_if_arg_present_with_value_with_default ... ok
+test default_vals::default_values_if_arg_present_with_value_with_default_user_override ... ok
+test default_vals::default_values_ifs_arg_present ... ok
+test default_vals::default_values_ifs_arg_present_order ... ok
+test default_vals::default_values_ifs_arg_present_user_override ... ok
+test default_vals::default_values_ifs_os ... ok
+test default_vals::issue_1050_num_vals_and_defaults ... ok
+test default_vals::multiple_defaults ... ok
+test default_vals::missing_with_value_delimiter ... ok
+test default_vals::no_default_if_arg_present_no_arg_with_value_with_default ... ok
+test default_vals::multiple_defaults_override ... ok
+test default_vals::no_default_if_arg_present_with_value_no_default ... ok
+test default_vals::no_default_if_arg_present_with_value_with_default ... ok
+test default_vals::no_default_ifs_arg_present ... ok
+test default_vals::no_default_if_arg_present_with_value_with_default_user_override ... ok
+test default_vals::no_default_values_if_arg_present_no_arg_with_value_with_default ... ok
+test default_vals::no_default_values_if_arg_present_with_value_with_default_user_override ... ok
+test default_vals::opt_user_override ... ok
+test default_vals::opts ... ok
+test default_vals::osstr_opt_user_override ... ok
+test default_vals::opt_without_value_fail ... ok
+test default_vals::osstr_opts ... ok
+test default_vals::osstr_positional_user_override ... ok
+test default_vals::osstr_positionals ... ok
+test default_vals::positional_user_override ... ok
+test default_vals::positionals ... ok
+test default_vals::required_args_with_default_values ... ok
+test default_vals::required_groups_with_default_values ... ok
+test default_vals::valid_delimited_default_values ... ok
+test default_vals::with_value_delimiter ... ok
+test delimiters::opt_eq_mult_def_delim ... ok
+test delimiters::opt_default_no_delim ... ok
+test delimiters::opt_eq_no_delim ... ok
+test delimiters::opt_s_default_no_delim ... ok
+test delimiters::opt_s_eq_no_delim ... ok
+test delimiters::opt_s_no_space_mult_no_delim ... ok
+test delimiters::opt_s_no_space_no_delim ... ok
+test derive_order::derive_order_next_order ... ok
+test derive_order::derive_order ... ok
+test derive_order::derive_order_no_next_order ... ok
+test derive_order::derive_order_subcommand_propagate ... ok
+test derive_order::derive_order_subcommand_propagate_with_explicit_display_order ... ok
+test derive_order::no_derive_order ... ok
+test derive_order::subcommand_sorted_display_order ... ok
+test display_order::very_large_display_order ... ok
+test derive_order::subcommand_derived_display_order ... ok
+test double_require::valid_cases ... ok
+test double_require::help_text ... ok
+test double_require::no_duplicate_error ... ok
+test empty_values::empty_values_with_equals ... ok
+test empty_values::no_empty_values ... ok
+test empty_values::empty_values ... ok
+test empty_values::no_empty_values_with_equals ... ok
+test empty_values::no_empty_values_without_equals ... ok
+test empty_values::no_empty_values_without_equals_but_requires_equals ... ok
+test env::env ... ok
+test env::env_os ... ok
+test env::env_bool_literal ... ok
+test env::multiple_no_delimiter ... ok
+test env::multiple_one ... ok
+test env::no_env ... ok
+test env::multiple_three ... ok
+test env::no_env_no_takes_value ... ok
+test env::opt_user_override ... ok
+test env::not_possible_value ... ok
+test env::positionals ... ok
+test env::positionals_user_override ... ok
+test env::possible_value ... ok
+test env::value_parser ... ok
+test env::value_parser_invalid ... ok
+test env::value_parser_output ... ok
+test env::with_default ... ok
+test error::app_error ... ok
+test error::cant_use_trailing ... ok
+test error::cant_use_trailing_subcommand ... ok
+test error::kind_formats_validation_error ... ok
+test error::edit_error ... ok
+test error::kind_prints_help ... ok
+test error::rich_formats_validation_error ... ok
+test error::suggest_trailing ... ok
+test error::trailing_already_in_use ... ok
+test error::suggest_trailing_last ... ok
+test error::unknown_argument_flag ... ok
+test error::unknown_argument_option ... ok
+test error::value_validation_has_newline ... ok
+test error::flag_used_after_double_dash ... FAILED
+test flag_subcommands::flag_subcommand_long ... ok
+test flag_subcommands::flag_subcommand_conflict_with_help - should panic ... ok
+test flag_subcommands::flag_subcommand_long_infer_exact_match ... ok
+test flag_subcommands::flag_subcommand_long_conflict_with_alias - should panic ... ok
+test flag_subcommands::flag_subcommand_long_conflict_with_arg_alias - should panic ... ok
+test flag_subcommands::flag_subcommand_conflict_with_version - should panic ... ok
+test flag_subcommands::flag_subcommand_long_conflict_with_arg - should panic ... ok
+test flag_subcommands::flag_subcommand_long_infer_pass ... ok
+test flag_subcommands::flag_subcommand_long_infer_fail ... ok
+test flag_subcommands::flag_subcommand_long_infer_pass_close ... ok
+test flag_subcommands::flag_subcommand_long_with_alias ... ok
+test flag_subcommands::flag_subcommand_long_short_normal_usage_string ... ok
+test flag_subcommands::flag_subcommand_long_normal_usage_string ... ok
+test flag_subcommands::flag_subcommand_long_with_alias_same_as_long_flag ... ok
+test flag_subcommands::flag_subcommand_long_with_aliases ... ok
+test flag_subcommands::flag_subcommand_long_with_aliases_vis_and_hidden ... ok
+test flag_subcommands::flag_subcommand_normal ... ok
+test flag_subcommands::flag_subcommand_multiple ... ok
+test flag_subcommands::flag_subcommand_short ... ok
+test flag_subcommands::flag_subcommand_normal_with_alias ... ok
+test flag_subcommands::flag_subcommand_short_after_long_arg ... ok
+test flag_subcommands::flag_subcommand_normal_with_alias_vis_and_hidden ... ok
+test flag_subcommands::flag_subcommand_short_conflict_with_alias - should panic ... ok
+test flag_subcommands::flag_subcommand_short_conflict_with_arg - should panic ... ok
+test flag_subcommands::flag_subcommand_short_conflict_with_arg_alias - should panic ... ok
+test flag_subcommands::flag_subcommand_short_with_alias ... ok
+test flag_subcommands::flag_subcommand_short_normal_usage_string ... ok
+test flag_subcommands::flag_subcommand_short_with_alias_same_as_short_flag ... ok
+test flag_subcommands::flag_subcommand_short_with_alias_hyphen - should panic ... ok
+test flag_subcommands::flag_subcommand_short_with_aliases ... ok
+test flag_subcommands::flag_subcommand_short_with_args ... ok
+test flag_subcommands::flag_subcommand_short_with_aliases_hyphen - should panic ... ok
+test flag_subcommands::flag_subcommand_short_with_aliases_vis_and_hidden ... ok
+test flags::flag_using_long ... ok
+test flags::flag_using_mixed ... ok
+test flags::issue_1284_argument_in_flag_style ... ok
+test flags::issue_2308_multiple_dashes ... ok
+test flags::leading_dash_stripped - should panic ... ok
+test flags::flag_using_long_with_literals ... ok
+test flags::flag_using_short ... ok
+test flags::multiple_flags_in_single ... ok
+test flags::optional_value ... ok
+test flags::unexpected_value_error ... ok
+test flags::lots_o_flags_combined ... ok
+test global_args::deeply_nested_discovery ... ok
+test flags::lots_o_flags_sep ... ok
+test global_args::global_arg_available_in_subcommand ... ok
+test global_args::global_overrides_default ... ok
+test global_args::issue_1076 ... ok
+test global_args::global_overrides_env ... ok
+test global_args::propagate_global_arg_in_subcommand_to_subsubcommand_1385 ... ok
+test global_args::propagate_global_arg_to_subcommand_in_subsubcommand_2053 ... ok
+test groups::conflict_with_overlapping_group_in_error ... ok
+test groups::conflict_with_group ... ok
+test groups::empty_group ... ok
+test groups::arg_group_new_of_arg_name - should panic ... ok
+test groups::group_acts_like_arg ... ok
+test groups::group_empty ... ok
+test groups::group_multiple_args_error ... ok
+test groups::group_overrides_required ... ok
+test groups::group_multi_value_single_arg ... ok
+test groups::group_single_value ... ok
+test groups::group_required_flags_empty ... ok
+test groups::group_usage_use_val_name ... ok
+test groups::groups_new_of_arg_name - should panic ... ok
+test groups::non_existing_arg - should panic ... ok
+test groups::req_group_usage_string ... ok
+test groups::req_group_with_conflict_usage_string ... ok
+test groups::required_group_missing_arg ... ok
+test groups::req_group_with_conflict_usage_string_only_options ... ok
+test groups::required_group_multiple_args ... ok
+test groups::requires_group_with_overlapping_group_in_error ... ok
+test groups::unique_group_name - should panic ... ok
+test help::after_and_before_help_output ... ok
+test help::after_help_no_args ... ok
+test help::after_and_before_long_help_output ... ok
+test help::arg_id_conflict_with_help - should panic ... ok
+test help::arg_long_conflict_with_help - should panic ... ok
+test help::arg_short_conflict_with_help - should panic ... ok
+test help::args_with_last_usage ... ok
+test help::complex_subcommand_help_output ... ok
+test help::custom_heading_pos ... ok
+test help::custom_headers_headers ... ok
+test help::disable_help_flag_affects_help_subcommand ... ok
+test help::disabled_help_flag ... ok
+test help::disabled_help_flag_and_subcommand ... ok
+test help::custom_help_headers_hide_args ... ok
+test help::display_name_default ... ok
+test help::args_negate_sc ... ok
+test help::display_name_explicit ... ok
+test help::complex_help_output ... ok
+test help::display_name_subcommand_default ... ok
+test help::display_name_subcommand_explicit ... ok
+test help::dont_strip_padding_issue_5083 ... ok
+test help::dont_propagate_version_to_help_subcommand ... ok
+test help::dont_wrap_urls ... ok
+test help::empty_default_value ... ok
+test help::escaped_whitespace_values ... ok
+test help::final_word_wrapping ... ok
+test help::explicit_short_long_help ... ok
+test help::flatten_arg_required ... ok
+test help::flatten_basic ... ok
+test help::flatten_help_cmd ... ok
+test help::flatten_hidden_command ... ok
+test help::flatten_long_help ... ok
+test help::flatten_single_hidden_command ... ok
+test help::flatten_short_help ... ok
+test help::flatten_not_recursive ... ok
+test help::flatten_with_args_conflicts_with_subcommands ... ok
+test help::flatten_with_global ... ok
+test help::flatten_with_external_subcommand ... ok
+test help::flatten_without_subcommands ... ok
+test help::flatten_with_subcommand_required ... ok
+test help::global_args_should_not_show_on_help_message_for_help_help ... ok
+test help::global_args_should_show_on_help_message_for_nested_subcommand ... ok
+test help::flatten_recursive ... ok
+test help::global_args_should_show_on_help_message_for_subcommand ... ok
+test help::help_enum_arg_with_no_description ... ok
+test help::global_args_should_show_on_toplevel_help_message ... ok
+test help::help_no_subcommand ... ok
+test help::help_multi_subcommand_error ... ok
+test help::help_required_and_given ... ok
+test help::help_required_and_given_for_subcommand ... ok
+test help::help_required_and_no_args ... ok
+test help::help_required_but_not_given_settings_after_args - should panic ... ok
+test help::help_long ... ok
+test help::help_required_but_not_given - should panic ... ok
+test help::help_required_but_not_given_for_one_of_two_arguments - should panic ... ok
+test help::help_short ... ok
+test help::help_required_globally - should panic ... ok
+test help::help_without_short ... ok
+test help::help_subcommand ... ok
+test help::help_required_globally_but_not_given_for_subcommand - should panic ... ok
+test help::help_subcmd_help ... ok
+test help::hidden_possible_vals ... ok
+test help::hide_args ... ok
+test help::hide_single_possible_val ... ok
+test help::issue_1046_hide_scs ... ok
+test help::hide_possible_vals ... ok
+test help::hide_default_val ... ok
+test help::issue_1487 ... ok
+test help::issue_1364_no_short_options ... ok
+test help::issue_1052_require_delim_help ... ok
+test help::issue_2508_number_of_values_with_single_value_name ... ok
+test help::issue_1642_long_help_spacing ... ok
+test help::issue_1794_usage ... ok
+test help::issue_626_unicode_cutoff ... ok
+test help::issue_626_panic ... ok
+test help::issue_777_wrap_all_things ... ok
+test help::issue_688_hide_pos_vals ... ok
+test help::long_about ... ok
+test help::issue_702_multiple_values ... ok
+test help::last_arg_mult_usage_req_with_sc ... ok
+test help::last_arg_mult_usage ... ok
+test help::last_arg_mult_usage_req ... ok
+test help::multiple_custom_help_headers ... ok
+test help::missing_positional_final_multiple ... ok
+test help::missing_positional_final_required ... ok
+test help::last_arg_mult_usage_with_sc ... ok
+test help::mixed_argument_types ... ok
+test help::next_line_arg_short ... ok
+test help::mixed_argument_types_no_short ... ok
+test help::mixed_argument_types_short_positional ... ok
+test help::multi_level_sc_help ... ok
+test help::no_wrap_default_help ... ok
+test help::no_wrap_help ... ok
+test help::next_line_command_wrapped ... ok
+test help::next_line_command_short ... ok
+test help::only_custom_heading_opts_no_args ... ok
+test help::old_newline_chars ... ok
+test help::old_newline_variables ... ok
+test help::only_custom_heading_pos_no_args ... ok
+test help::next_line_arg_wrapped ... ok
+test help::override_help_flag_using_long ... ok
+test help::override_help_flag_using_short ... ok
+test help::option_usage_order ... ok
+test help::override_help_about ... ok
+test help::override_help_subcommand ... ok
+test help::override_help_long ... ok
+test help::override_help_short ... ok
+test help::parent_cmd_req_ignored_when_conflicts ... ok
+test help::parent_cmd_req_ignored_when_negates_reqs ... ok
+test help::parent_cmd_req_in_usage_with_help_flag ... ok
+test help::parent_cmd_req_in_usage_with_help_subcommand ... ok
+test help::parent_cmd_req_in_usage_with_render_help ... ok
+test help::positional_multiple_occurrences_is_dotted ... ok
+test help::prefer_user_help_long_1112 ... ok
+test help::prefer_user_help_short_1112 ... ok
+test help::possible_vals_with_help ... ok
+test help::positional_multiple_values_is_dotted ... ok
+test help::prefer_about_over_long_about_in_subcommands_list ... ok
+test help::possible_value_wrapped_help ... ok
+test help::prefer_user_subcmd_help_long_1112 ... ok
+test help::prefer_user_subcmd_help_short_1112 ... ok
+test help::ripgrep_usage ... ok
+test help::req_last_arg_usage ... ok
+test help::ripgrep_usage_using_templates ... ok
+test help::short_with_count ... ok
+test help::short_with_value ... ok
+test help::sc_negates_reqs ... ok
+test help::show_long_about_issue_897 ... ok
+test help::show_short_about_issue_897 ... ok
+test help::subcmd_help_subcmd_help ... ok
+test help::subcommand_help_doesnt_have_useless_help_flag ... ok
+test help::too_few_value_names_is_dotted ... ok
+test help::try_help_custom_flag ... ok
+test help::too_many_value_names_panics - should panic ... ok
+test help::try_help_custom_flag_no_action ... ok
+test help::subcommand_long_help ... ok
+test help::try_help_custom_flag_long ... ok
+test help::try_help_custom_flag_short ... ok
+test help::subcommand_help_rev ... ok
+test help::try_help_default ... ok
+test help::subcommand_short_help ... ok
+test help::try_help_subcommand_custom_flag ... ok
+test help::try_help_subcommand_custom_flag_no_action ... ok
+test help::try_help_subcommand_default ... ok
+test help::unwrapped_help ... ok
+test help::wrapped_indentation ... ok
+test help_env::hide_env ... ok
+test help::wrapping_newline_variables ... ok
+test help::wrapped_help ... ok
+test help::visible_aliases_with_long_help ... ok
+test help_env::hide_env_vals_flag ... ok
+test help::wrapping_newline_chars ... ok
+test help_env::hide_env_vals ... ok
+test help_env::hide_env_flag ... ok
+test help::visible_aliases_with_short_help ... ok
+test help_env::show_env ... ok
+test help_env::show_env_flag ... ok
+test help_env::show_env_vals ... ok
+test help_env::show_env_vals_flag ... ok
+test hidden_args::hidden_arg_with_possible_value_with_help ... ok
+test hidden_args::hide_args ... ok
+test hidden_args::hide_long_args ... ok
+test hidden_args::hide_opt_args_only ... ok
+test hidden_args::hide_long_args_short_help ... ok
+test hidden_args::hide_pos_args ... ok
+test hidden_args::hide_pos_args_only ... ok
+test hidden_args::hide_short_args ... ok
+test hidden_args::hide_short_args_long_help ... ok
+test hidden_args::hide_subcmds ... ok
+test hidden_args::hide_subcmds_only ... ok
+test ignore_errors::help_flag ... ok
+test ignore_errors::did_you_mean ... ok
+test ignore_errors::multiple_args_and_final_arg_without_value ... ok
+test ignore_errors::help_flag_subcommand ... ok
+test ignore_errors::multiple_args_and_intermittent_arg_without_value ... ok
+test ignore_errors::single_long_arg_without_value ... ok
+test ignore_errors::single_short_arg_without_value ... ok
+test ignore_errors::subcommand ... ok
+test ignore_errors::unexpected_argument ... ok
+test ignore_errors::version_flag ... ok
+test indices::index_flag ... ok
+test indices::index_flags ... ok
+test indices::index_mult_opts ... ok
+test indices::indices_mult_flags ... ok
+test indices::indices_mult_flags_combined ... ok
+test indices::indices_mult_flags_opt_combined ... ok
+test indices::indices_mult_flags_opt_combined_eq ... ok
+test indices::indices_mult_opt_mult_flag ... ok
+test indices::indices_mult_opt_value_delim_eq ... ok
+test indices::indices_mult_opt_value_no_delim_eq ... ok
+test indices::indices_mult_opts ... ok
+test macros::arg_long_multiple_values - should panic ... ok
+test macros::arg_long_dashed ... ok
+test macros::arg_long ... ok
+test macros::arg_multiple_values - should panic ... ok
+test macros::arg_short - should panic ... ok
+test macros::arg_long_optional_value ... ok
+test macros::arg_long_required_value ... ok
+test multiple_occurrences::multiple_occurrences_of_after_env ... ok
+test macros::arg_named_dashed ... ok
+test multiple_occurrences::multiple_occurrences_of_flags_long ... ok
+test multiple_occurrences::multiple_occurrences_of_before_env ... ok
+test macros::arg_named_long ... ok
+test multiple_occurrences::multiple_occurrences_of_flags_short ... ok
+test multiple_values::different_sep ... ok
+test multiple_occurrences::multiple_occurrences_of_positional ... ok
+test macros::arg_optional_value ... ok
+test macros::arg_named_positional ... ok
+test macros::arg_required_value ... ok
+test multiple_values::escape_like_value_terminator ... ok
+test multiple_values::disallow_positionals_without_values - should panic ... ok
+test multiple_values::different_sep_positional ... ok
+test multiple_values::issue_1480_max_values_consumes_extra_arg_1 ... ok
+test multiple_values::escape_like_value_terminator_and_last ... ok
+test multiple_values::issue_1480_max_values_consumes_extra_arg_2 ... ok
+test multiple_values::escape_like_value_terminator_and_allow_hyphen_values ... ok
+test multiple_values::issue_1480_max_values_consumes_extra_arg_3 ... ok
+test multiple_values::low_index_positional ... ok
+test multiple_values::issue_2229 ... ok
+test multiple_values::low_index_positional_in_subcmd ... ok
+test multiple_values::low_index_positional_last_multiple_too - should panic ... ok
+test multiple_values::low_index_positional_not_required - should panic ... ok
+test multiple_values::low_index_positional_with_extra_flags ... ok
+test multiple_values::low_index_positional_too_far_back - should panic ... ok
+test multiple_values::low_index_positional_with_flag ... ok
+test multiple_values::low_index_positional_with_option ... ok
+test multiple_values::multiple_positional_multiple_values ... ok
+test multiple_values::multiple_vals_with_hyphen ... ok
+test multiple_values::no_sep ... ok
+test multiple_values::multiple_value_terminator_option ... ok
+test multiple_values::no_sep_positional ... ok
+test multiple_values::num_args_preferred_over_value_names ... ok
+test multiple_values::multiple_value_terminator_positional ... ok
+test multiple_values::option_exact_exact ... ok
+test multiple_values::option_exact_exact_mult ... ok
+test multiple_values::option_exact_exact_not_mult ... ok
+test multiple_values::option_exact_less ... ok
+test multiple_values::option_long ... ok
+test multiple_values::option_exact_more ... ok
+test multiple_values::option_max_exact ... ok
+test multiple_values::option_max_less ... ok
+test multiple_values::option_max_more ... ok
+test multiple_values::option_max_zero ... ok
+test multiple_values::option_max_zero_eq ... ok
+test multiple_values::option_min_exact ... ok
+test multiple_values::option_min_less ... ok
+test multiple_values::option_mixed ... ok
+test multiple_values::option_short ... ok
+test multiple_values::option_short_min_more_mult_occurs ... ok
+test multiple_occurrences::multiple_occurrences_of_flags_large_quantity ... ok
+test multiple_values::option_short_min_more_single_occur ... ok
+test multiple_values::positional ... ok
+test multiple_values::positional_exact_exact ... ok
+test multiple_values::optional_value ... ok
+test multiple_values::positional_exact_less ... ok
+test multiple_values::positional_max_exact ... ok
+test multiple_values::positional_exact_more ... ok
+test multiple_values::positional_max_less ... ok
+test multiple_values::positional_min_exact ... ok
+test multiple_values::positional_max_more ... ok
+test multiple_values::positional_min_more ... ok
+test multiple_values::positional_min_less ... ok
+test multiple_values::req_delimiter_complex ... ok
+test multiple_values::req_delimiter_long ... ok
+test multiple_values::req_delimiter_long_with_equal ... ok
+test multiple_values::req_delimiter_short_with_equal ... ok
+test multiple_values::req_delimiter_short_with_no_space ... ok
+test multiple_values::req_delimiter_short_with_space ... ok
+test multiple_values::sep_long_equals ... ok
+test multiple_values::sep_long_space ... ok
+test multiple_values::sep_positional ... ok
+test multiple_values::sep_short_equals ... ok
+test multiple_values::sep_short_no_space ... ok
+test multiple_values::sep_short_space ... ok
+test multiple_values::value_names_building_num_vals ... ok
+test multiple_values::value_names_building_num_vals_for_positional ... ok
+test multiple_values::value_terminator_has_higher_precedence_than_allow_hyphen_values ... ok
+test multiple_values::values_per_occurrence_named ... ok
+test multiple_values::values_per_occurrence_positional ... ok
+test occurrences::grouped_interleaved_positional_occurrences ... ok
+test occurrences::grouped_interleaved_positional_values ... ok
+test occurrences::grouped_value_long_flag_delimiter ... ok
+test occurrences::grouped_value_multiple_positional_arg ... ok
+test occurrences::grouped_value_multiple_positional_arg_last_multiple ... ok
+test occurrences::grouped_value_positional_arg ... ok
+test occurrences::grouped_value_short_flag_delimiter ... ok
+test occurrences::grouped_value_works ... ok
+test occurrences::issue_1026 ... ok
+test opts::default_values_user_value ... ok
+test occurrences::issue_2171 ... ok
+test opts::double_hyphen_as_value ... ok
+test opts::infer_long_arg_fail_conflicts ... ok
+test opts::did_you_mean ... ok
+test opts::infer_long_arg_pass_conflicting_aliases ... ok
+test opts::infer_long_arg_pass ... ok
+test opts::infer_long_arg_pass_conflicts_exact_match ... ok
+test opts::issue_1047_min_zero_vals_default_val ... ok
+test opts::issue_1105_empty_value_long_equals ... ok
+test opts::issue_1073_suboptimal_flag_suggestion ... ok
+test opts::issue_1105_empty_value_long_explicit ... ok
+test opts::issue_1105_empty_value_long_fail ... ok
+test opts::issue_1105_empty_value_short_equals ... ok
+test opts::issue_1105_empty_value_short_explicit ... ok
+test opts::issue_1105_empty_value_short_explicit_no_space ... ok
+test opts::issue_1105_empty_value_short_fail ... ok
+test opts::issue_2022_get_flags_misuse ... ok
+test opts::issue_2279 ... ok
+test opts::leading_hyphen_fail ... ok
+test opts::leading_hyphen_pass ... ok
+test opts::leading_hyphen_with_flag_after ... ok
+test opts::leading_hyphen_with_flag_before ... ok
+test opts::leading_hyphen_with_only_pos_follows ... ok
+test opts::long_eq_val_starts_with_eq ... ok
+test opts::multiple_vals_pos_arg_equals ... ok
+test opts::opts_using_long_equals ... ok
+test opts::opts_using_long_space ... ok
+test opts::opts_using_mixed ... ok
+test opts::lots_o_vals ... ok
+test opts::opts_using_mixed2 ... ok
+test opts::opts_using_short ... ok
+test opts::require_delims ... ok
+test opts::require_delims_no_delim ... ok
+test opts::require_equals_empty_vals_pass ... ok
+test opts::require_equals_fail ... ok
+test opts::require_equals_fail_message ... ok
+test opts::require_equals_min_values_zero ... ok
+test opts::require_equals_no_empty_values_fail ... ok
+test opts::require_equals_pass ... ok
+test opts::short_eq_val_starts_with_eq ... ok
+test opts::short_non_ascii_no_space ... ok
+test opts::stdin_char ... ok
+test positionals::create_positional ... ok
+test positionals::ignore_hyphen_values_on_last ... ok
+test positionals::issue_946 ... ok
+test positionals::last_positional ... ok
+test positionals::last_positional_no_double_dash ... ok
+test positionals::last_positional_second_to_last_mult ... ok
+test positionals::missing_required_2 ... ok
+test positionals::missing_required - should panic ... ok
+test positionals::multiple_positional_one_required_usage_string ... ok
+test positionals::lots_o_vals ... ok
+test positionals::multiple_positional_usage_string ... ok
+test positionals::only_pos_follow ... ok
+test positionals::positional ... ok
+test positionals::positional_hyphen_does_not_panic ... ok
+test positionals::positional_multiple ... ok
+test positionals::positional_arg_with_short - should panic ... ok
+test positionals::positional_arg_with_long - should panic ... ok
+test positionals::positional_multiple_2 ... ok
+test positionals::positional_multiple_3 ... ok
+test positionals::positional_possible_values ... ok
+test positionals::single_positional_multiple_usage_string ... ok
+test positionals::single_positional_required_usage_string ... ok
+test positionals::single_positional_usage_string ... ok
+test posix_compatible::conflict_overridden ... ok
+test posix_compatible::conflict_overridden_2 ... ok
+test posix_compatible::conflict_overridden_4 ... ok
+test posix_compatible::conflict_overridden_3 ... ok
+test posix_compatible::flag_overrides_itself ... ok
+test posix_compatible::incremental_override ... ok
+test posix_compatible::option_overrides_itself ... ok
+test posix_compatible::pos_required_overridden_by_flag ... ok
+test posix_compatible::posix_compatible_flags_long ... ok
+test posix_compatible::posix_compatible_flags_long_rev ... ok
+test posix_compatible::posix_compatible_flags_short ... ok
+test posix_compatible::overrides_with_invalid_arg - should panic ... ok
+test posix_compatible::posix_compatible_flags_short_rev ... ok
+test posix_compatible::posix_compatible_opts_long ... ok
+test posix_compatible::posix_compatible_opts_long_equals ... ok
+test posix_compatible::posix_compatible_opts_long_equals_rev ... ok
+test posix_compatible::posix_compatible_opts_long_rev ... ok
+test posix_compatible::posix_compatible_opts_short ... ok
+test posix_compatible::posix_compatible_opts_short_rev ... ok
+test posix_compatible::require_overridden_2 ... ok
+test posix_compatible::require_overridden_3 ... ok
+test posix_compatible::require_overridden_4 ... ok
+test possible_values::alias ... ok
+test possible_values::aliases ... ok
+test possible_values::escaped_possible_values_output ... ok
+test possible_values::ignore_case ... ok
+test possible_values::ignore_case_fail ... ok
+test possible_values::expensive::no_iterate_when_hidden ... ok
+test possible_values::expensive::iterate_when_displayed ... ok
+test possible_values::ignore_case_multiple ... ok
+test possible_values::ignore_case_multiple_fail ... ok
+test possible_values::possible_value_arg_value ... ok
+test possible_values::missing_possible_value_error ... ok
+test possible_values::possible_values_alias_output ... ok
+test possible_values::possible_values_hidden_output ... ok
+test possible_values::possible_values_of_option ... ok
+test possible_values::possible_values_of_option_fail ... ok
+test possible_values::possible_values_of_option_multiple ... ok
+test possible_values::possible_values_of_option_multiple_fail ... ok
+test possible_values::possible_values_of_positional ... ok
+test possible_values::possible_values_of_positional_fail ... ok
+test possible_values::possible_values_of_positional_multiple ... ok
+test possible_values::possible_values_of_positional_multiple_fail ... ok
+test possible_values::possible_values_output ... ok
+test propagate_globals::global_arg_default_value ... ok
+test propagate_globals::global_arg_used_inner ... ok
+test propagate_globals::global_arg_used_outer ... ok
+test propagate_globals::global_arg_used_top_level ... ok
+test require::arg_require_group_2 ... ok
+test require::arg_require_group_3 ... ok
+test require::arg_require_group ... ok
+test require::flag_required ... ok
+test propagate_globals::global_flag_2x_used_inner ... ok
+test require::flag_required_2 ... ok
+test require::group_required_2 ... ok
+test require::group_required_3 ... ok
+test require::group_required ... ok
+test propagate_globals::global_flag_2x_used_top_level ... ok
+test propagate_globals::global_flag_used_inner ... ok
+test propagate_globals::global_flag_used_outer ... ok
+test propagate_globals::global_flag_used_top_level ... ok
+test require::group_requires_with_default_value ... ok
+test require::issue_1158_conflicting_requirements_rev ... ok
+test require::issue_1158_conflicting_requirements ... ok
+test require::issue_1643_args_mutually_require_each_other ... ok
+test require::issue_2624 ... ok
+test require::issue_753 ... ok
+test require::multiple_required_unless_usage_printing ... ok
+test require::list_correct_required_args ... ok
+test require::option_required ... ok
+test require::option_required_2 ... ok
+test require::positional_required ... ok
+test require::missing_required_output ... ok
+test require::positional_required_2 ... ok
+test require::positional_required_with_requires ... ok
+test require::positional_required_with_requires_if_no_value ... ok
+test require::positional_required_with_requires_if_value ... ok
+test require::require_eq ... ok
+test require::require_eq_filtered ... ok
+test require::require_eq_filtered_group ... ok
+test require::required_error_doesnt_duplicate ... ok
+test require::required_if_all_values_present_fail ... ok
+test require::required_if_all_values_present_pass ... ok
+test require::required_if_any_all_values_present_fail ... ok
+test require::required_if_any_all_values_present_pass ... ok
+test require::required_if_eq_all_on_default_value ... ok
+test require::required_if_eq_on_default_value ... ok
+test require::required_if_some_values_present_pass ... ok
+test require::required_if_val_present_fail ... ok
+test require::required_if_invalid_arg - should panic ... ok
+test require::required_if_val_present_ignore_case_fail ... ok
+test require::required_if_val_present_fail_error_output ... ok
+test require::required_if_val_present_ignore_case_pass ... ok
+test require::required_if_val_present_pass ... ok
+test require::required_if_wrong_val ... ok
+test require::required_ifs_val_present_fail ... ok
+test require::required_ifs_val_present_pass ... ok
+test require::required_ifs_wrong_val ... ok
+test require::required_ifs_wrong_val_mult_fail ... ok
+test require::required_require_with_group_shows_flag ... ok
+test require::required_unless_all_err ... ok
+test help::issue_626_variable_panic ... ok
+test require::required_unless_all_on_default_value ... ok
+test require::required_unless_any_1 ... ok
+test require::required_unless_all_with_any ... ok
+test require::required_unless_any_2 ... ok
+test require::required_unless_any_err ... ok
+test require::required_unless_any_works_with_long ... ok
+test require::required_unless_any_works_with_short ... ok
+test require::required_unless_any_works_with_short_err ... ok
+test require::required_unless_any_works_without ... ok
+test require::required_unless_on_default_value ... ok
+test require::required_unless_present ... ok
+test require::required_unless_invalid_arg - should panic ... ok
+test require::required_unless_present_all ... ok
+test require::required_unless_present_any ... ok
+test require::required_unless_present_err ... ok
+test require::required_unless_present_with_optional_value ... ok
+test require::requires_if_present_mult ... ok
+test require::requires_if_present_mult_pass ... ok
+test require::requires_if_invalid_arg - should panic ... ok
+test require::requires_if_present_val ... ok
+test require::requires_if_present_val_no_present_pass ... ok
+test require::requires_if_with_default_value ... ok
+test require::requires_with_default_value ... ok
+test require::requires_invalid_arg - should panic ... ok
+test require::requires_self - should panic ... ok
+test require::short_flag_require_equals_with_minvals_zero ... ok
+test subcommands::alias_help ... ok
+test subcommands::busybox_like_multicall ... ok
+test subcommands::cant_have_args_with_multicall - should panic ... ok
+test subcommands::bad_multicall_command_error ... ok
+test subcommands::duplicate_subcommand - should panic ... ok
+test subcommands::hostname_like_multicall ... ok
+test subcommands::duplicate_subcommand_alias - should panic ... ok
+test subcommands::issue_1031_args_with_same_name ... ok
+test subcommands::invisible_aliases_help_output ... ok
+test subcommands::issue_1031_args_with_same_name_no_more_vals ... ok
+test subcommands::issue_1161_multiple_hyphen_hyphen ... ok
+test subcommands::issue_1722_not_emit_error_when_arg_follows_similar_to_a_subcommand ... ok
+test subcommands::issue_2494_subcommand_is_present ... ok
+test subcommands::multicall_help_flag ... ok
+test subcommands::multicall_help_subcommand ... ok
+test subcommands::multiple_aliases ... ok
+test subcommands::single_alias ... ok
+test subcommands::multicall_render_help ... ok
+test subcommands::subcmd_did_you_mean_output ... ok
+test subcommands::subcmd_did_you_mean_output_ambiguous ... ok
+test subcommands::subcmd_did_you_mean_output_arg ... ok
+test subcommands::subcmd_did_you_mean_output_arg_false_positives ... ok
+test subcommands::subcommand ... ok
+test subcommands::subcommand_after_argument ... ok
+test subcommands::subcommand_after_argument_looks_like_help ... ok
+test subcommands::subcommand_multiple ... ok
+test subcommands::subcommand_none_given ... ok
+test subcommands::subcommand_not_recognized ... ok
+test subcommands::subcommand_placeholder_test ... ok
+test subcommands::subcommand_used_after_double_dash ... ok
+test subcommands::visible_aliases_help_output ... ok
+test template_help::template_author_version ... ok
+test template_help::template_empty ... ok
+test template_help::template_notag ... ok
+test template_help::custom_template ... ok
+test template_help::template_unknowntag ... ok
+test tests::add_multiple_arg ... ok
+test tests::create_app ... ok
+test template_help::with_template ... ok
+test tests::issue_3669_command_build_recurses ... ok
+test tests::flag_x2_opt ... ok
+test tests::long_flag_long_opt_eq_pos ... ok
+test tests::long_flag_long_opt_pos ... ok
+test tests::long_opt_eq_x2_pos ... ok
+test tests::mut_arg_all ... ok
+test tests::mut_subcommand_all ... ok
+test tests::mut_subcommand_with_alias_resolve ... ok
+test tests::long_opt_x2_pos ... ok
+test tests::sc_long_flag_long_opt ... ok
+test tests::sc_long_flag_long_opt_eq_pos ... ok
+test tests::sc_long_flag_short_opt_pos ... ok
+test tests::sc_long_flag_x2_long_opt_eq_pos ... ok
+test tests::sc_long_flag_x2_short_opt_eq_pos ... ok
+test tests::sc_long_flag_x2_long_opt_pos ... ok
+test tests::sc_short_flag_long_opt_eq_pos ... ok
+test tests::sc_long_flag_x2_short_opt_pos ... ok
+test tests::sc_short_flag_long_opt_pos ... ok
+test tests::sc_short_flag_short_opt_pos ... ok
+test tests::sc_short_flag_x2_comb_long_opt_eq_pos ... ok
+test tests::sc_short_flag_short_opt_eq_pos ... ok
+test tests::sc_short_flag_x2_comb_long_opt_pos ... ok
+test tests::sc_short_flag_x2_comb_short_opt_eq_pos ... ok
+test tests::sc_short_flag_x2_comb_short_opt_pos ... ok
+test tests::sc_short_flag_x2_long_opt_eq_pos ... ok
+test tests::sc_short_flag_x2_long_opt_pos ... ok
+test tests::sc_short_flag_x2_short_opt_eq_pos ... ok
+test tests::short_flag_short_opt_pos ... ok
+test tests::sc_short_flag_x2_short_opt_pos ... ok
+test unicode::possible_values_ignore_case ... ok
+test tests::short_opt_eq_x2_pos ... ok
+test tests::short_flag_x2_comb_short_opt_pos ... ok
+test tests::short_opt_x2_pos ... ok
+test unique_args::unique_arg_longs - should panic ... ok
+test utf8::allow_invalid_utf8_external_subcommand_values_of_os ... ok
+test unique_args::unique_arg_names - should panic ... ok
+test utf8::allow_invalid_utf8_subcommand_args_with_allow_external_subcommands ... ok
+test unique_args::unique_arg_shorts - should panic ... ok
+test utf8::allow_validated_utf8_external_subcommand_values_of ... ok
+test utf8::allow_validated_utf8_value_of ... ok
+test utf8::invalid_utf8_option_long_equals ... ok
+test utf8::invalid_utf8_option_long_space ... ok
+test utf8::invalid_utf8_option_short_equals ... ok
+test utf8::invalid_utf8_option_short_no_space ... ok
+test utf8::invalid_utf8_option_short_space ... ok
+test utf8::invalid_utf8_positional ... ok
+test utf8::invalid_utf8_strict_invalid_long ... ok
+test utf8::invalid_utf8_strict_invalid_short ... ok
+test utf8::invalid_utf8_strict_option_long_equals ... ok
+test utf8::invalid_utf8_strict_option_long_space ... ok
+test utf8::invalid_utf8_strict_option_short_equals ... ok
+test utf8::invalid_utf8_strict_option_short_no_space ... ok
+test utf8::invalid_utf8_strict_option_short_space ... ok
+test utf8::invalid_utf8_strict_positional ... ok
+test utf8::refuse_invalid_utf8_subcommand_args_with_allow_external_subcommands ... ok
+test utf8::refuse_invalid_utf8_subcommand_when_args_are_allowed_with_allow_external_subcommands ... ok
+test utf8::panic_invalid_utf8_external_subcommand_values_of - should panic ... ok
+test utf8::panic_validated_utf8_external_subcommand_values_of_os - should panic ... ok
+test utf8::refuse_invalid_utf8_subcommand_with_allow_external_subcommands ... ok
+test version::help_long_flag_no_version ... ok
+test version::help_long_flag_with_both ... ok
+test version::help_long_flag_with_long_version ... ok
+test version::help_long_flag_with_version ... ok
+test version::help_short_flag_no_version ... ok
+test version::help_short_flag_with_both ... ok
+test version::help_short_flag_with_long_version ... ok
+test version::help_short_flag_with_version ... ok
+test version::mut_arg_version_no_auto_version - should panic ... ok
+test version::no_propagation_by_default_long ... ok
+test version::no_propagation_by_default_short ... ok
+test version::propagate_version_long ... ok
+test version::override_version_long_with_user_flag - should panic ... ok
+test version::override_version_short_with_user_flag - should panic ... ok
+test version::propagate_version_short ... ok
+test version::version_long_flag_no_version ... ok
+test version::propagate_version_no_version_info - should panic ... ok
+test version::version_long_flag_with_both ... ok
+test version::version_long_flag_with_long_version ... ok
+test version::version_long_flag_with_version ... ok
+test version::version_short_flag_no_version ... ok
+test version::version_short_flag_with_both ... ok
+test version::version_required - should panic ... ok
+test version::version_short_flag_with_long_version ... ok
+test version::version_short_flag_with_version ... ok
+
+failures:
+
+---- error::flag_used_after_double_dash stdout ----
+
+thread 'error::flag_used_after_double_dash' (26481796) panicked at tests/builder/error.rs:334:5:
+
+[31m---- expected: tests/builder/error.rs:324:19[0m
+[32m++++ actual:   In-memory[0m
+[2m   1[0m [2m   1[0m [2m|[0m [2merror: unexpected argument '--dev' found
+[0m[2m   2[0m [2m   2[0m [2m|[0m [2m
+[0m[2m   3[0m      [31m-[0m [31m  tip: flag '--dev' exists; to use it, remove the '--' before it
+[0m[2m   4[0m      [31m-[0m [31m
+[0m[2m   5[0m [2m   3[0m [2m|[0m [2mUsage: app [OPTIONS]
+[0m[2m   6[0m [2m   4[0m [2m|[0m [2m
+[0m[2m   7[0m [2m   5[0m [2m|[0m [2mFor more information, try '--help'.
+[0m
+[2mUpdate with SNAPSHOTS=overwrite[0m
+
+
+
+failures:
+    error::flag_used_after_double_dash
+
+test result: FAILED. 968 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+--- stderr ---
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded unic-emoji-char v0.9.0
+  Downloaded terminal_size v0.4.4
+  Downloaded unic-char-property v0.9.0
+  Downloaded itoa v1.0.17
+  Downloaded divan-macros v0.1.21
+  Downloaded target-triple v1.0.0
+  Downloaded color-print v0.3.7
+  Downloaded roff v1.1.1
+  Downloaded unic-common v0.9.0
+  Downloaded humantime-serde v1.1.1
+  Downloaded content_inspector v0.2.4
+  Downloaded unic-char-range v0.9.0
+  Downloaded anstyle-lossy v1.1.3
+  Downloaded unic-ucd-version v0.9.0
+  Downloaded clap-cargo v0.15.2
+  Downloaded snapbox-macros v1.1.0
+  Downloaded os_pipe v1.2.0
+  Downloaded automod v1.0.16
+  Downloaded humantime v2.1.0
+  Downloaded anstyle-svg v1.1.0
+  Downloaded color-print-proc-macro v0.3.7
+  Downloaded toml_parser v1.1.1+spec-1.1.0
+  Downloaded trycmd v1.2.0
+  Downloaded trybuild v1.0.116
+  Downloaded log v0.4.22
+  Downloaded toml_edit v0.25.9+spec-1.1.0
+  Downloaded toml v1.0.6+spec-1.1.0
+  Downloaded regex-lite v0.1.8
+  Downloaded divan v0.1.21
+  Downloaded jiff-static v0.2.24
+  Downloaded snapbox v1.2.1
+  Downloaded crossbeam-utils v0.8.20
+  Downloaded once_cell v1.19.0
+  Downloaded winnow v0.7.15
+  Downloaded winnow v1.0.1
+  Downloaded libc v0.2.183
+   Compiling proc-macro2 v1.0.106
+   Compiling libc v0.2.183
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling rustix v1.1.4
+   Compiling anstyle v1.0.14
+   Compiling bitflags v2.11.0
+   Compiling utf8parse v0.2.2
+   Compiling serde_core v1.0.228
+   Compiling anstyle-query v1.1.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling colorchoice v1.0.4
+   Compiling unicode-width v0.2.2
+   Compiling clap_lex v1.1.0 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_lex)
+   Compiling anstyle-parse v1.0.0
+   Compiling heck v0.5.0
+   Compiling cfg-if v1.0.4
+   Compiling zmij v1.0.21
+   Compiling unicase v2.9.0
+   Compiling serde v1.0.228
+   Compiling strsim v0.11.1
+   Compiling serde_json v1.0.149
+   Compiling anstream v1.0.0
+   Compiling memchr v2.8.0
+   Compiling itoa v1.0.17
+   Compiling getrandom v0.3.4
+   Compiling utf8-width v0.1.7
+   Compiling escargot v0.5.15
+   Compiling html-escape v0.2.13
+   Compiling anstyle-lossy v1.1.3
+   Compiling same-file v1.0.6
+   Compiling log v0.4.22
+   Compiling fastrand v2.3.0
+   Compiling once_cell v1.19.0
+   Compiling anstyle-svg v1.1.0
+   Compiling walkdir v2.5.0
+   Compiling content_inspector v0.2.4
+   Compiling snapbox-macros v1.1.0
+   Compiling normalize-line-endings v0.3.0
+   Compiling similar v2.7.0
+   Compiling dunce v1.0.5
+   Compiling crossbeam-utils v0.8.20
+   Compiling winnow v1.0.1
+   Compiling toml_writer v1.1.1+spec-1.1.0
+   Compiling rayon-core v1.13.0
+   Compiling hashbrown v0.16.1
+   Compiling toml_parser v1.1.1+spec-1.1.0
+   Compiling equivalent v1.0.2
+   Compiling indexmap v2.13.0
+   Compiling either v1.13.0
+   Compiling glob v0.3.3
+   Compiling humantime v2.1.0
+   Compiling shlex v1.3.0
+   Compiling target-triple v1.0.0
+   Compiling rustversion v1.0.22
+   Compiling winnow v0.7.15
+   Compiling syn v2.0.117
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling serde_spanned v1.1.1
+   Compiling termcolor v1.4.1
+   Compiling toml_edit v0.25.9+spec-1.1.0
+   Compiling clap-cargo v0.15.2
+   Compiling jiff v0.2.24
+   Compiling semver v1.0.28
+   Compiling toml v1.0.6+spec-1.1.0
+   Compiling errno v0.3.14
+   Compiling filetime v0.2.27
+   Compiling wait-timeout v0.2.1
+   Compiling os_pipe v1.2.0
+   Compiling crossbeam-epoch v0.9.18
+   Compiling crossbeam-deque v0.8.5
+   Compiling terminal_size v0.4.4
+   Compiling clap_builder v4.6.0 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_builder)
+   Compiling tempfile v3.27.0
+   Compiling clap_derive v4.6.1 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_derive)
+   Compiling serde_derive v1.0.228
+   Compiling automod v1.0.16
+   Compiling rayon v1.11.0
+   Compiling minimal-lexical v0.2.1
+   Compiling clap_lex v1.0.0
+   Compiling roff v1.1.1
+   Compiling nom v7.1.3
+   Compiling clap_builder v4.5.60
+   Compiling unic-char-range v0.9.0
+   Compiling unic-common v0.9.0
+   Compiling unic-ucd-version v0.9.0
+   Compiling unic-char-property v0.9.0
+   Compiling divan-macros v0.1.21
+   Compiling regex-lite v0.1.8
+   Compiling condtype v1.3.0
+   Compiling unic-emoji-char v0.9.0
+   Compiling lazy_static v1.5.0
+   Compiling static_assertions v1.1.0
+   Compiling clap_bench v0.0.0 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_bench)
+   Compiling color-print-proc-macro v0.3.7
+   Compiling clap v4.6.1 (/Users/junekim/.sweep/worktrees/clap-rs__clap)
+   Compiling clap v4.5.60
+   Compiling color-print v0.3.7
+   Compiling divan v0.1.21
+   Compiling clap_complete v4.6.5 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_complete)
+   Compiling clap_mangen v0.3.0 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_mangen)
+   Compiling clap_complete_nushell v4.6.0 (/Users/junekim/.sweep/worktrees/clap-rs__clap/clap_complete_nushell)
+   Compiling humantime-serde v1.1.1
+   Compiling trybuild v1.0.116
+   Compiling snapbox v1.2.1
+   Compiling trycmd v1.2.0
+warning: use of deprecated function `<flatten::flatten_skipped_group::Args as clap::Args>::augment_args::old_attribute`: Attribute `#[clap(...)]` has been deprecated in favor of `#[arg(...)]`
+   --> tests/derive/flatten.rs:300:11
+    |
+300 |         #[clap(short)]
+    |           ^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: `clap` (test "derive") generated 1 warning
+    Finished `test` profile [optimized + debuginfo] target(s) in 23.97s
+     Running unittests src/lib.rs (target/debug/deps/clap-9891c58293837275)
+     Running unittests src/bin/stdio-fixture.rs (target/debug/deps/stdio_fixture-d66a6d1c5fe2e3ff)
+     Running tests/builder/main.rs (target/debug/deps/builder-c5a81041ed307500)
+error: test failed, to rerun pass `-p clap --test builder`

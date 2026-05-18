@@ -281,6 +281,32 @@ def _window_label(spark_minutes: int, spark_buckets: int) -> str:
     return f"{total_min}min"
 
 
+def _backpressure_glyph(actor: str, queued: int, in_flight: int) -> str | None:
+    """Return a glyph if `actor` is parked-on-backpressure (queued>0,
+    in_flight==0, and a downstream limit is the reason). None when
+    nothing's blocking.
+
+    Without this, the cockpit's `0 in-flight` for a parked actor looks
+    identical to a dead one. The substrate has real backpressure
+    interfaces (qa→attest ceiling); operator should see them as
+    "waiting" not "idle." 🅱 = blocked-by-backpressure."""
+    if queued == 0 or in_flight > 0:
+        return None
+    if actor == "qa":
+        # qa pauses dispatching when attest.pending >= ATTEST_PENDING_CEILING.
+        # Cheap workflow query; fail-open if unreachable.
+        try:
+            import asyncio
+            from sweep.activities.attest import attest_pending_depth
+            from sweep.workflows.qa_actor import ATTEST_PENDING_CEILING
+            depth = asyncio.run(attest_pending_depth())
+            if depth >= ATTEST_PENDING_CEILING:
+                return f"{depth}/{ATTEST_PENDING_CEILING}"
+        except Exception:
+            return None
+    return None
+
+
 def _build_rows(states, actionable, spark_minutes, spark_buckets):
     rows = []
     for actor in actionable:
@@ -301,7 +327,10 @@ def _build_rows(states, actionable, spark_minutes, spark_buckets):
         # Save ink: 0s render as · so non-zero numbers pop.
         # In-flight also carries the cap signal: bold `N/cap` when capped.
         queued_cell = str(queued) if queued > 0 else "·"
-        if f_cap is not None and in_flight >= f_cap:
+        bp = _backpressure_glyph(actor, queued, in_flight)
+        if bp:
+            in_flight_cell = bp
+        elif f_cap is not None and in_flight >= f_cap:
             in_flight_cell = f"**{in_flight}/{f_cap}**"
         else:
             in_flight_cell = str(in_flight) if in_flight > 0 else "·"

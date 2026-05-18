@@ -53,6 +53,10 @@ _ACTOR_WORKFLOW_IDS = {
     "compose":     "compose-actor",
     "rope":        "rope-actor",
     "scout":       "scout-actor",
+    "amend":       "amend-actor",
+    "check":       "check-actor",
+    "heart":       "heart-actor",
+    "ping":        "ping-actor",
 }
 
 # View-only sinks: their inbox jsonl IS the consumer; no Temporal
@@ -99,6 +103,33 @@ async def _signal_actor(actor: str, msg: "Message") -> str | None:
 
 INBOX_DIR = Path.home() / ".sweep" / "inbox"
 CLASSIFIED_INBOX = INBOX_DIR / "classified.jsonl"
+# Terminal-state sink: every PR that classifies to `done` (approved,
+# closed, or merged) gets appended here, plus manual entries (drafts
+# the operator parked, etc.). Append-only durable artifact so the
+# operator can see "these are out of rotation" without grepping event
+# logs. Dedup on read by (repo, pr); latest row wins. Named `sink.jsonl`
+# rather than `done.jsonl` because the destination is the artifact, not
+# the bucket label.
+SINK = INBOX_DIR / "sink.jsonl"
+
+
+def _sink_pr(repo: str, pr: int, reason: str, state: str = "") -> None:
+    """Append one terminal-state row to the done sink. Best-effort —
+    a sink write failure must not break routing, so we swallow."""
+    try:
+        SINK.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "repo": repo,
+            "pr": pr,
+            "reason": reason,
+            "state": state,
+        }
+        with open(SINK, "a") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception as e:
+        observe.event("sink_write_failed", repo=repo, pr=pr,
+                      error_type=type(e).__name__, error=str(e)[:200])
 
 
 # ------------------------------------------------------------ gh wrappers
@@ -211,6 +242,10 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
         pr=pr,
     )
 
+    member_approved_over_cr = _member_approved_over_cr(
+        data.get("reviews") or [], author_login=author_login,
+    )
+
     return PrLiveState(
         repo=repo,
         pr=pr,
@@ -226,7 +261,32 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
         is_draft=bool(data.get("isDraft")),
         failing_check=failing,
         maintainer_raised_concern=maintainer_raised_concern,
+        member_approved_over_cr=member_approved_over_cr,
     )
+
+
+def _member_approved_over_cr(reviews: list[dict], *, author_login: str) -> bool:
+    """True iff a MEMBER/OWNER submitted APPROVED *after* the latest
+    non-author CHANGES_REQUESTED. GH's `reviewDecision` aggregate doesn't
+    auto-dismiss the earlier CR, so the classifier needs this side-channel.
+
+    Self-reviews are ignored on both sides — the author can't approve
+    over their own review, and a CR from the author isn't blocking.
+    """
+    cr_ts = ""
+    approve_ts = ""
+    for r in reviews:
+        login = (r.get("author") or {}).get("login") or ""
+        if login == author_login:
+            continue
+        state = (r.get("state") or "").upper()
+        assoc = (r.get("authorAssociation") or "").upper()
+        ts = r.get("submittedAt") or ""
+        if state == "CHANGES_REQUESTED" and ts > cr_ts:
+            cr_ts = ts
+        elif state == "APPROVED" and assoc in ("MEMBER", "OWNER") and ts > approve_ts:
+            approve_ts = ts
+    return bool(approve_ts) and (not cr_ts or approve_ts > cr_ts)
 
 
 async def _open_maintainer_question(
@@ -422,6 +482,16 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     merge = state.mergeable
     reasons: list[str] = []
 
+    # A MEMBER/OWNER approving over a stale collaborator CHANGES_REQUESTED
+    # leaves GH's aggregate pinned to CHANGES_REQUESTED until the earlier
+    # review is dismissed. Treat the member approval as effective for the
+    # subsequent rules so the PR can reach `done` (or fall through to the
+    # CI-failing branches and trigger a re-attest) instead of being held
+    # in `human` indefinitely. wild-linker/wild#1924 was the witness.
+    if state.member_approved_over_cr and rd == "CHANGES_REQUESTED":
+        reasons.append("member APPROVED over outstanding CR — effective approval")
+        rd = "APPROVED"
+
     # 0. terminal state — CLOSED / MERGED PRs short-circuit to done.
     #    Routing them into reqa / reinvestigate burns a worktree clone
     #    for a branch the head fork has already deleted (typical
@@ -616,6 +686,8 @@ async def route_classified() -> dict:
         if bucket == "done":
             observe.event("remit_done", repo=repo, pr=pr,
                           reason=r.get("reason", ""))
+            _sink_pr(repo, pr, r.get("reason", ""),
+                       state=str(r.get("signals", {}).get("state", "")))
             routed["done"] = routed.get("done", 0) + 1
             continue
         actor, intent = BUCKET_ROUTING.get(bucket, ("retro", "audit"))
@@ -668,7 +740,9 @@ async def deliver_to_inbox(result: PrStateResult) -> str:
     if result.bucket == "done":
         observe.event("remit_done", repo=result.repo, pr=result.pr,
                       reason=result.reason)
-        return f"(done — no inbox; {result.reason})"
+        _sink_pr(result.repo, result.pr, result.reason,
+                   state=str(result.signals.get("state", "")))
+        return f"(sink — {result.reason})"
     actor, intent = BUCKET_ROUTING[result.bucket]
     ts = dt.datetime.now(dt.timezone.utc)
 

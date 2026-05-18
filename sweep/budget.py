@@ -60,6 +60,13 @@ SHARES: dict[str, float] = {
     "scout":         0.02,   # one search per cycle, alternating sources
     "qa":            0.15,
     "investigate":   0.15,
+    # reinvestigate gets its own share (separate from investigate)
+    # because engagement-lane demand is reactive — a bulk CI-failing
+    # storm can drown new-bug investigation if they share a budget.
+    # Lower than investigate's 15% because most engagement-lane work
+    # is rote (reqa/respond handle the mechanical fixes; reinvestigate
+    # is the harder case that recurs less often per repo).
+    "reinvestigate": 0.10,
     "respond":       0.10,
     "remit":         0.10,
 }
@@ -70,9 +77,75 @@ SHARES: dict[str, float] = {
 SUBPROCESS_ESTIMATE: dict[str, int] = {
     "triage":      5,    # /triage typically: search + a few views
     "investigate": 30,   # /investigate fans out; expensive
+    # reinvestigate uses the same /investigate skill but routes
+    # against its own budget key (above). Same per-invocation cost.
+    "reinvestigate": 30,
     "respond":     10,   # /drip pushes + checks (respond-actor wraps the skill)
     "qa":          8,    # /qa pulls reviews + checks
 }
+
+
+# Per-actor self-throttle caps: max card completions per LOCAL_WINDOW.
+# Distinct from the SHARES-derived ops budget — that's "calls against
+# the GitHub rate limit"; this is "operator-paced flow control on
+# expensive skills." Witness: reinvestigate's flood-after-bulk-dump
+# tripped the budget andon every 15min until throttled. Cap is in
+# card-completion units (counted from events.jsonl) so it's robust
+# to per-card op variance.
+#
+# To add a throttle: pick the actor key + the event-kind(s) emitted
+# at completion + the cap.
+THROTTLE_CAPS: dict[str, tuple[tuple[str, ...], int]] = {
+    # reinvestigate: 2 cards / 15min. Engagement-lane flood control.
+    "reinvestigate": (("reinvestigate_done",), 2),
+}
+
+
+def is_throttled(actor: str, *, minutes: int = LOCAL_WINDOW_MINUTES) -> bool:
+    """Return True if `actor` has completed cap-or-more cards in the
+    local window. Counts completion events from events.jsonl directly
+    (ground truth) rather than deriving from ops-recording (which can
+    drift if a card's code path varies). pause_gate calls this from
+    `should_idle`.
+
+    Fail-open: any error reading the event log returns False so a
+    broken throttle doesn't strand the actor."""
+    cfg = THROTTLE_CAPS.get(actor)
+    if cfg is None:
+        return False
+    completion_kinds, cap = cfg
+    events_path = Path.home() / ".sweep" / "events.jsonl"
+    if not events_path.exists():
+        return False
+    now = dt.datetime.now(dt.timezone.utc)
+    cutoff = now - dt.timedelta(minutes=minutes)
+    count = 0
+    try:
+        # Tail the file — only recent events matter. ~10K lines is
+        # cheap to walk in Python and well-covers the local window.
+        text = events_path.read_text()
+        lines = text.splitlines()[-10000:]
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if e.get("kind") not in completion_kinds:
+                continue
+            ts_s = e.get("ts", "")
+            try:
+                ts = dt.datetime.fromisoformat(ts_s)
+            except ValueError:
+                continue
+            if ts >= cutoff:
+                count += 1
+                if count >= cap:
+                    return True
+    except OSError:
+        return False
+    return False
 
 # Caller context — set by each actor at entry, read by gh_io on each
 # subprocess call. Default "" so calls from places we forgot to tag
@@ -192,16 +265,25 @@ def _andon_path(actor: str) -> Path:
 def record_andon(actor: str, reason: str) -> None:
     """Write a per-actor budget andon marker and pause the line."""
     from sweep.control_state import set_paused
+    from sweep import observe
     ANDON_DIR.mkdir(parents=True, exist_ok=True)
     p = _andon_path(actor)
+    actor_name = f"budget_{actor}"
     payload = {
-        "actor": f"budget_{actor}",
+        "actor": actor_name,
         "msg_id": f"(budget watchdog: {actor})",
         "reason": reason[:500],
         "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
     p.write_text(json.dumps(payload))
     set_paused(True)
+    # Stoppage instrumentation — wasteboard's uptime panel pairs this
+    # with andon_cleared to compute downtime. Watchdog-style andons
+    # were invisible to that panel before this event fired (the panel
+    # showed 100% uptime while a marker was live — caught 2026-05-18).
+    observe.event("andon_recorded", actor=actor_name,
+                  msg_id=payload["msg_id"], reason=reason[:200],
+                  ts=payload["ts"])
 
 
 def clear_andon_if_held(actor: str) -> bool:
@@ -210,12 +292,14 @@ def clear_andon_if_held(actor: str) -> bool:
     safe range (currently: under its share, no overshoot needed —
     auto-recover hysteresis = share itself)."""
     from sweep.control_state import set_paused
+    from sweep import observe
     p = _andon_path(actor)
     if not p.exists():
         return False
     p.unlink()
     if not any(ANDON_DIR.glob("*.json")):
         set_paused(False)
+    observe.event("andon_cleared", actor=f"budget_{actor}")
     return True
 
 

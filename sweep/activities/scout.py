@@ -32,6 +32,85 @@ from sweep.types import Message, forward_ledger
 
 SCOUT_INBOX = Path.home() / ".sweep" / "inbox" / "scout.jsonl"
 SIFT_INBOX = Path.home() / ".sweep" / "inbox" / "sift.jsonl"
+
+# Repo-size cache + tunables for the auto-evict-by-size gate. Threshold
+# default is 1.5GB clone size (gh api returns KB), which catches the
+# observed mega-repo class (servo, grafana, chisel, cpython, pytorch,
+# nodejs). Tune via ~/.sweep/control/scout_size_threshold_kb. See
+# memory/feedback_repo_too_big_is_legit.md for the rationale.
+_REPO_SIZE_CACHE = Path.home() / ".sweep" / "control" / "repo_sizes.json"
+_SIZE_THRESHOLD_FILE = Path.home() / ".sweep" / "control" / "scout_size_threshold_kb"
+_DEFAULT_SIZE_THRESHOLD_KB = 1_500_000  # 1.5 GB
+_EVICTED_PATH = Path.home() / ".sweep" / "control" / "sift_evicted.txt"
+
+
+def _size_threshold_kb() -> int:
+    try:
+        return max(1, int(_SIZE_THRESHOLD_FILE.read_text().strip()))
+    except (OSError, ValueError):
+        return _DEFAULT_SIZE_THRESHOLD_KB
+
+
+def _load_size_cache() -> dict:
+    if not _REPO_SIZE_CACHE.exists():
+        return {}
+    try:
+        return json.loads(_REPO_SIZE_CACHE.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_size_cache(cache: dict) -> None:
+    _REPO_SIZE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        atomic_write_text(_REPO_SIZE_CACHE, json.dumps(cache))
+    except OSError:
+        pass
+
+
+def _repo_size_kb(repo: str) -> int | None:
+    """Return repo size in KB per gh api. Cached on disk so repeat
+    scout passes don't re-query. Returns None on lookup failure (the
+    gate fails-soft: unknown size means proceed)."""
+    cache = _load_size_cache()
+    if repo in cache:
+        return int(cache[repo])
+    try:
+        r = subprocess.run(
+            ["gh", "api", f"repos/{repo}", "--jq", ".size"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return None
+        size = int((r.stdout or "0").strip())
+    except (subprocess.TimeoutExpired, ValueError, FileNotFoundError):
+        return None
+    cache[repo] = size
+    _save_size_cache(cache)
+    return size
+
+
+def _auto_evict_by_size(repo: str, size_kb: int, threshold_kb: int) -> None:
+    """Append the repo to the eviction list with a size-explanatory
+    reason. Idempotent — duplicates in the file are harmless since the
+    reader is set-based."""
+    line = (
+        f"{repo}  # auto-evicted "
+        f"{dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')} "
+        f"(size {size_kb // 1024}MB > {threshold_kb // 1024}MB threshold)\n"
+    )
+    _EVICTED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        existing = _EVICTED_PATH.read_text() if _EVICTED_PATH.exists() else ""
+        if any(ln.split()[0] == repo for ln in existing.splitlines() if ln.strip()):
+            return  # already evicted
+    except OSError:
+        pass
+    try:
+        with _EVICTED_PATH.open("a") as f:
+            f.write(line)
+    except OSError:
+        pass
 SCOUT_CURSOR_PATH = Path.home() / ".sweep" / "cursors" / "scout.json"
 
 # Mechanical search qualifiers shared by both sources. Push every
@@ -83,6 +162,51 @@ async def _emit_sift_card(raw: dict, source: str) -> bool:
     number = raw.get("number")
     if not repo or not number:
         return False
+
+    # Host-arch compatibility — cheap pattern match on the repo
+    # name / description / topics. Zero API calls; only catches the
+    # most obvious cases (e.g. "PowerShell"). Less-obvious cases
+    # (windows-only matrix entries) fall through to sift's deeper
+    # check which is allowed to fetch workflows. Backstop is attest's
+    # runtime env precondition.
+    try:
+        from sweep import host_compat
+        repo_desc = (repo_obj.get("description") or "")
+        repo_topics = repo_obj.get("repositoryTopics") or repo_obj.get("topics") or []
+        if isinstance(repo_topics, list) and repo_topics and isinstance(repo_topics[0], dict):
+            repo_topics = [t.get("name", "") for t in repo_topics]
+        compat = host_compat.cheap_check(repo, description=repo_desc,
+                                          topics=repo_topics)
+        if compat.verdict == "incompatible":
+            observe.event(
+                "scout_host_incompat_drop",
+                repo=repo, reason=compat.reason[:200], source=source,
+            )
+            return False
+    except Exception as e:
+        # Fail-soft: sift's own check will catch what we miss here.
+        observe.event("scout_host_compat_probe_failed",
+                      repo=repo, error_type=type(e).__name__,
+                      error=str(e)[:200])
+
+    # Size gate — auto-evict mega-repos before any clone. Cost-per-
+    # attestation on these is unfavorable (slow clones, slow builds,
+    # custom build orchestrators); see memory/feedback_repo_too_big_
+    # _is_legit.md. Cached per repo so we pay one gh api call per
+    # repo lifetime, not per issue.
+    try:
+        size_kb = _repo_size_kb(repo)
+        threshold_kb = _size_threshold_kb()
+        if size_kb is not None and size_kb > threshold_kb:
+            _auto_evict_by_size(repo, size_kb, threshold_kb)
+            observe.event("scout_size_evict",
+                          repo=repo, size_kb=size_kb,
+                          threshold_kb=threshold_kb, source=source)
+            return False
+    except Exception as e:
+        observe.event("scout_size_probe_failed", repo=repo,
+                      error_type=type(e).__name__, error=str(e)[:200])
+
     ts = dt.datetime.now(dt.timezone.utc)
     msg_id = f"scout-{repo.replace('/', '-')}-{int(number)}"
     out = Message(

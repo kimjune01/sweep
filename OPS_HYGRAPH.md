@@ -279,3 +279,27 @@ The skill rule makes ambiguity rare; the substrate fallback handles the remainin
 
 **Compounds with:** [[O8]] (mechanical re-parse closes silent-skip; container-id provenance closes fabrication — both are needed for a real "no proof, no push" gate). [[O1]] (activity-owned observability: same principle, applied to test outputs — the activity holds the file handle, not the LLM, so editorial drift can't happen at the byte level).
 
+## O11: Writer and verifier must share routing data, not just discipline
+
+**Prediction:** When the writer (investigate / synth_test) and verifier (qa's test_attestation gate) compute env routing independently — each looking at retro_params, each reconstructing the worktree path, each defaulting separately — they drift. A fix written against host tools (where investigate's claude/codex subprocess runs) gets judged against container tools (where qa runs `make test`). Different cargo versions, different ruff presence, different Python interpreters. The verdict that comes back ("test_fails_on_fix") misattributes a routing-mismatch as a fix-quality problem, and the writer-naive-of-verifier discipline ([[writer-naive-of-verifier]] memory) can't help because it's about the rubric, not the environment. The class of "fix looks good locally, fails in qa" failures resolves only when both sides read the same routing record.
+
+**Status: PROPOSED (2026-05-18), structural mitigation shipped same day.** `sweep/project_info.py` is a canonical `info(repo) -> ProjectInfo` accessor over retro_params + DEFAULT_TEST_ENV + eviction list. `sweep project-info <repo>` CLI emits it as JSON for the LLM-spawned subprocess inside `/investigate` to consult before invoking local tools. The /investigate skill markdown now instructs the agent: native env → run host tools; docker env → wrap with `docker run -v $(sweep project-info $REPO --field worktree):/work ...` so self-checks match what qa will judge. Qa side already reads the same data via `_get_test_env`, so drift-protection is now structural rather than discipline-dependent.
+
+**Mechanism:** routing data lived in two places by accident — `_get_test_env` in qa.py (the verifier's accessor) and ad-hoc Bash calls in the /investigate skill (the writer's improvisation). Each evolved independently. The `project_info` module collapses both reads into one, so any future routing rule (per-repo container image, per-repo PATH augmentation, per-repo setup_cmd) automatically applies to both sides without a coordination dance.
+
+**Generalization:** any two-stage pipeline where stage A produces work and stage B judges it should share an *environment manifest*, not just rule-discipline. Writer-naive-of-verifier ([[writer-naive-of-verifier]]) keeps the verifier's *rules* opaque to the writer; this is its complement — keeping the verifier's *environment* visible to the writer. The two together: opaque rubric, transparent env. Without env transparency, the writer's self-checks are uninformative; without rubric opacity, the writer games the gate.
+
+**Falsifier:**
+- A repo gets a routing change that's correctly recorded in retro_params but the verifier ignores it (because qa caches an old test_env in memory, or because a new actor bypasses `_get_test_env` and reads retro_params directly). The drift returns; the fix is that all routing reads go through `project_info.info()`, not retro_params directly.
+- The /investigate skill ignores the `sweep project-info` guidance and runs raw host tools anyway. Then the asymmetry persists despite the structural fix being in place. Mitigation: post-investigate audit (rare) or a hard "investigate must declare env" gate (heavy).
+
+**Compounds with:** [[writer-naive-of-verifier]] (rubric opacity + env transparency are the two halves of a clean writer/verifier split). [[O1]] (activity-owned observability: same shape — central truth in code, not in LLM editorial).
+
+## Transient ops state (2026-05-18)
+
+Not hypotheses; just current-state facts other actors should know about. Update or remove as state changes.
+
+- **Codex Plus active (2026-05-18).** Operator upgraded after hitting free-tier ceiling earlier the same day. `investigate_primary` reverted to opus same day — codex lacks Claude's Agent tool, and the subagent fan-out is where investigate's value compounds. Cascade landed on: opus investigates (subagents), codex adversary_1 (OpenAI structural review), opus adversary_2 (heavyweight review; same model as writer but different role/prompt/context so divergence still present in practice), claude CLI reserved for the structured-output shim role.
+- **sweep-tester:latest missing Python linters.** Repos with `make lint` style targets that call `ruff` / `black` / `mypy` fail inside the container with "No such file or directory." Dockerfile carries Rust + Go + Node + Python + uv toolchains but no linters. Two fixes: (a) add the linters to the Dockerfile and `sweep cache rebuild-image`, (b) per-repo `test_setup_cmd` like `uv tool install ruff` set via retro_params. (a) is the structural fix; (b) is the band-aid for one repo at a time. Witness: pyro-ppl/pyro#3451 hit it twice on 2026-05-18.
+- **Native vs docker test_env, 7 native overrides as of 2026-05-18.** clap-rs-clap, dart-lang-source_gen, hudson-trading-slang-server, JuliaData-DataFramesMeta.jl, marler8997-anyzig, sharkdp-bat, yonaskolb-XcodeGen. Each has retro_params reason. New native overrides should land in retro_params with a one-line "why" so they don't accrue silently.
+

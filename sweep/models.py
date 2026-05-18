@@ -78,11 +78,24 @@ ROLE_DEFAULTS: dict[str, str] = {
     # sonnet (cheap, complementary failure modes to opus). Swap to
     # codex/gemini via SWEEP_MODEL_INVESTIGATE_PUSHOUT for more
     # entropy when acceptance rate justifies the cost.
+    # Opus is the primary investigator: codex was tried (2026-05-18)
+    # but the Agent tool — subagent fan-out for parallel hypothesis
+    # exploration — only exists in Claude's tool model. Investigate's
+    # fan-out phase is where most of the value lives; without sub-
+    # agents, codex's runs are shallower despite its structural-
+    # reasoning specialty. Codex stays in the cascade as adversary_1.
     "investigate_primary":  "opus",
     "investigate_pushout":  "sonnet",
+    # Two-reviewer volley: codex (OpenAI, structural reasoning) + opus
+    # (Anthropic, heavyweight review). Same model nickname as the writer
+    # but different role + different prompt + fresh context per call,
+    # so the "same-model" concern is weaker than it looks. Gemini was
+    # the original third-provider opinion; dropped for cost 2026-05-18.
+    # Claude CLI is reserved for the shim role (extract_qa_verdicts
+    # structured-output parser), not an adversary slot.
     "adversary_1":          "codex",
-    "adversary_2":          "gemini",
-    "adversary_3":          "opus",
+    "adversary_2":          "opus",
+    "adversary_3":          "sonnet",
 }
 
 
@@ -105,7 +118,8 @@ def adversary_cascade() -> list[ModelInfo]:
     reviewer that returns a verdict (pass/fail/revise) wins — no further
     reviewers tried for that round.
 
-    Default order: codex → gemini → opus subagent. Override per slot via
+    Default order: codex → opus → sonnet. Operator lost gemini access;
+    cascade rebuilt without Google. Override per slot via
     SWEEP_MODEL_ADVERSARY_1 / _2 / _3.
     """
     return [

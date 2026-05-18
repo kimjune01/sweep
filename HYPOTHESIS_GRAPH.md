@@ -660,3 +660,26 @@ hypothesis about tissue engagement)._
 
 **Compounds with:** [[H0-quality-gated-AI-contributions]] (extends "quality is the differentiator" from code to comments); [[H2c-standing-compounds-within-a-repo]] (side-hatch is a low-cost way to plant the first contact in a repo we haven't PR'd to yet); [[H5-solo-maintainers-merge-boring-fixes]] (the tissue surface is exactly the maintainers we have least leverage with — they didn't want a PR from us, but they might want a "looks-already-fixed" pointer).
 
+## H24: Maintainer-ROI is the missing ranking function for what to PR
+
+**Prediction:** PR merge rate is dominated less by the bug being real (we filter on that already) than by the *maintainer's expected ROI* on reviewing — small diff, addresses a labeled or known-painful bug, tests included, no public-API change, no core-module surface area, doesn't reopen a closed-as-WONTFIX discussion. Sorting candidates by predicted maintainer-ROI before queuing through investigate would lift merge rate more than any further upgrade to the test_attestation gate.
+
+**Why now:** the 2026-05-17 bulk-attest practice round showed wide variance in attest outcomes that wasn't predicted by language or repo size, but DID correlate with rough ROI proxies — small-diff Go/Rust fixes attested + merged-on-the-margin; large-diff multi-file ones got `test_passes_on_master` or real fail-on-fix more often. The substrate currently treats "this issue exists + I can fix it" as a green light; it should treat "the maintainer would gain from this fix landing" as the gate.
+
+**Components of maintainer-ROI (operator's working list, to be refined):**
+- diff size (smaller = lower review cost = higher ROI per maintainer minute)
+- issue labeled bug / good-first-issue / help-wanted (maintainer's own signal of want-this-fixed)
+- issue age × interaction count (long-open + many commenters = high pain, high ROI when fixed)
+- tests included (maintainer's regression-prevention preference)
+- avoid: core-module, public-API, breaking-change paths (high cost-of-review-error)
+- avoid: recently-closed-as-WONTFIX siblings (maintainer-rejected scope)
+
+**Falsifiers:**
+- A high-ROI-score candidate pool merges at the same rate as a random pool → ROI proxies aren't load-bearing; investigate the gap.
+- ROI-score correlates with merge rate but not with the components above → wrong feature decomposition; refit.
+- ROI-score correlates with merge rate AND components → confirmed; integrate into sift/triage as a sort key, not just a filter.
+
+**Where it slots:** would sit between sift (issue surfacing) and triage (per-issue investigate decision) as a ranking pre-filter. Candidates flow into triage sorted by maintainer-ROI; budget burns the top first.
+
+**Compounds with:** [[H0-quality-gated-AI-contributions]] (ROI is the next axis after quality); [[H5-solo-maintainers-merge-boring-fixes]] (boring = small diff = high ROI = aligned); [[pre-investigate]] (the discussion read in pre-investigate is also where ROI signals live: maintainer comments revealing pain or scope opinions).
+

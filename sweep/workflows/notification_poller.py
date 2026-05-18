@@ -29,6 +29,7 @@ with workflow.unsafe.imports_passed_through():
     )
     from sweep.activities.pause_gate import should_idle
     from sweep.activities.remit import kick_remit_card
+    from sweep.activities.check import kick_check_from_subject
 
 
 @workflow.defn
@@ -81,23 +82,40 @@ class NotificationPoller:
             interval = int(result.get("poll_interval_s", POLL_INTERVAL_S))
 
             for t in threads:
-                repo, pr = t.get("repo", ""), t.get("pr", 0)
+                kind = t.get("kind", "pullrequest")
+                repo = t.get("repo", "")
+                pr = t.get("pr", 0)
                 thread_id = t.get("thread_id", "")
-                if not (repo and pr and thread_id):
+                subject_url = t.get("subject_url", "")
+                if not (repo and thread_id):
                     continue
                 try:
-                    # Emit a raw card to remit-actor's inbox. Remit owns
-                    # the classify-and-route policy now; the poller is a
-                    # dumb emitter (its only job: turn GitHub
-                    # notifications into local cards). This keeps the
-                    # post-submit engagement loop first-class instead of
-                    # buried inside the poller's tick.
-                    await workflow.execute_activity(
-                        kick_remit_card,
-                        args=[repo, pr, "notification-poller", thread_id],
-                        start_to_close_timeout=timedelta(seconds=5),
-                        retry_policy=RetryPolicy(maximum_attempts=2),
-                    )
+                    if kind == "checksuite":
+                        # CheckSuite / WorkflowRun → check actor (the
+                        # enrichment shim). It resolves subject →
+                        # (sha, pr), fetches /check-runs, fans out per-
+                        # check remit cards with payload.trigger so
+                        # remit_cycle short-circuits the rollup race.
+                        if not subject_url:
+                            continue
+                        await workflow.execute_activity(
+                            kick_check_from_subject,
+                            args=[subject_url, "notification-poller"],
+                            start_to_close_timeout=timedelta(seconds=30),
+                            retry_policy=RetryPolicy(maximum_attempts=2),
+                        )
+                    else:
+                        # PullRequest threads: existing remit path. The
+                        # poller stays a dumb emitter; remit owns
+                        # classify-and-route.
+                        if not pr:
+                            continue
+                        await workflow.execute_activity(
+                            kick_remit_card,
+                            args=[repo, pr, "notification-poller", thread_id],
+                            start_to_close_timeout=timedelta(seconds=5),
+                            retry_policy=RetryPolicy(maximum_attempts=2),
+                        )
                 except Exception as e:
                     # Don't ack — thread stays unread, next poll retries.
                     workflow.logger.error(

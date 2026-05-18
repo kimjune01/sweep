@@ -85,7 +85,8 @@ async def kick_submit_card(repo: str, branch: str, pr: int | None = None,
     return await _signal_actor("submit", msg)
 
 
-async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
+async def _attestation_gate(repo: str, branch: str | None,
+                            pr: int | None = None) -> tuple[bool, str]:
     """Read the attestation manifest from OUR sweep repo and run the
     deterministic verifier. Returns (ok, reason). Refuses push if no
     manifest exists, the verifier rejects, or the fork worktree drifted
@@ -99,7 +100,7 @@ async def _attestation_gate(repo: str, branch: str | None) -> tuple[bool, str]:
     from sweep.activities.worktree import ensure_worktree
     from sweep._gate.verifier import gate_push
     try:
-        worktree = await ensure_worktree(repo, branch)
+        worktree = await ensure_worktree(repo, branch, pr)
     except Exception as e:
         return False, f"ensure_worktree: {type(e).__name__}: {e}"
     sweep_repo = Path(__file__).resolve().parent.parent.parent
@@ -229,7 +230,8 @@ async def submit_cycle(msg: Message) -> dict:
     # ran, the expected test isn't present, or any test failed.
     # No valid attestation → no push. Production-side vibes can't
     # bypass this.
-    ok, reason = await _attestation_gate(msg.repo, msg.branch)
+    ok, reason = await _attestation_gate(msg.repo, msg.branch,
+                                         int(msg.pr) if msg.pr else None)
     if not ok:
         observe.event("submit_attestation_failed", repo=msg.repo, branch=msg.branch,
                       pr=msg.pr, reason=reason, msg_id=msg.msg_id)
@@ -251,4 +253,76 @@ async def submit_cycle(msg: Message) -> dict:
     observe.event("submit_published", repo=msg.repo, branch=msg.branch,
                   pr=msg.pr, rc=result.get("rc", 0),
                   msg_id=msg.msg_id)
+
+    # Kick a check card so the post-submit CI watcher picks this push up.
+    # Best-effort: a lookup failure here must not break the submit return
+    # value — the SHA-poller catch-all (when wired) will catch missed
+    # pushes regardless.
+    try:
+        await _kick_check_for_push(msg.repo, msg.branch, msg)
+    except Exception as e:
+        observe.event("submit_check_kick_failed", repo=msg.repo,
+                      branch=msg.branch, error_type=type(e).__name__,
+                      error=str(e)[:200])
+
     return {"published": True, "respond_result": result}
+
+
+async def _kick_check_for_push(repo: str, branch: str,
+                               incoming: Message) -> None:
+    """Resolve (pr, head_sha) for the just-pushed branch and kick a
+    check card. Quiet noop if the PR isn't open yet (some pushes land
+    a branch but the PR opens via a later cycle); the engagement-side
+    catch-all will re-emit when the PR appears."""
+    import asyncio
+    import subprocess
+    from sweep import observe
+    from sweep.activities.check import kick_check_card
+
+    # GitHub indexes the new head ref asynchronously after a push, so
+    # `gh pr list --head <branch>` immediately after respond often
+    # returns []. Three short attempts (2s spacing) covers the typical
+    # propagation lag without holding the submit cycle hostage.
+    rows: list = []
+    last_rc: int | None = None
+    for attempt in range(3):
+        r = subprocess.run(
+            ["gh", "pr", "list", "--repo", repo, "--head", branch,
+             "--json", "number,headRefOid", "--limit", "5"],
+            capture_output=True, text=True, timeout=15,
+        )
+        last_rc = r.returncode
+        if r.returncode == 0:
+            try:
+                rows = json.loads(r.stdout or "[]")
+            except Exception:
+                rows = []
+            if isinstance(rows, list) and rows:
+                break
+        if attempt < 2:
+            await asyncio.sleep(2)
+    if last_rc != 0:
+        observe.event("submit_check_kick_skipped", repo=repo,
+                      branch=branch, reason=f"gh_rc={last_rc}")
+        return
+    if not isinstance(rows, list) or not rows:
+        observe.event("submit_check_kick_skipped", repo=repo,
+                      branch=branch, reason="no_open_pr_for_branch")
+        return
+    # Rare but possible: same branch backs two open PRs (cross-fork
+    # quirks, re-opens). We pick the first but log the ambiguity so
+    # the operator can investigate if the wrong PR got the check kick.
+    if len(rows) > 1:
+        observe.event("submit_check_kick_ambiguous", repo=repo,
+                      branch=branch, n=len(rows),
+                      picked_pr=(rows[0] or {}).get("number"))
+    row = rows[0]
+    pr_num = row.get("number") if isinstance(row, dict) else None
+    head_sha = row.get("headRefOid") if isinstance(row, dict) else None
+    if not pr_num or not head_sha:
+        observe.event("submit_check_kick_skipped", repo=repo,
+                      branch=branch, reason="missing_pr_or_sha")
+        return
+    await kick_check_card(repo=repo, pr=int(pr_num),
+                          head_sha=str(head_sha), sender="submit",
+                          incoming=incoming)

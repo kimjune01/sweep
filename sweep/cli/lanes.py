@@ -3,13 +3,24 @@
 Point-in-time inventory: where each open PR currently sits across the
 pipeline's stations. For flow accounting between stations (leaks,
 screens, pending), see `sweep leakdog`.
+
+Side effect: persists the displayed PR list, in glow's auto-numbering
+order (row × col, top-to-bottom, left-to-right), to
+~/.sweep/state/recent_lanes.json. `sweep pr <N>` resolves the integer
+against this file so the operator can type `sweep pr 1` after a lanes
+view to drill into the first listed PR.
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import typer
 
-from sweep.inbox_state import inbox_states
+from sweep.inbox_state import inbox_states, lane_assignments
+
+RECENT_LANES_FILE = Path.home() / ".sweep" / "state" / "recent_lanes.json"
 
 
 # Pipeline order, left → right:
@@ -35,28 +46,28 @@ def register(app: typer.Typer) -> None:
 
 def render_lanes(height: int = 7) -> list[str]:
     """Build the swim-lane markdown lines without printing. Returns the
-    full block including header and column-truncation indicators."""
+    full block including header and column-truncation indicators.
+
+    Uses cross-actor `lane_assignments`: each (repo, pr) is assigned
+    to exactly one station — its rightmost. Toyota-property kanban,
+    not event-history per actor. The previous behavior double-counted
+    a (repo, pr) into every actor inbox that had ever touched it."""
     cols = STATIONS
+
+    # Single-pass partition. Returns {label: [msg, ...]}, each pair
+    # appearing in exactly one column.
+    columns_by_label = lane_assignments(cols)
+    # For the ✈️ in_flight glyph we still need per-actor in_flight ids
+    # (the assignment doesn't carry the queued vs in_flight distinction).
+    in_flight_ids: set[str] = set()
+    for actor, _label in cols:
+        s = inbox_states(actor)
+        in_flight_ids.update(m.get("msg_id") for m in s["in_flight"])
 
     items: dict[str, list[str]] = {}
     counts: dict[str, int] = {}
-    for actor, _label in cols:
-        s = inbox_states(actor)
-        in_flight_ids = {m.get("msg_id") for m in s["in_flight"]}
-        raw = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
-        # Dedup by (repo, pr) — keep the latest entry per key. Lanes
-        # used to surface raw rows so duplicate-msg-id drift would be
-        # visible in the header, but that disagreed with cockpit's
-        # deduped chip and confused operators. Drift now has its own
-        # row in `sweep leakdog` (via _DEDUP_ACTORS), which is the
-        # place that should answer "where did the duplicates come from."
-        by_key: dict[tuple, dict] = {}
-        for m in raw:
-            key = (m.get("repo"), m.get("pr"))
-            prev = by_key.get(key)
-            if prev is None or m.get("ts", "") >= prev.get("ts", ""):
-                by_key[key] = m
-        msgs = sorted(by_key.values(), key=lambda x: x.get("ts", ""))
+    for actor, label in cols:
+        msgs = columns_by_label.get(label, [])
         counts[actor] = len(msgs)
         rendered: list[str] = []
         for m in msgs:
@@ -82,6 +93,33 @@ def render_lanes(height: int = 7) -> list[str]:
 
     max_rows = max((len(display[a]) for a, _ in cols), default=0)
     headers = [f"{label} ({counts[a]})" for a, label in cols]
+
+    # Persist render-order (repo, pr) for `sweep pr <N>` resolution.
+    # Glow numbers reference-style links in source-text order, which
+    # for a markdown table is row-by-row across columns. Only rows
+    # that carry an actual link contribute an index; the truncation
+    # row ("_… +N more_") has no URL so glow skips it. We build the
+    # ordered list from `columns_by_label` sliced to the same depth
+    # that `display` actually printed (height-1 when truncated).
+    visible_per_col: dict[str, list[dict]] = {}
+    for actor, label in cols:
+        msgs = columns_by_label.get(label, [])
+        if len(msgs) <= height:
+            visible_per_col[actor] = msgs
+        else:
+            visible_per_col[actor] = msgs[: max(0, height - 1)]
+    ordered: list[dict] = []
+    for row in range(max_rows):
+        for actor, _label in cols:
+            msgs = visible_per_col[actor]
+            if row < len(msgs):
+                m = msgs[row]
+                ordered.append({"repo": m.get("repo"), "pr": m.get("pr")})
+    try:
+        RECENT_LANES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        RECENT_LANES_FILE.write_text(json.dumps(ordered))
+    except OSError:
+        pass
 
     lines: list[str] = []
     lines.append("| " + " | ".join(headers) + " |")
@@ -109,18 +147,15 @@ def lanes(
     """
     if as_json:
         import json as _json
+        columns_by_label = lane_assignments(STATIONS)
+        in_flight_ids: set[str] = set()
+        for actor, _label in STATIONS:
+            in_flight_ids.update(
+                m.get("msg_id") for m in inbox_states(actor)["in_flight"]
+            )
         cols = []
-        for actor, label in STATIONS:
-            s = inbox_states(actor)
-            in_flight_ids = {m.get("msg_id") for m in s["in_flight"]}
-            raw = sorted(s["queued"] + s["in_flight"], key=lambda x: x.get("ts", ""))
-            by_key: dict[tuple, dict] = {}
-            for m in raw:
-                key = (m.get("repo"), m.get("pr"))
-                prev = by_key.get(key)
-                if prev is None or m.get("ts", "") >= prev.get("ts", ""):
-                    by_key[key] = m
-            msgs = sorted(by_key.values(), key=lambda x: x.get("ts", ""))
+        for _actor, label in STATIONS:
+            msgs = columns_by_label.get(label, [])
             items = [{
                 "repo": m.get("repo", "?"),
                 "pr": m.get("pr") or "-",

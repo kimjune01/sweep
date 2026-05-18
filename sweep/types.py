@@ -48,9 +48,18 @@ def forward_ledger(incoming: "Message | None") -> list[str]:
     activity that's processing `incoming`. Origin sites (pr-state from
     gh, scout heartbeats, operator kicks) pass None → []. Every
     kick_*_card helper accepts an `incoming` param and routes it
-    through here so there's exactly one way to extend the ledger."""
+    through here so there's exactly one way to extend the ledger.
+
+    Temporal's data converter can hand us either a Message dataclass
+    or a plain dict (when the activity signature only loosely typed
+    `incoming`, or when crossing certain serialization paths). Handle
+    both so the ledger doesn't break on the path that does the dict
+    form — the cost is two attr-vs-key reads, the benefit is no class
+    of silent ledger truncation."""
     if incoming is None:
         return []
+    if isinstance(incoming, dict):
+        return list(incoming.get("ledger") or []) + [incoming.get("sender") or ""]
     return list(incoming.ledger) + [incoming.sender]
 
 
@@ -120,7 +129,7 @@ BUCKET_ROUTING: dict[str, tuple[str, str]] = {
     "close":         ("respond",       "close"),
     "human":         ("human",         "respond"),
     "rebase":        ("respond",       "rebase"),
-    "qa":            ("attest",        "verify-then-qa"),
+    "qa":            ("qa",            "review"),
     "reqa":          ("reqa",          "reattest-followup"),
     "investigate":   ("investigate",   "diagnose"),
     "reinvestigate": ("reinvestigate", "diagnose-followup"),
@@ -156,6 +165,12 @@ class PrLiveState:
     # maintainer_question (which is "you owe an answer"); this is "we owe
     # another investigation pass." Routes to investigate, not human.
     maintainer_raised_concern: bool = False
+    # A MEMBER/OWNER submitted an APPROVED review *after* the latest
+    # outstanding CHANGES_REQUESTED. GitHub's `reviewDecision` aggregate
+    # stays at CHANGES_REQUESTED until the earlier review is dismissed,
+    # so the classifier needs this side-channel to recognize that the
+    # PR is effectively approved by someone with merge rights.
+    member_approved_over_cr: bool = False
 
 
 @dataclass

@@ -23,6 +23,43 @@ If the target machine doesn't have `codex` CLI installed, Phases 1-6 still work 
 
 The skill reads no machine-specific paths. All file references are relative to the target system passed as the argument.
 
+## Context pack (read this first)
+
+The substrate pre-fetches deterministic gh context and writes it to a file. The path is in the `INVESTIGATE_CONTEXT` env var:
+
+```
+cat "$INVESTIGATE_CONTEXT"
+```
+
+This pack always contains: the issue body, recent comments, labels, related open PRs, your prior PR history on this repo, default branch, CI status on the default branch.
+
+**Do not re-fetch what's in the pack.** Skip `gh issue view <num>`, `gh pr list --repo X --search ...`, `gh pr list --author kimjune01 --state all`, and any related-PR lookups. Those gh calls are already paid; their results are in the pack.
+
+Use `gh` only for things NOT in the pack: specific file blobs at a specific SHA (`gh api repos/X/contents/...`), comment-by-comment threads on a specific PR if pursuing one, individual workflow runs if you need to inspect a specific failure.
+
+This costs you a few seconds of "read the pack" up front and saves you 5-10 redundant gh round-trips downstream. The pack is the source of truth for the issue+context at investigate-start; treat it as canonical.
+
+**Subagent rule:** when you dispatch subagents (Agent tool), they get **local tools only** — Read, Grep, Glob, Bash for git/test runs. Do NOT give subagents `gh` access in their tool allowlist. Investigation work is local code analysis: reading source, greping for patterns, examining `git log`, running tests. The questions that need gh ("what did the maintainer say on issue #X", "what does the related PR look like") belong in the parent's context pack, not in subagent dispatches. If a subagent surfaces a need for gh-side data mid-investigation, that's a signal the pack is missing something — note it as a frontier edge and let the parent decide whether to fetch it once, not let each subagent fetch independently.
+
+This keeps the budget accounting honest (gh calls all happen pre-dispatch, all through the cached substrate path) and enforces a clean separation: parent gathers context, subagents reason about code.
+
+## Env routing (consult before running any local tool)
+
+Before invoking `cargo`, `pytest`, `make`, `ruff`, or any other build/test tool against the worktree, call:
+
+```
+sweep project-info <owner>/<repo>
+```
+
+This returns the project's canonical `worktree`, `test_env`, `test_cmd`, and `test_setup_cmd` as JSON. The same module qa uses for its gate, so whatever this prints is what qa will judge against.
+
+Two cases:
+
+1. `test_env: native` — run host tools directly against the worktree path. Whatever cargo/python/ruff is on PATH is what qa will use too.
+2. `test_env: docker:sweep-tester:latest` (or any `docker:...`) — qa runs tests inside that container with the worktree mounted at `/work`. If you want your self-checks to match what qa will see, wrap them with `docker run --rm -v $(sweep project-info $REPO --field worktree):/work -w /work sweep-tester:latest <your-command>`. Tools that exist on the host but not in the container (and vice versa) are the dominant source of "fix looks good locally, fails in qa" verdicts. Mirror the env or accept the gap explicitly.
+
+Pull individual fields with `--field`: `sweep project-info pyro-ppl/pyro --field test_env` prints just the value. Useful for piping into shell substitutions.
+
 ## Blind-blind pushout at dispatch
 
 Before opening the hypothesis graph, run the same evidence pack through a second frontier model in parallel and merge the two outputs. The maintainer's attention is non-renewable; cheap-to-vary the hypothesis stage matters more than cheap-to-vary the implementation stage. The qa volley (codex + gemini) is a second-pass check at the wrong layer — by then the worktree is already written.

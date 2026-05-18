@@ -1,36 +1,41 @@
-"""Compose — PR message writer between qa and submit.
+"""Compose — PR body writer / amender between attest and submit.
 
-Sits in the production lane after qa converges with verdict=pass and a
-fix, before submit's pre-publish gate. Single job: write the PR title +
-body that gives the fix its best shot at maintainer acceptance.
+Sits in the production lane after attest passes (its hard precondition
+is `attestation_hash` on the card; missing it halts the actor). Two
+shapes:
 
-Why not investigate or qa: investigate's fix can be wrong (qa rejects
-or revises), and qa rejects/revises in place — neither can guarantee
-the code is final at the moment the message gets written. Message
-composition must consume the *verified* code, which means it runs
-strictly after qa.
+  new PR     — render a compose-owned body section, hand to submit which
+               creates the PR via /drip --push using the rendered body.
+  existing PR (backfill) — splice the compose-owned section into the
+               live PR body via marker-pair (idempotent edit, same shape
+               as amend). gh pr edit is silent, no maintainer notification.
 
-Why not submit: composition is creative (one shot at convincing a
-maintainer), validation is mechanical (length, no em-dashes, no LLM
-tics). They don't belong in the same actor. Submit validates compose's
-output without writing.
+Marker pair: `<!-- sweep:compose -->...<!-- /sweep:compose -->`. Re-runs
+replace the prior block in place — convergent under repeated application.
 
-Why a separate actor at all: PR-message-writing is half the value of
-non-trivial PRs. Burying it as a side-effect of /drip --push (the old
-behavior) hid a load-bearing responsibility. First-class actor makes
-the responsibility visible and replaceable.
+The render is delegated to a single function (`_render_compose_block`)
+which is a template today and becomes a /compose skill call later.
+Returning None is the "nothing to write" case (skill rejected or template
+declined) and routes to the rejected-as-third-outcome branch rather than
+silently acking.
 
-Skeleton: passes the card through to submit without invoking a writer
-skill yet. The /drip skill's inline message-writing still fires
-downstream until /compose is built. When /compose lands, compose_cycle
-calls it and writes the result into the attestation; submit validates;
-respond pushes with the prepared message.
+Outcomes (per Trick #7 / #8 of the skill-actor patterns):
+  applied         — body changed and gh edit succeeded
+  noop_no_pr      — pr not on GH; falls through to submit for creation
+  noop_unchanged  — splice was a no-op; body already current
+  noop_no_block   — renderer returned nothing
+  rejected_no_attestation — upstream wiring bug; halts the actor
+
+Compliance counters (#9): `clean_fast` (renderer returned content) vs
+`fallback` (default template used). Surfaced via observe.incr so future
+skill drift is visible without grepping events.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import json
+import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
@@ -40,6 +45,70 @@ from temporalio.exceptions import ApplicationError
 from sweep.types import Message, forward_ledger
 
 COMPOSE_INBOX = Path.home() / ".sweep" / "inbox" / "compose.jsonl"
+
+# Marker pair — same shape as amend's per-kind markers, but compose
+# owns a single section (no `kind` axis). One section per PR; re-runs
+# replace it. HTML-comment so it doesn't render in the maintainer's
+# view of the body.
+_COMPOSE_MARKER_OPEN = "<!-- sweep:compose -->"
+_COMPOSE_MARKER_CLOSE = "<!-- /sweep:compose -->"
+
+
+def _splice_compose(body: str, block: str) -> str:
+    """Replace the compose section in `body` with `block` (markers
+    added). If the markers are absent, append the section. Symmetric
+    with detection — passing the same (body, block) twice converges."""
+    wrapped = f"{_COMPOSE_MARKER_OPEN}\n{block}\n{_COMPOSE_MARKER_CLOSE}"
+    if _COMPOSE_MARKER_OPEN in body and _COMPOSE_MARKER_CLOSE in body:
+        pre, rest = body.split(_COMPOSE_MARKER_OPEN, 1)
+        _, post = rest.split(_COMPOSE_MARKER_CLOSE, 1)
+        return f"{pre}{wrapped}{post}"
+    sep = "" if body.endswith("\n") or not body else "\n\n"
+    return f"{body}{sep}{wrapped}\n"
+
+
+def _render_compose_block(msg: Message, attestation_hash: str) -> tuple[str | None, str]:
+    """Render the compose-owned body section.
+
+    Returns (block, provenance):
+      block: the section content (no markers), or None if there's
+             nothing to write — caller routes to noop_no_block.
+      provenance: 'skill' | 'template' | 'fallback' — feeds compose
+             compliance counters.
+
+    Today: pure template — references the attestation footer that amend
+    publishes. When the /compose skill lands, this function calls it and
+    falls back to the template on skill failure / empty output.
+    """
+    short_hash = attestation_hash[:12] if attestation_hash else ""
+    if not short_hash:
+        return None, "fallback"
+    lines = [
+        f"_Sweep attestation `{short_hash}` — see the receipts footer below._",
+    ]
+    return "\n".join(lines), "template"
+
+
+def _pr_body(repo: str, pr: int) -> str | None:
+    """Read the PR body. Returns None if gh fails (PR missing, network
+    flake, perms) — caller treats as 'no PR yet'."""
+    r = subprocess.run(
+        ["gh", "pr", "view", str(pr), "--repo", repo,
+         "--json", "body", "-q", ".body"],
+        capture_output=True, text=True, timeout=20,
+    )
+    if r.returncode != 0:
+        return None
+    return r.stdout
+
+
+def _pr_edit_body(repo: str, pr: int, body: str) -> tuple[int, str]:
+    r = subprocess.run(
+        ["gh", "pr", "edit", str(pr), "--repo", repo,
+         "--body-file", "-"],
+        input=body, capture_output=True, text=True, timeout=30,
+    )
+    return r.returncode, (r.stderr or "")[:300]
 
 
 @activity.defn
@@ -89,16 +158,15 @@ async def kick_compose_card(repo: str, branch: str, pr: int | None = None,
 
 @activity.defn
 async def compose_cycle(msg: Message) -> dict:
-    """Write the PR message and hand off to submit.
+    """Two shapes:
+      - msg.pr set + PR exists → splice compose section into body via
+        marker pair, gh pr edit, exit. Idempotent — re-runs converge.
+      - msg.pr unset OR PR missing → render block, hand to submit which
+        creates the PR carrying the rendered body in its payload.
 
-    Skeleton: passes through without invoking a writer skill. Once a
-    /compose skill exists, this activity calls it, validates the output
-    isn't empty, and writes title+body into msg.payload['pr_title'] and
-    msg.payload['pr_body'] before kicking submit.
-
-    For now, submit runs with no message — /drip --push downstream writes
-    one inline (today's behavior). The actor exists so the topology is
-    honest; the skill upgrade lands separately.
+    Attestation is a hard precondition either way — without it, upstream
+    wiring is broken and we halt the actor rather than push unverified
+    code or write a body referencing a hash we don't have.
     """
     if not msg.repo or not msg.branch:
         raise ApplicationError("compose: repo + branch required",
@@ -107,13 +175,70 @@ async def compose_cycle(msg: Message) -> dict:
     from sweep.activities.submit import kick_submit_card
 
     attestation_hash = (msg.payload or {}).get("attestation_hash")
+    if not attestation_hash:
+        observe.incr("compose_outcome:rejected_no_attestation")
+        raise ApplicationError(
+            f"compose: missing attestation_hash on {msg.repo}@{msg.branch} "
+            f"(msg_id={msg.msg_id}, sender={msg.sender}) — upstream did not "
+            f"route through attest",
+            non_retryable=True,
+        )
+
+    block, provenance = _render_compose_block(msg, attestation_hash)
+    observe.incr(f"compose_render:{provenance}")
+    if block is None:
+        observe.event("compose_noop_no_block", repo=msg.repo,
+                      branch=msg.branch, pr=msg.pr, msg_id=msg.msg_id,
+                      provenance=provenance)
+        observe.incr("compose_outcome:noop_no_block")
+        return {"status": "noop_no_block", "provenance": provenance}
+
+    # Existing-PR path: splice into the live body, idempotent.
+    if msg.pr:
+        body = _pr_body(msg.repo, int(msg.pr))
+        if body is not None:
+            new_body = _splice_compose(body, block)
+            if new_body == body:
+                observe.event("compose_noop_unchanged", repo=msg.repo,
+                              branch=msg.branch, pr=msg.pr, msg_id=msg.msg_id)
+                observe.incr("compose_outcome:noop_unchanged")
+                return {"status": "noop_unchanged"}
+            rc, err = _pr_edit_body(msg.repo, int(msg.pr), new_body)
+            if rc != 0:
+                # Treat as transient; let SkillActor's retry policy take
+                # another swing before halting. Non_retryable=False on
+                # the raise so the SkillActor's RetryPolicy honors it.
+                raise ApplicationError(
+                    f"compose: gh pr edit failed (rc={rc}): {err}",
+                    non_retryable=False,
+                )
+            observe.event("compose_applied", repo=msg.repo, branch=msg.branch,
+                          pr=msg.pr, msg_id=msg.msg_id,
+                          delta_bytes=len(new_body) - len(body),
+                          provenance=provenance)
+            observe.incr("compose_outcome:applied")
+            return {"status": "applied",
+                    "delta_bytes": len(new_body) - len(body),
+                    "provenance": provenance}
+        # PR not on GH (deleted/missing) — fall through to submit, same
+        # as the no-pr case. Distinct event so leakdog can see the slip.
+        observe.event("compose_noop_no_pr", repo=msg.repo, branch=msg.branch,
+                      pr=msg.pr, msg_id=msg.msg_id)
+        observe.incr("compose_outcome:noop_no_pr")
+
+    # No PR yet: hand to submit. Submit/drip currently writes its own
+    # body inline; passing the rendered block through `pr_body` lets the
+    # future submit shape consume it without compose having to re-render.
     wf_id = await kick_submit_card(
         msg.repo, msg.branch, msg.pr,
         sender="compose",
         attestation_hash=attestation_hash,
         incoming=msg,
     )
-    observe.event("compose_passed_through", repo=msg.repo, branch=msg.branch,
+    observe.event("compose_handoff_submit", repo=msg.repo, branch=msg.branch,
                   pr=msg.pr, msg_id=msg.msg_id,
-                  submit_wf=wf_id or "(no-signal)")
-    return {"composed": False, "passthrough": True, "kicked_submit": wf_id}
+                  submit_wf=wf_id or "(no-signal)",
+                  provenance=provenance)
+    observe.incr("compose_outcome:handoff_submit")
+    return {"status": "handoff_submit", "kicked_submit": wf_id,
+            "provenance": provenance}
