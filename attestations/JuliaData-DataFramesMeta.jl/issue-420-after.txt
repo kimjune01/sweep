@@ -1,7 +1,7 @@
 
 --- stderr ---
      Testing DataFramesMeta
-      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_NTzY56/Project.toml`
+      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_BejF16/Project.toml`
   [324d7699] CategoricalArrays v1.1.0
   [8be319e6] Chain v1.0.0
   [a93c6f00] DataFrames v1.8.2
@@ -15,7 +15,7 @@
   [9ce81f87] TableMetadataTools v0.1.0
   [9a3f8284] Random v1.11.0
   [8dfed614] Test v1.11.0
-      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_NTzY56/Manifest.toml`
+      Status `/private/var/folders/26/zl1yc5xj5m36n5_dcqhtp1t00000gn/T/jl_BejF16/Manifest.toml`
   [324d7699] CategoricalArrays v1.1.0
   [8be319e6] Chain v1.0.0
   [34da2185] Compat v4.18.1
@@ -74,11 +74,11 @@
      Testing Running tests...
 Running tests:
 Test Summary: | Pass  Total  Time
-@transform    |   35     35  1.2s
+@transform    |   35     35  1.3s
 Test Summary:          | Pass  Total  Time
 @transform with :block |    5      5  0.1s
 Test Summary: | Pass  Total  Time
-@transform!   |   36     36  0.3s
+@transform!   |   36     36  0.2s
 Test Summary:           | Pass  Total  Time
 @transform! with :block |    5      5  0.1s
 Test Summary:        | Pass  Total  Time
@@ -118,7 +118,7 @@ cols with @eachrow |    7      7  0.1s
 │   caller = ip:0x0
 └ @ Core :-1
 Test Summary:      | Pass  Total  Time
-limits of @eachrow |    4      4  0.4s
+limits of @eachrow |    4      4  0.3s
 Test Summary: | Pass  Total  Time
 eachrow!      |   12     12  0.1s
 Test Summary:            | Pass  Total  Time
@@ -129,7 +129,7 @@ Test Summary: | Pass  Total  Time
 ┌ Warning: Using an un-quoted Symbol on the LHS is deprecated. Write :nsum = ... instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/parsing.jl:387
 Test Summary: | Pass  Total  Time
-@combine      |   32     32  2.0s
+@combine      |   32     32  2.1s
 Test Summary:       | Pass  Total  Time
 combine with :block |    4      4  0.1s
 Test Summary:      | Pass  Total  Time
@@ -145,14 +145,14 @@ limits of @by |    2      2  0.0s
 Test Summary:                      | Pass  Total  Time
 @transform with grouped data frame |   12     12  2.7s
 Test Summary: | Pass  Total  Time
-@groupby      |    8      8  0.8s
+@groupby      |    8      8  0.7s
 	[1m[32mPASSED[0m: grouping.jl
 Test Summary: | Pass  Total  Time
-subset        |   17     17  2.5s
+subset        |   17     17  2.6s
 Test Summary:      | Pass  Total  Time
 subset with :block |    5      5  0.7s
 Test Summary: | Pass  Total  Time
-subset!       |   18     18  0.9s
+subset!       |   18     18  1.0s
 Test Summary:       | Pass  Total  Time
 subset! with :block |    5      5  0.7s
 Test Summary:                     | Pass  Total  Time
@@ -160,7 +160,7 @@ Test Summary:                     | Pass  Total  Time
 Test Summary:                      | Pass  Total  Time
 @subset! with a grouped data frame |    3      3  0.5s
 Test Summary:               | Pass  Total  Time
-@subset with literal values |    8      8  0.2s
+@subset with literal values |    8      8  0.3s
 	[1m[32mPASSED[0m: subset.jl
 Test Summary: | Pass  Total  Time
 distinct      |   12     12  2.9s
@@ -191,9 +191,9 @@ Test Summary: | Pass  Total  Time
 rename errors |    6      6  0.0s
 	[1m[32mPASSED[0m: rename.jl
 Test Summary:        | Pass  Total  Time
-function_compilation |   56     56  8.9s
+function_compilation |   56     56  9.2s
 Test Summary:        | Pass  Total   Time
-composed compilation |   15     15  13.0s
+composed compilation |   15     15  13.3s
 	[1m[32mPASSED[0m: function_compilation.jl
 ┌ Warning: `@where is deprecated, use `@subset` instead.
 └ @ DataFramesMeta ~/.sweep/worktrees/JuliaData__DataFramesMeta.jl/src/macros.jl:1025
@@ -462,7 +462,7 @@ Test Summary:         | Pass  Total  Time
 Test Summary: | Pass  Total  Time
 @rdistinct    |    1      1  0.1s
 Test Summary:          | Pass  Total  Time
-@distinct! with @byrow |    2      2  0.1s
+@distinct! with @byrow |    2      2  0.2s
 Test Summary: | Pass  Total  Time
 @rdistinct!   |    1      1  0.1s
 	[1m[32mPASSED[0m: byrow.jl
