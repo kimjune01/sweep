@@ -1,0 +1,588 @@
+
+--- stderr ---
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded jsonwebtoken v9.3.1
+  Downloaded litrs v1.0.0
+  Downloaded untrusted v0.9.0
+  Downloaded clap_generate v3.0.3
+  Downloaded clap v4.6.1
+  Downloaded bunt-macros v0.2.9
+  Downloaded tempdir v0.3.7
+  Downloaded spin v0.9.8
+  Downloaded serde_derive v1.0.228
+  Downloaded anstyle-parse v1.0.0
+  Downloaded bunt v0.2.9
+  Downloaded num-iter v0.1.43
+  Downloaded time-core v0.1.0
+  Downloaded anstyle v1.0.14
+  Downloaded is_terminal_polyfill v1.70.2
+  Downloaded thiserror-impl v1.0.37
+  Downloaded num-integer v0.1.45
+  Downloaded heck v0.5.0
+  Downloaded cfg-if v1.0.0
+  Downloaded bitflags v1.3.2
+  Downloaded thiserror v1.0.37
+  Downloaded parse_duration v2.1.1
+  Downloaded anstyle-query v1.0.0
+  Downloaded os_str_bytes v6.6.1
+  Downloaded utf8parse v0.2.2
+  Downloaded strsim v0.11.1
+  Downloaded remove_dir_all v0.5.3
+  Downloaded unicode-xid v0.2.4
+  Downloaded getrandom v0.2.12
+  Downloaded pem v3.0.3
+  Downloaded autocfg v1.1.0
+  Downloaded clap_complete_nushell v4.6.0
+  Downloaded unicode-ident v1.0.5
+  Downloaded colorchoice v1.0.0
+  Downloaded clap_lex v0.2.4
+  Downloaded clap_derive v4.6.1
+  Downloaded num v0.2.1
+  Downloaded itoa v1.0.4
+  Downloaded clap_lex v1.0.0
+  Downloaded atty v0.2.14
+  Downloaded lazy_static v1.4.0
+  Downloaded anstream v1.0.0
+  Downloaded zmij v1.0.21
+  Downloaded simple_asn1 v0.6.2
+  Downloaded quote v1.0.45
+  Downloaded time v0.3.17
+  Downloaded textwrap v0.16.1
+  Downloaded time-macros v0.2.6
+  Downloaded base64 v0.21.7
+  Downloaded indexmap v1.9.3
+  Downloaded clap_complete v4.6.5
+  Downloaded clap_complete v3.2.5
+  Downloaded cc v1.0.83
+  Downloaded termcolor v1.1.3
+  Downloaded serde_core v1.0.228
+  Downloaded rand v0.4.6
+  Downloaded proc-macro2 v1.0.106
+  Downloaded num-traits v0.2.15
+  Downloaded num-rational v0.2.4
+  Downloaded num-complex v0.2.4
+  Downloaded memchr v2.5.0
+  Downloaded iana-time-zone v0.1.51
+  Downloaded aho-corasick v0.7.19
+  Downloaded num-bigint v0.2.6
+  Downloaded clap_builder v4.6.0
+  Downloaded serde v1.0.228
+  Downloaded syn v2.0.117
+  Downloaded hashbrown v0.12.3
+  Downloaded syn v1.0.103
+  Downloaded chrono v0.4.44
+  Downloaded serde_json v1.0.149
+  Downloaded regex-syntax v0.6.27
+  Downloaded base64 v0.22.1
+  Downloaded libc v0.2.152
+  Downloaded num-bigint v0.4.3
+  Downloaded clap v3.2.25
+  Downloaded regex v1.6.0
+  Downloaded ring v0.17.7
+   Compiling jwt-cli v6.2.0 (/work)
+error[E0308]: mismatched types
+  --> tests/main_test.rs:64:13
+   |
+64 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+   |             |
+   |             expected a tuple with 3 elements, found one with 4 elements
+   |
+   = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+              found tuple `(_, _, _, _)`
+   = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+   = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:100:13
+    |
+100 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:124:13
+    |
+124 |         let (decoded_token, token_data, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:146:13
+    |
+146 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:177:13
+    |
+177 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:206:13
+    |
+206 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:238:13
+    |
+238 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:260:13
+    |
+260 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:285:13
+    |
+285 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:309:13
+    |
+309 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:347:13
+    |
+347 |         let (decoded_token, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:379:13
+    |
+379 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:396:13
+    |
+396 |         let (result, _, format, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:417:13
+    |
+417 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:435:13
+    |
+435 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:451:13
+    |
+451 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:467:13
+    |
+467 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:483:13
+    |
+483 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:514:13
+    |
+514 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:550:13
+    |
+550 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:620:13
+    |
+620 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:641:13
+    |
+641 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:679:13
+    |
+679 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:702:13
+    |
+702 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:745:13
+    |
+745 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:781:13
+    |
+781 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:821:13
+    |
+821 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:864:13
+    |
+864 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:902:13
+    |
+902 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:940:13
+    |
+940 |         let (result, _, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> tests/main_test.rs:975:13
+    |
+975 |         let (decoded_token, token_data, _, _) = decode_token(&decode_arguments);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+    |             |
+    |             expected a tuple with 3 elements, found one with 4 elements
+    |
+    = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+               found tuple `(_, _, _, _)`
+    = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+    --> tests/main_test.rs:1060:13
+     |
+1060 |         let (decoded_token, decoded_token_data, decoded_output_format, raw_header) =
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected a tuple with 3 elements, found one with 4 elements
+1061 |             decode_token(&decode_arguments);
+     |             ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+     |
+     = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+                found tuple `(_, _, _, _)`
+     = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0061]: this function takes 4 arguments but 5 arguments were supplied
+    --> tests/main_test.rs:1068:33
+     |
+1068 |         let json_print_result = print_decoded_token(
+     |                                 ^^^^^^^^^^^^^^^^^^^
+...
+1073 |             raw_header,
+     |             ---------- unexpected argument #5
+     |
+note: function defined here
+    --> tests/../src/translators/decode.rs:178:8
+     |
+ 178 | pub fn print_decoded_token(
+     |        ^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+     |
+1072 -             json_path_from_args,
+1073 -             raw_header,
+1072 +             json_path_from_args,
+     |
+
+error[E0608]: cannot index into a value of type `jsonwebtoken::Header`
+    --> tests/main_test.rs:1087:26
+     |
+1087 |         assert_eq!(header["alg"], "HS256");
+     |                          ^^^^^^^
+
+error[E0608]: cannot index into a value of type `jsonwebtoken::Header`
+    --> tests/main_test.rs:1088:26
+     |
+1088 |         assert_eq!(header["kid"], kid);
+     |                          ^^^^^^^
+
+error[E0308]: mismatched types
+    --> tests/main_test.rs:1123:13
+     |
+1123 |         let (decoded_token, token_data, _, _) = decode_token(&decode_arguments);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+     |             |
+     |             expected a tuple with 3 elements, found one with 4 elements
+     |
+     = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+                found tuple `(_, _, _, _)`
+     = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+    --> tests/main_test.rs:1176:13
+     |
+1176 |         let (decoded_token, token_data, _, _) = decode_token(&decode_arguments);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+     |             |
+     |             expected a tuple with 3 elements, found one with 4 elements
+     |
+     = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+                found tuple `(_, _, _, _)`
+     = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+    --> tests/main_test.rs:1286:13
+     |
+1286 |         let (result, _, _, _) = decode_token(&decode_arguments);
+     |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+     |             |
+     |             expected a tuple with 3 elements, found one with 4 elements
+     |
+     = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+                found tuple `(_, _, _, _)`
+     = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+    --> tests/main_test.rs:1318:13
+     |
+1318 |         let (result, _, _, _) = decode_token(&decode_arguments);
+     |             ^^^^^^^^^^^^^^^^^   ------------------------------- this expression has type `(Result<TokenData<Payload>, JWTError>, Result<..., ...>, ...)`
+     |             |
+     |             expected a tuple with 3 elements, found one with 4 elements
+     |
+     = note: expected tuple `(Result<TokenData<translators::Payload>, JWTError>, Result<TokenData<translators::Payload>, JWTError>, decode::OutputFormat)`
+                found tuple `(_, _, _, _)`
+     = note: the full name for the type has been written to '/cache/debug/deps/main_test-476f670a51018973.long-type-1727472129468688117.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+Some errors have detailed explanations: E0061, E0308, E0608.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `jwt-cli` (test "main_test") due to 39 previous errors
+warning: build failed, waiting for other jobs to finish...

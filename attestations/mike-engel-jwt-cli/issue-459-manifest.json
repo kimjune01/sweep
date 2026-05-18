@@ -1,0 +1,18 @@
+{
+  "kind": "test_attestation",
+  "name": "issue-459",
+  "test_cmd": "cargo test",
+  "expected_test_name": "unsecured-jwt-253",
+  "head_sha": "8cfbe5595aac7c386ac451534721df7363be8dac",
+  "host": "darwin-arm64",
+  "test_env": "docker:sweep-tester:latest",
+  "elapsed_seconds": 6.710737943649292,
+  "after": {
+    "bytes": 6801,
+    "sha256": "0fdd92d0334082c1f8ddc0f9cb64416ebf7e64f769ff4afdf8b0ef2b13a84f3f"
+  },
+  "before": {
+    "bytes": 33831,
+    "sha256": "04b0578cbc1cdb9d1fabdad98656a22faeff5cceb7120bc7df235e2edf9cdb78"
+  }
+}
