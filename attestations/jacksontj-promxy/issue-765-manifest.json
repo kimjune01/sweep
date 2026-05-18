@@ -6,13 +6,13 @@
   "head_sha": "aba29febb5d370a4e97afb4f45e6fac0943fbdcf",
   "host": "darwin-arm64",
   "test_env": "docker:sweep-tester:latest",
-  "elapsed_seconds": 136.48011708259583,
+  "elapsed_seconds": 81.09302186965942,
   "after": {
-    "bytes": 938,
-    "sha256": "1ae0e64f4ba58ec2c224848aef2fe19b72e29bee2a80f4dd41a8881b784fd60c"
+    "bytes": 955,
+    "sha256": "6af51b3fbf38c64b6e7d66eb9d0bf6bca196c8e2ac74a24525c75690ba4923a7"
   },
   "before": {
-    "bytes": 1474,
-    "sha256": "38fad53b8c41ef939b6819e056d1bfded4e6ab94e32a8c11609f6f97d449d479"
+    "bytes": 1439,
+    "sha256": "f438d305be90e6c14c7f3c3ab90ba1dcf34f870a3ef641718948cb0fb4c76849"
   }
 }
