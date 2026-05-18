@@ -1,0 +1,18 @@
+{
+  "kind": "test_attestation",
+  "name": "issue-1622",
+  "test_cmd": "swift test",
+  "expected_test_name": "ds-store-cache-invalidation",
+  "head_sha": "e5d7b777e5a597f705ff013f17eaf4bb547f7635",
+  "host": "darwin-arm64",
+  "test_env": "native",
+  "elapsed_seconds": 53.87468910217285,
+  "after": {
+    "bytes": 23356,
+    "sha256": "d76cc07f1fe38e5aef89f1bb22975621b1bad45e4365cd3cdba5c7ae4ae87808"
+  },
+  "before": {
+    "bytes": 43855,
+    "sha256": "923f4695f1b5f99950caaaf1434af97bf7e3cec3f60a9059f12c9294f35521c6"
+  }
+}
