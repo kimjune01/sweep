@@ -1,0 +1,18 @@
+{
+  "kind": "test_attestation",
+  "name": "issue-420",
+  "test_cmd": "julia --project=. -e 'using Pkg; Pkg.test()'",
+  "expected_test_name": "fix-subset-literal-259",
+  "head_sha": "36b06d793464b4e87fe78bee1ba01a1da6b34bda",
+  "host": "darwin-arm64",
+  "test_env": "native",
+  "elapsed_seconds": 203.4385769367218,
+  "after": {
+    "bytes": 29450,
+    "sha256": "1d815a4bf686af1f9a2a4b6eb36ad23357ec43a082290dc655361e7c78328a82"
+  },
+  "before": {
+    "bytes": 37751,
+    "sha256": "06da1abe1fa48612ef6f3beb66cde0b13e113a74a5e5168ab17825daa3f9e868"
+  }
+}
