@@ -1,0 +1,30 @@
+?   	github.com/lindell/multi-gitter	[no test files]
+ok  	github.com/lindell/multi-gitter/cmd	0.002s
+?   	github.com/lindell/multi-gitter/internal/git	[no test files]
+?   	github.com/lindell/multi-gitter/internal/git/cmdgit	[no test files]
+?   	github.com/lindell/multi-gitter/internal/git/gogit	[no test files]
+?   	github.com/lindell/multi-gitter/internal/http	[no test files]
+ok  	github.com/lindell/multi-gitter/internal/log	(cached)
+ok  	github.com/lindell/multi-gitter/internal/multigitter	0.201s
+?   	github.com/lindell/multi-gitter/internal/multigitter/logger	[no test files]
+ok  	github.com/lindell/multi-gitter/internal/multigitter/repocounter	(cached)
+?   	github.com/lindell/multi-gitter/internal/multigitter/terminal	[no test files]
+ok  	github.com/lindell/multi-gitter/internal/scm	(cached)
+?   	github.com/lindell/multi-gitter/internal/scm/bitbucketcloud	[no test files]
+?   	github.com/lindell/multi-gitter/internal/scm/bitbucketserver	[no test files]
+ok  	github.com/lindell/multi-gitter/internal/scm/gerrit	(cached)
+?   	github.com/lindell/multi-gitter/internal/scm/gitea	[no test files]
+ok  	github.com/lindell/multi-gitter/internal/scm/github	(cached)
+ok  	github.com/lindell/multi-gitter/internal/scm/gitlab	(cached)
+ok  	github.com/lindell/multi-gitter/tests	4.407s
+?   	github.com/lindell/multi-gitter/tests/scripts/adder	[no test files]
+?   	github.com/lindell/multi-gitter/tests/scripts/changer	[no test files]
+?   	github.com/lindell/multi-gitter/tests/scripts/manual-committer	[no test files]
+?   	github.com/lindell/multi-gitter/tests/scripts/printer	[no test files]
+?   	github.com/lindell/multi-gitter/tests/scripts/pwd	[no test files]
+?   	github.com/lindell/multi-gitter/tests/scripts/remover	[no test files]
+?   	github.com/lindell/multi-gitter/tests/vcmock	[no test files]
+?   	github.com/lindell/multi-gitter/tools/docs	[no test files]
+?   	github.com/lindell/multi-gitter/tools/readme-docs	[no test files]
+
+--- stderr ---

@@ -1,0 +1,18 @@
+{
+  "kind": "test_attestation",
+  "name": "issue-620",
+  "test_cmd": "go test ./...",
+  "expected_test_name": "sleep-between-batches",
+  "head_sha": "a61ff7fa63fa2e15f3793b3adc1a3c7fd598af4e",
+  "host": "darwin-arm64",
+  "test_env": "docker:sweep-tester:latest",
+  "elapsed_seconds": 27.925774812698364,
+  "after": {
+    "bytes": 1958,
+    "sha256": "2438a7084ec205b39b54eeb6d59c731f0b2e1f13c3be6b3b053694b0fd650074"
+  },
+  "before": {
+    "bytes": 5921,
+    "sha256": "d51261fcd4e0aaedc61e6b7e63fb9581a20ecfbafaa889ecb74084957a5af801"
+  }
+}
