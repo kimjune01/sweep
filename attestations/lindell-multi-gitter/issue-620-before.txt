@@ -16,7 +16,7 @@ ok  	github.com/lindell/multi-gitter/internal/scm/gerrit	(cached)
 ?   	github.com/lindell/multi-gitter/internal/scm/gitea	[no test files]
 ok  	github.com/lindell/multi-gitter/internal/scm/github	(cached)
 ok  	github.com/lindell/multi-gitter/internal/scm/gitlab	(cached)
-ok  	github.com/lindell/multi-gitter/tests	4.416s
+ok  	github.com/lindell/multi-gitter/tests	4.436s
 ?   	github.com/lindell/multi-gitter/tests/scripts/adder	[no test files]
 ?   	github.com/lindell/multi-gitter/tests/scripts/changer	[no test files]
 ?   	github.com/lindell/multi-gitter/tests/scripts/manual-committer	[no test files]
