@@ -1,6 +1,6 @@
-Test Suite 'All tests' started at 2026-05-17 20:38:06.289.
-Test Suite 'XcodeGenPackageTests.xctest' started at 2026-05-17 20:38:06.290.
-Test Suite 'ArrayExtensionsTests' started at 2026-05-17 20:38:06.290.
+Test Suite 'All tests' started at 2026-05-17 21:32:14.391.
+Test Suite 'XcodeGenPackageTests.xctest' started at 2026-05-17 21:32:14.391.
+Test Suite 'ArrayExtensionsTests' started at 2026-05-17 21:32:14.391.
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testEmptyArray]' started.
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testEmptyArray]' passed (0.001 seconds).
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testIndexCannotBeFound]' started.
@@ -9,19 +9,19 @@ Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testSearchingForFirstIndex]'
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testSearchingForFirstIndex]' passed (0.000 seconds).
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testSearchingReturnsFirstIndexWhenMultipleElementsHaveSameValue]' started.
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testSearchingReturnsFirstIndexWhenMultipleElementsHaveSameValue]' passed (0.000 seconds).
-Test Suite 'ArrayExtensionsTests' passed at 2026-05-17 20:38:06.292.
+Test Suite 'ArrayExtensionsTests' passed at 2026-05-17 21:32:14.393.
 	 Executed 4 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
-Test Suite 'AtomicTests' started at 2026-05-17 20:38:06.292.
+Test Suite 'AtomicTests' started at 2026-05-17 21:32:14.393.
 Test Case '-[XcodeGenCoreTests.AtomicTests testSimultaneousWriteOrder]' started.
 Test Case '-[XcodeGenCoreTests.AtomicTests testSimultaneousWriteOrder]' passed (0.000 seconds).
-Test Suite 'AtomicTests' passed at 2026-05-17 20:38:06.292.
+Test Suite 'AtomicTests' passed at 2026-05-17 21:32:14.393.
 	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
-Test Suite 'BreakpointGeneratorTests' started at 2026-05-17 20:38:06.292.
+Test Suite 'BreakpointGeneratorTests' started at 2026-05-17 21:32:14.393.
 Test Case '-[XcodeGenKitTests.BreakpointGeneratorTests testBreakpoints]' started.
 Test Case '-[XcodeGenKitTests.BreakpointGeneratorTests testBreakpoints]' passed (0.005 seconds).
-Test Suite 'BreakpointGeneratorTests' passed at 2026-05-17 20:38:06.297.
+Test Suite 'BreakpointGeneratorTests' passed at 2026-05-17 21:32:14.398.
 	 Executed 1 test, with 0 failures (0 unexpected) in 0.005 (0.005) seconds
-Test Suite 'CarthageDependencyResolverTests' started at 2026-05-17 20:38:06.297.
+Test Suite 'CarthageDependencyResolverTests' started at 2026-05-17 21:32:14.398.
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testBaseBuildPath]' started.
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testBaseBuildPath]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testBuildPathForPlatform]' started.
@@ -32,46 +32,46 @@ Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testExecutablePath
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testExecutablePath]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testRelatedDependenciesForPlatform]' started.
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testRelatedDependenciesForPlatform]' passed (0.001 seconds).
-Test Suite 'CarthageDependencyResolverTests' passed at 2026-05-17 20:38:06.298.
+Test Suite 'CarthageDependencyResolverTests' passed at 2026-05-17 21:32:14.399.
 	 Executed 5 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
-Test Suite 'DictionaryExtensionTests' started at 2026-05-17 20:38:06.298.
+Test Suite 'DictionaryExtensionTests' started at 2026-05-17 21:32:14.399.
 Test Case '-[ProjectSpecTests.DictionaryExtensionTests testRemovingNil_ShouldReturnNewDictionaryWithoutOptionalValues]' started.
 Test Case '-[ProjectSpecTests.DictionaryExtensionTests testRemovingNil_ShouldReturnNewDictionaryWithoutOptionalValues]' passed (0.000 seconds).
-Test Suite 'DictionaryExtensionTests' passed at 2026-05-17 20:38:06.299.
+Test Suite 'DictionaryExtensionTests' passed at 2026-05-17 21:32:14.399.
 	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
-Test Suite 'FixturePerformanceTests' started at 2026-05-17 20:38:06.299.
+Test Suite 'FixturePerformanceTests' started at 2026-05-17 21:32:14.399.
 Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:60: Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' measured [Time, seconds] average: 0.014, relative standard deviation: 36.636%, values: [0.026598, 0.019133, 0.014660, 0.012495, 0.011021, 0.010638, 0.010505, 0.010672, 0.010586, 0.010796], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' passed (0.493 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:60: Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' measured [Time, seconds] average: 0.011, relative standard deviation: 6.360%, values: [0.013098, 0.011005, 0.011581, 0.011327, 0.011439, 0.010770, 0.010439, 0.010806, 0.010844, 0.010775], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' passed (0.462 seconds).
 Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:51: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' measured [Time, seconds] average: 0.012, relative standard deviation: 41.790%, values: [0.025844, 0.016581, 0.013067, 0.011432, 0.009957, 0.009517, 0.009107, 0.008915, 0.008905, 0.008912], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' passed (0.376 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:51: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' measured [Time, seconds] average: 0.011, relative standard deviation: 28.140%, values: [0.018391, 0.014328, 0.012113, 0.010244, 0.009351, 0.008672, 0.008795, 0.008952, 0.008604, 0.009205], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' passed (0.364 seconds).
 Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:68: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' measured [Time, seconds] average: 0.066, relative standard deviation: 15.177%, values: [0.095728, 0.061844, 0.065971, 0.063419, 0.062242, 0.062356, 0.062161, 0.061988, 0.061838, 0.061755], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' passed (0.923 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:68: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' measured [Time, seconds] average: 0.062, relative standard deviation: 8.053%, values: [0.075209, 0.058388, 0.058542, 0.058457, 0.057677, 0.060894, 0.060220, 0.061144, 0.061517, 0.065432], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' passed (0.881 seconds).
 Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:79: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' measured [Time, seconds] average: 0.034, relative standard deviation: 13.430%, values: [0.048058, 0.032774, 0.032712, 0.032606, 0.032804, 0.032351, 0.032973, 0.032893, 0.032806, 0.032652], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' passed (0.665 seconds).
-Test Suite 'FixturePerformanceTests' passed at 2026-05-17 20:38:08.756.
-	 Executed 4 tests, with 0 failures (0 unexpected) in 2.457 (2.458) seconds
-Test Suite 'FixtureTests' started at 2026-05-17 20:38:08.756.
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:79: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' measured [Time, seconds] average: 0.033, relative standard deviation: 8.839%, values: [0.041104, 0.030974, 0.031012, 0.033755, 0.035593, 0.033275, 0.031489, 0.032116, 0.031541, 0.031973], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' passed (0.658 seconds).
+Test Suite 'FixturePerformanceTests' passed at 2026-05-17 21:32:16.764.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 2.365 (2.365) seconds
+Test Suite 'FixtureTests' started at 2026-05-17 21:32:16.764.
 Test Case '-[FixtureTests.FixtureTests testProjectFixture]' started.
-Test Case '-[FixtureTests.FixtureTests testProjectFixture]' passed (0.142 seconds).
-Test Suite 'FixtureTests' passed at 2026-05-17 20:38:08.899.
-	 Executed 1 test, with 0 failures (0 unexpected) in 0.142 (0.142) seconds
-Test Suite 'GeneratedPerformanceTests' started at 2026-05-17 20:38:08.899.
+Test Case '-[FixtureTests.FixtureTests testProjectFixture]' passed (0.137 seconds).
+Test Suite 'FixtureTests' passed at 2026-05-17 21:32:16.901.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.137 (0.137) seconds
+Test Suite 'GeneratedPerformanceTests' started at 2026-05-17 21:32:16.901.
 Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:27: Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' measured [Time, seconds] average: 0.091, relative standard deviation: 7.383%, values: [0.110584, 0.087708, 0.090072, 0.090001, 0.090892, 0.088159, 0.086945, 0.088628, 0.086602, 0.088905], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' passed (1.274 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:27: Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' measured [Time, seconds] average: 0.085, relative standard deviation: 4.048%, values: [0.093315, 0.086926, 0.086259, 0.084251, 0.083409, 0.084612, 0.089033, 0.083672, 0.081818, 0.081042], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' passed (1.268 seconds).
 Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:18: Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' measured [Time, seconds] average: 0.009, relative standard deviation: 2.261%, values: [0.008899, 0.009008, 0.008559, 0.008424, 0.008384, 0.008626, 0.008663, 0.008487, 0.008739, 0.008476], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' passed (0.493 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:18: Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' measured [Time, seconds] average: 0.012, relative standard deviation: 48.352%, values: [0.026120, 0.017257, 0.012979, 0.011340, 0.009437, 0.008401, 0.007907, 0.007618, 0.007889, 0.007702], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' passed (0.512 seconds).
 Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:37: Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' measured [Time, seconds] average: 0.089, relative standard deviation: 5.290%, values: [0.101925, 0.086689, 0.086745, 0.086685, 0.085978, 0.091103, 0.087620, 0.085903, 0.086994, 0.085920], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' passed (1.367 seconds).
-Test Suite 'GeneratedPerformanceTests' passed at 2026-05-17 20:38:12.033.
-	 Executed 3 tests, with 0 failures (0 unexpected) in 3.134 (3.135) seconds
-Test Suite 'GlobTests' started at 2026-05-17 20:38:12.033.
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:37: Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' measured [Time, seconds] average: 0.089, relative standard deviation: 12.444%, values: [0.091298, 0.083724, 0.081687, 0.083737, 0.082513, 0.080885, 0.083330, 0.105692, 0.086434, 0.115508], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' passed (1.381 seconds).
+Test Suite 'GeneratedPerformanceTests' passed at 2026-05-17 21:32:20.062.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 3.161 (3.161) seconds
+Test Suite 'GlobTests' started at 2026-05-17 21:32:20.062.
 Test Case '-[XcodeGenCoreTests.GlobTests testBlacklistedDirectories]' started.
 Test Case '-[XcodeGenCoreTests.GlobTests testBlacklistedDirectories]' passed (0.001 seconds).
 Test Case '-[XcodeGenCoreTests.GlobTests testBraces]' started.
@@ -110,39 +110,39 @@ Test Case '-[XcodeGenCoreTests.GlobTests testIterateTwice]' started.
 Test Case '-[XcodeGenCoreTests.GlobTests testIterateTwice]' passed (0.001 seconds).
 Test Case '-[XcodeGenCoreTests.GlobTests testNothingMatches]' started.
 Test Case '-[XcodeGenCoreTests.GlobTests testNothingMatches]' passed (0.001 seconds).
-Test Suite 'GlobTests' passed at 2026-05-17 20:38:12.049.
-	 Executed 19 tests, with 0 failures (0 unexpected) in 0.015 (0.016) seconds
-Test Suite 'PBXProjGeneratorTests' started at 2026-05-17 20:38:12.049.
+Test Suite 'GlobTests' passed at 2026-05-17 21:32:20.080.
+	 Executed 19 tests, with 0 failures (0 unexpected) in 0.017 (0.018) seconds
+Test Suite 'PBXProjGeneratorTests' started at 2026-05-17 21:32:20.080.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testDefaultLastUpgradeCheckWhenUserDidNotSpecifyValue]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testDefaultLastUpgradeCheckWhenUserDidNotSpecifyValue]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testDefaultLastUpgradeCheckWhenUserDidSpecifyInvalidValue]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testDefaultLastUpgradeCheckWhenUserDidSpecifyInvalidValue]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testGroupOrdering]' started.
-Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testGroupOrdering]' passed (0.019 seconds).
+Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testGroupOrdering]' passed (0.021 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testOverrideLastUpgradeCheckWhenUserDidSpecifyValue]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testOverrideLastUpgradeCheckWhenUserDidSpecifyValue]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testPlatformDependencies]' started.
-Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testPlatformDependencies]' passed (0.005 seconds).
+Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testPlatformDependencies]' passed (0.006 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSet]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSet]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSetWithMultipleTargets]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSetWithMultipleTargets]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSetWithNoTargets]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSetWithNoTargets]' passed (0.000 seconds).
-Test Suite 'PBXProjGeneratorTests' passed at 2026-05-17 20:38:12.076.
-	 Executed 8 tests, with 0 failures (0 unexpected) in 0.026 (0.027) seconds
-Test Suite 'PathExtensionsTests' started at 2026-05-17 20:38:12.076.
+Test Suite 'PBXProjGeneratorTests' passed at 2026-05-17 21:32:20.109.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.028 (0.029) seconds
+Test Suite 'PathExtensionsTests' started at 2026-05-17 21:32:20.109.
 Test Case '-[XcodeGenCoreTests.PathExtensionsTests testPathRelativeToPath]' started.
 Test Case '-[XcodeGenCoreTests.PathExtensionsTests testPathRelativeToPath]' passed (0.000 seconds).
-Test Suite 'PathExtensionsTests' passed at 2026-05-17 20:38:12.076.
+Test Suite 'PathExtensionsTests' passed at 2026-05-17 21:32:20.109.
 	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
-Test Suite 'ProjectGeneratorTests' started at 2026-05-17 20:38:12.076.
+Test Suite 'ProjectGeneratorTests' started at 2026-05-17 21:32:20.109.
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testAggregateTargets]' started.
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testAggregateTargets]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testConfigGenerator]' started.
-Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testConfigGenerator]' passed (0.002 seconds).
+Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testConfigGenerator]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithCustomDependencyDestinations]' started.
-Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithCustomDependencyDestinations]' passed (0.041 seconds).
+Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithCustomDependencyDestinations]' passed (0.040 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithDestination]' started.
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithDestination]' passed (0.012 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithPlatformFilteredDependencies]' started.
@@ -150,56 +150,56 @@ Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWith
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testOptions]' started.
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testOptions]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testTargets]' started.
-Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testTargets]' passed (0.040 seconds).
-Test Suite 'ProjectGeneratorTests' passed at 2026-05-17 20:38:12.176.
-	 Executed 7 tests, with 0 failures (0 unexpected) in 0.100 (0.100) seconds
-Test Suite 'ProjectSpecTests' started at 2026-05-17 20:38:12.176.
+Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testTargets]' passed (0.039 seconds).
+Test Suite 'ProjectGeneratorTests' passed at 2026-05-17 21:32:20.207.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.098 (0.098) seconds
+Test Suite 'ProjectSpecTests' started at 2026-05-17 21:32:20.207.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testAllTrackedFilesExcludesIgnoredFiles]' started.
 /Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/ProjectSpecTests/ProjectSpecTests.swift:628: error: -[ProjectSpecTests.ProjectSpecTests testAllTrackedFilesExcludesIgnoredFiles] : excludes .DS_Store and .orig files from tracked files: value is not false
 /Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/ProjectSpecTests/ProjectSpecTests.swift:651: error: -[ProjectSpecTests.ProjectSpecTests testAllTrackedFilesExcludesIgnoredFiles] : excludes .DS_Store from fileGroup tracked files: value is not false
-Test Case '-[ProjectSpecTests.ProjectSpecTests testAllTrackedFilesExcludesIgnoredFiles]' failed (0.002 seconds).
+Test Case '-[ProjectSpecTests.ProjectSpecTests testAllTrackedFilesExcludesIgnoredFiles]' failed (0.003 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testDeploymentTarget]' started.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testDeploymentTarget]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testJSONEncodable]' started.
-Test Case '-[ProjectSpecTests.ProjectSpecTests testJSONEncodable]' passed (0.002 seconds).
+Test Case '-[ProjectSpecTests.ProjectSpecTests testJSONEncodable]' passed (0.001 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testTargetFilename]' started.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testTargetFilename]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testTargetType]' started.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testTargetType]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testValidation]' started.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testValidation]' passed (0.001 seconds).
-Test Suite 'ProjectSpecTests' failed at 2026-05-17 20:38:12.181.
-	 Executed 6 tests, with 2 failures (0 unexpected) in 0.005 (0.005) seconds
-Test Suite 'SchemeGeneratorTests' started at 2026-05-17 20:38:12.181.
+Test Suite 'ProjectSpecTests' failed at 2026-05-17 21:32:20.213.
+	 Executed 6 tests, with 2 failures (0 unexpected) in 0.006 (0.006) seconds
+Test Suite 'SchemeGeneratorTests' started at 2026-05-17 21:32:20.213.
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testDefaultLastUpgradeVersionWhenUserDidNotSpecify]' started.
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testDefaultLastUpgradeVersionWhenUserDidNotSpecify]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testGenerateSchemeManagementOnHiddenTargetScheme]' started.
-Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testGenerateSchemeManagementOnHiddenTargetScheme]' passed (0.001 seconds).
+Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testGenerateSchemeManagementOnHiddenTargetScheme]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testOverrideLastUpgradeVersionWhenUserDidSpecify]' started.
-Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testOverrideLastUpgradeVersionWhenUserDidSpecify]' passed (0.001 seconds).
+Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testOverrideLastUpgradeVersionWhenUserDidSpecify]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testSchemes]' started.
-Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testSchemes]' passed (0.038 seconds).
-Test Suite 'SchemeGeneratorTests' passed at 2026-05-17 20:38:12.221.
-	 Executed 4 tests, with 0 failures (0 unexpected) in 0.040 (0.040) seconds
-Test Suite 'SortedArrayTests' started at 2026-05-17 20:38:12.221.
+Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testSchemes]' passed (0.033 seconds).
+Test Suite 'SchemeGeneratorTests' passed at 2026-05-17 21:32:20.248.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.034 (0.034) seconds
+Test Suite 'SortedArrayTests' started at 2026-05-17 21:32:20.248.
 Test Case '-[XcodeGenCoreTests.SortedArrayTests testEmpty]' started.
 Test Case '-[XcodeGenCoreTests.SortedArrayTests testEmpty]' passed (0.000 seconds).
 Test Case '-[XcodeGenCoreTests.SortedArrayTests testSortingOnInitialization]' started.
 Test Case '-[XcodeGenCoreTests.SortedArrayTests testSortingOnInitialization]' passed (0.000 seconds).
-Test Suite 'SortedArrayTests' passed at 2026-05-17 20:38:12.221.
+Test Suite 'SortedArrayTests' passed at 2026-05-17 21:32:20.248.
 	 Executed 2 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
-Test Suite 'SourceGeneratorTests' started at 2026-05-17 20:38:12.221.
+Test Suite 'SourceGeneratorTests' started at 2026-05-17 21:32:20.248.
 Test Case '-[XcodeGenKitTests.SourceGeneratorTests testSourceGenerator]' started.
-Test Case '-[XcodeGenKitTests.SourceGeneratorTests testSourceGenerator]' passed (0.107 seconds).
-Test Suite 'SourceGeneratorTests' passed at 2026-05-17 20:38:12.328.
-	 Executed 1 test, with 0 failures (0 unexpected) in 0.107 (0.107) seconds
-Test Suite 'SpecLoadingTests' started at 2026-05-17 20:38:12.328.
+Test Case '-[XcodeGenKitTests.SourceGeneratorTests testSourceGenerator]' passed (0.102 seconds).
+Test Suite 'SourceGeneratorTests' passed at 2026-05-17 21:32:20.350.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.102 (0.102) seconds
+Test Suite 'SpecLoadingTests' started at 2026-05-17 21:32:20.350.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testDecoding]' started.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testDecoding]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testPackagesVersion]' started.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testPackagesVersion]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testProjectSpecParser]' started.
-Test Case '-[ProjectSpecTests.SpecLoadingTests testProjectSpecParser]' passed (0.008 seconds).
+Test Case '-[ProjectSpecTests.SpecLoadingTests testProjectSpecParser]' passed (0.007 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoader]' started.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoader]' passed (0.010 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoaderDuplicateImports]' started.
@@ -208,405 +208,30 @@ Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoaderLoadingJSON]' start
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoaderLoadingJSON]' passed (0.001 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecWarningValidation]' started.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecWarningValidation]' passed (0.001 seconds).
-Test Suite 'SpecLoadingTests' passed at 2026-05-17 20:38:12.349.
+Test Suite 'SpecLoadingTests' passed at 2026-05-17 21:32:20.371.
 	 Executed 7 tests, with 0 failures (0 unexpected) in 0.020 (0.021) seconds
-Test Suite 'XcodeGenPackageTests.xctest' failed at 2026-05-17 20:38:12.349.
-	 Executed 75 tests, with 2 failures (0 unexpected) in 6.054 (6.059) seconds
-Test Suite 'All tests' failed at 2026-05-17 20:38:12.349.
-	 Executed 75 tests, with 2 failures (0 unexpected) in 6.054 (6.060) seconds
+Test Suite 'XcodeGenPackageTests.xctest' failed at 2026-05-17 21:32:20.371.
+	 Executed 75 tests, with 2 failures (0 unexpected) in 5.975 (5.979) seconds
+Test Suite 'All tests' failed at 2026-05-17 21:32:20.371.
+	 Executed 75 tests, with 2 failures (0 unexpected) in 5.975 (5.980) seconds
 Generated 792 files and 72 directories
 No "auto" settings found
 Generated 792 files and 72 directories
 Generated 792 files and 72 directories
 
 --- stderr ---
-Fetching https://github.com/jakeheis/SwiftCLI.git
-Fetching https://github.com/yonaskolb/JSONUtilities.git
-Fetching https://github.com/mxcl/Version
-Fetching https://github.com/tuist/XcodeProj.git
-Fetching https://github.com/kylef/PathKit.git
-Fetching https://github.com/tadija/AEXML.git
-Fetching https://github.com/freddi-kit/ArtifactBundleGen
-Fetching https://github.com/kylef/Spectre.git
-Fetching https://github.com/onevcat/Rainbow.git
-Fetching https://github.com/jpsim/Yams.git
-[1/1021] Fetching spectre
-[165/1332] Fetching spectre, version
-[184/3487] Fetching spectre, version, aexml
-[185/8561] Fetching spectre, version, aexml, swiftcli
-[4046/10003] Fetching spectre, version, aexml, swiftcli, rainbow
-[5852/21554] Fetching spectre, version, aexml, swiftcli, rainbow, yams
-[6809/46176] Fetching spectre, version, aexml, swiftcli, rainbow, yams, xcodeproj
-[23890/46365] Fetching spectre, version, aexml, swiftcli, rainbow, yams, xcodeproj, artifactbundlegen
-[27220/47718] Fetching spectre, version, aexml, swiftcli, rainbow, yams, xcodeproj, artifactbundlegen, jsonutilities
-[27248/49170] Fetching spectre, version, aexml, swiftcli, rainbow, yams, xcodeproj, artifactbundlegen, jsonutilities, pathkit
-Fetched https://github.com/jakeheis/SwiftCLI.git from cache (3.71s)
-Fetched https://github.com/kylef/Spectre.git from cache (3.71s)
-Fetched https://github.com/freddi-kit/ArtifactBundleGen from cache (3.71s)
-Fetched https://github.com/yonaskolb/JSONUtilities.git from cache (3.71s)
-Fetched https://github.com/tadija/AEXML.git from cache (3.71s)
-[22688/39378] Fetching version, rainbow, yams, xcodeproj, pathkit
-Fetched https://github.com/tuist/XcodeProj.git from cache (7.39s)
-Fetched https://github.com/onevcat/Rainbow.git from cache (7.39s)
-Fetched https://github.com/kylef/PathKit.git from cache (7.39s)
-Fetched https://github.com/jpsim/Yams.git from cache (7.39s)
-Fetched https://github.com/mxcl/Version from cache (7.39s)
-Computing version for https://github.com/freddi-kit/ArtifactBundleGen
-Computed https://github.com/freddi-kit/ArtifactBundleGen at 0.0.8 (8.99s)
-Computing version for https://github.com/mxcl/Version
-Computed https://github.com/mxcl/Version at 2.0.0 (1.39s)
-Computing version for https://github.com/jakeheis/SwiftCLI.git
-Computed https://github.com/jakeheis/SwiftCLI.git at 6.0.3 (0.50s)
-Computing version for https://github.com/tuist/XcodeProj.git
-Computed https://github.com/tuist/XcodeProj.git at 9.10.1 (0.44s)
-Computing version for https://github.com/onevcat/Rainbow.git
-Computed https://github.com/onevcat/Rainbow.git at 4.0.1 (1.36s)
-Computing version for https://github.com/kylef/Spectre.git
-Computed https://github.com/kylef/Spectre.git at 0.10.1 (0.47s)
-Computing version for https://github.com/yonaskolb/JSONUtilities.git
-Computed https://github.com/yonaskolb/JSONUtilities.git at 4.2.0 (0.44s)
-Computing version for https://github.com/jpsim/Yams.git
-Computed https://github.com/jpsim/Yams.git at 5.0.1 (0.44s)
-Computing version for https://github.com/kylef/PathKit.git
-Computed https://github.com/kylef/PathKit.git at 1.0.1 (0.56s)
-Computing version for https://github.com/tadija/AEXML.git
-Computed https://github.com/tadija/AEXML.git at 4.7.0 (0.42s)
-Creating working copy for https://github.com/freddi-kit/ArtifactBundleGen
-Working copy of https://github.com/freddi-kit/ArtifactBundleGen resolved at 0.0.8
-Creating working copy for https://github.com/mxcl/Version
-Working copy of https://github.com/mxcl/Version resolved at 2.0.0
-Creating working copy for https://github.com/onevcat/Rainbow.git
-Working copy of https://github.com/onevcat/Rainbow.git resolved at 4.0.1
-Creating working copy for https://github.com/jakeheis/SwiftCLI.git
-Working copy of https://github.com/jakeheis/SwiftCLI.git resolved at 6.0.3
-Creating working copy for https://github.com/kylef/PathKit.git
-Working copy of https://github.com/kylef/PathKit.git resolved at 1.0.1
-Creating working copy for https://github.com/jpsim/Yams.git
-Working copy of https://github.com/jpsim/Yams.git resolved at 5.0.1
-Creating working copy for https://github.com/yonaskolb/JSONUtilities.git
-Working copy of https://github.com/yonaskolb/JSONUtilities.git resolved at 4.2.0
-Creating working copy for https://github.com/tadija/AEXML.git
-Working copy of https://github.com/tadija/AEXML.git resolved at 4.7.0
-Creating working copy for https://github.com/kylef/Spectre.git
-Working copy of https://github.com/kylef/Spectre.git resolved at 0.10.1
-Creating working copy for https://github.com/tuist/XcodeProj.git
-Working copy of https://github.com/tuist/XcodeProj.git resolved at 9.10.1
 [1/1] Compiling plugin ArtifactBundleGenPluginCommand
 Building for debugging...
-[1/37] /Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/.build/arm64-apple-macosx/debug/XcodeGenPackageTests.derived/runner.swift
-[1/37] Write sources
-[5/37] Write xcodegen-entitlement.plist
-[5/37] Write sources
-[24/37] Copying SettingPresets
-[25/37] Write swift-version--58304C5D6DBC2206.txt
-[26/107] Compiling reader.c
-[27/107] Compiling parser.c
-[28/107] Compiling writer.c
-[29/107] Compiling emitter.c
-[30/107] Compiling api.c
-[31/107] Compiling scanner.c
-[33/122] Emitting module Rainbow
-[34/122] Emitting module JSONUtilities
-[35/122] Emitting module SwiftCLI
-[36/123] Compiling SwiftCLI VersionCommand.swift
-[37/123] Compiling SwiftCLI Parser.swift
-[38/123] Compiling SwiftCLI Path.swift
-[39/123] Compiling SwiftCLI OptionRegistry.swift
-[40/123] Compiling SwiftCLI Parameter.swift
-[41/123] Compiling SwiftCLI Error.swift
-[42/123] Compiling SwiftCLI HelpCommand.swift
-[43/123] Compiling SwiftCLI Option.swift
-[44/123] Compiling SwiftCLI OptionGroup.swift
-[45/123] Compiling Rainbow Style.swift
-[46/123] Compiling Rainbow StringGenerator.swift
-[47/123] Compiling Rainbow ModesExtractor.swift
-[48/123] Compiling Rainbow ControlCode.swift
-[49/123] Compiling Rainbow BackgroundColor.swift
-[50/123] Compiling Rainbow Color.swift
-[51/123] Compiling Yams Tag.swift
-[52/124] Compiling Rainbow CodesParser.swift
-[53/124] Compiling SwiftCLI Validation.swift
-[54/124] Compiling SwiftCLI ValueBox.swift
-[55/124] Compiling Rainbow String+Rainbow.swift
-[56/124] Compiling SwiftCLI CLI.swift
-[57/124] Compiling SwiftCLI Command.swift
-[58/124] Compiling Yams String+Yams.swift
-[59/124] Compiling SwiftCLI Term.swift
-[60/124] Compiling JSONUtilities Dictionary+KeyPath.swift
-[61/124] Compiling JSONUtilities KeyPath.swift
-[62/124] Compiling JSONUtilities JSONObjectConvertible.swift
-[63/124] Compiling JSONUtilities URL+JSONPrimitiveConvertible.swift
-[64/124] Compiling JSONUtilities JSONFileLoading.swift
-[65/124] Compiling SwiftCLI Compatibility.swift
-[66/124] Compiling SwiftCLI CompletionGenerator.swift
-[67/124] Compiling JSONUtilities DecodingError.swift
-[68/124] Compiling Yams Constructor.swift
-[69/124] Compiling Yams Decoder.swift
-[70/124] Compiling JSONUtilities JSONPrimitiveConvertible.swift
-[71/124] Compiling AEXML Options.swift
-[72/124] Compiling AEXML Parser.swift
-[73/124] Compiling Version Version.swift
-[74/124] Compiling Version Version+Codable.swift
-[75/124] Compiling Version Version+Foundation.swift
-[76/124] Compiling JSONUtilities InvalidItemBehaviour.swift
-[77/124] Compiling Version Version+Range.swift
-[78/124] Compiling Version Version+Comparable.swift
-[79/124] Emitting module Version
-[80/124] Compiling SwiftCLI Stream.swift
-[81/124] Compiling SwiftCLI HelpMessageGenerator.swift
-[82/124] Compiling SwiftCLI Input.swift
-[83/124] Compiling Yams YamlError.swift
-[84/124] Compiling AEXML Error.swift
-[85/124] Emitting module AEXML
-[86/124] Compiling AEXML Element.swift
-[87/124] Compiling AEXML Builders.swift
-[88/124] Compiling AEXML Document.swift
-[89/124] Compiling Yams Representer.swift
-[90/124] Compiling Yams Node.Sequence.swift
-[91/124] Compiling Yams Node.Mapping.swift
-[92/124] Compiling Yams Resolver.swift
-[93/124] Compiling JSONUtilities Dictionary+JSONKey.swift
-[94/124] Compiling SwiftCLI Task.swift
-[95/124] Compiling Yams Parser.swift
-[96/124] Compiling Yams Encoder.swift
-[97/124] Compiling Yams Node.Scalar.swift
-[98/124] Compiling Yams Node.swift
-[99/124] Compiling Yams Mark.swift
-[100/124] Compiling Yams Emitter.swift
-[103/124] Emitting module Yams
-[104/124] Emitting module PathKit
-[105/124] Compiling PathKit PathKit.swift
-[106/124] Compiling Rainbow ColorApproximation.swift
-[107/124] Compiling Rainbow Rainbow.swift
-[108/124] Compiling Rainbow OutputTarget.swift
-[109/230] Compiling XcodeProj XcodeProj.swift
-[110/230] Compiling XcodeProj Writable.swift
-[111/230] Compiling XcodeProj XCScheme+AditionalOption.swift
-[112/230] Compiling XcodeProj XCScheme+AnalyzeAction.swift
-[113/230] Compiling XcodeProj XCScheme+ArchiveAction.swift
-[114/230] Compiling XcodeProj XCScheme+BuildAction.swift
-[115/230] Compiling XcodeProj XCScheme+BuildableProductRunnable.swift
-[116/237] Compiling XcodeGenCore StringDiff.swift
-[117/237] Compiling XcodeGenCore ArrayExtensions.swift
-[118/237] Compiling XcodeGenCore Glob.swift
-[119/237] Compiling XcodeGenCore MD5.swift
-[120/237] Emitting module XcodeGenCore
-[121/237] Compiling XcodeGenCore Atomic.swift
-[122/237] Compiling XcodeGenCore PathExtensions.swift
-[123/237] Compiling XcodeProj Errors.swift
-[124/237] Compiling XcodeProj AEXML+XcodeFormat.swift
-[125/237] Compiling XcodeProj Array+Extras.swift
-[126/237] Compiling XcodeProj Bool+Extras.swift
-[127/237] Compiling XcodeProj KeyedDecodingContainer+Additions.swift
-[128/237] Compiling XcodeProj NSRecursiveLock+Sync.swift
-[129/237] Compiling XcodeProj Path+Extras.swift
-[130/237] Compiling XcodeProj String+Utils.swift
-[131/237] Compiling XcodeProj XCRemoteSwiftPackageReference.swift
-[132/237] Compiling XcodeProj XCSwiftPackageProductDependency.swift
-[133/237] Compiling XcodeProj PBXAggregateTarget.swift
-[134/237] Compiling XcodeProj PBXLegacyTarget.swift
-[135/237] Compiling XcodeProj PBXNativeTarget.swift
-[136/237] Compiling XcodeProj PBXProductType.swift
-[137/237] Compiling XcodeProj PBXReferenceProxy.swift
-[138/237] Compiling XcodeProj PBXTarget.swift
-[139/237] Compiling XcodeProj XCConfig.swift
-[140/237] Compiling XcodeProj XCWorkspace.swift
-[141/237] Compiling XcodeProj XCWorkspaceData.swift
-[142/237] Compiling XcodeProj XCWorkspaceDataElement.swift
-[143/237] Compiling XcodeProj XCWorkspaceDataElementLocationType.swift
-[144/237] Compiling XcodeProj XCWorkspaceDataFileRef.swift
-[145/237] Compiling XcodeProj XCWorkspaceDataGroup.swift
-[146/237] Compiling XcodeProj CommentedString.swift
-[147/237] Compiling XcodeProj Decoders.swift
-[148/237] Compiling XcodeProj JSONDecoding.swift
-[149/237] Compiling XcodeProj PBXBatchUpdater.swift
-[150/237] Compiling XcodeProj PlistDecoding.swift
-[151/237] Compiling XcodeProj PlistValue.swift
-[152/237] Compiling XcodeProj ReferenceGenerator.swift
-[153/237] Compiling XcodeProj PBXOutputSettings.swift
-[154/237] Compiling XcodeProj PBXProj.swift
-[155/237] Compiling XcodeProj PBXProjEncoder.swift
-[156/237] Compiling XcodeProj PBXProject.swift
-[157/237] Compiling XcodeProj ProjectAttribute.swift
-[158/237] Compiling XcodeProj Equality.generated.swift
-[159/237] Compiling XcodeProj Sourcery.swift
-[160/237] Compiling XcodeProj XCLocalSwiftPackageReference.swift
-[161/237] Compiling XcodeProj PBXHeadersBuildPhase.swift
-[162/237] Compiling XcodeProj PBXResourcesBuildPhase.swift
-[163/237] Compiling XcodeProj PBXRezBuildPhase.swift
-[164/237] Compiling XcodeProj PBXShellScriptBuildPhase.swift
-[165/237] Compiling XcodeProj PBXSourcesBuildPhase.swift
-[166/237] Compiling XcodeProj BuildSettings.swift
-[167/237] Compiling XcodeProj XCBuildConfiguration.swift
-[168/237] Compiling XcodeProj XCConfigurationList.swift
-[169/237] Compiling XcodeProj PBXGroup.swift
-[170/237] Compiling XcodeProj PBXSourceTree.swift
-[171/237] Compiling XcodeProj PBXVariantGroup.swift
-[172/237] Compiling XcodeProj XCVersionGroup.swift
-[173/237] Compiling XcodeProj PBXObject.swift
-[174/237] Compiling XcodeProj PBXObjectDictionaryEntry.swift
-[175/237] Compiling XcodeProj PBXObjectReference.swift
-[176/237] Compiling XcodeProj PBXObjects.swift
-[177/237] Compiling XcodeProj PBXTargetDependency.swift
-[178/237] Compiling XcodeProj WorkspaceSettings.swift
-[179/237] Compiling XcodeProj XCBreakpointList.swift
-[180/237] Compiling XcodeProj XCDebugger.swift
-[181/237] Compiling XcodeProj XCSharedData.swift
-[182/237] Compiling XcodeProj XCUserData.swift
-[183/237] Compiling XcodeProj Xcode.swift
-[184/237] Compiling XcodeProj XCScheme+BuildableReference.swift
-[185/237] Compiling XcodeProj XCScheme+CommandLineArguments.swift
-[186/237] Compiling XcodeProj XCScheme+EnvironmentVariable.swift
-[187/237] Compiling XcodeProj XCScheme+ExecutionAction.swift
-[188/237] Compiling XcodeProj XCScheme+LaunchAction.swift
-[189/237] Compiling XcodeProj XCScheme+LocationScenarioReference.swift
-[190/237] Compiling XcodeProj XCScheme+PathRunnable.swift
-[191/237] Compiling XcodeProj XCScheme+ProfileAction.swift
-[192/237] Compiling XcodeProj XCScheme+RemoteRunnable.swift
-[193/237] Compiling XcodeProj XCScheme+Runnable.swift
-[194/237] Compiling XcodeProj XCScheme+SerialAction.swift
-[195/237] Compiling XcodeProj XCScheme+StoreKitConfigurationFileReference.swift
-[196/237] Compiling XcodeProj XCScheme+TestAction.swift
-[197/237] Compiling XcodeProj XCScheme+TestItem.swift
-[198/237] Emitting module XcodeProj
-[199/237] Compiling XcodeProj PBXContainerItem.swift
-[200/237] Compiling XcodeProj PBXContainerItemProxy.swift
-[201/237] Compiling XcodeProj PBXFileElement.swift
-[202/237] Compiling XcodeProj PBXFileReference.swift
-[203/237] Compiling XcodeProj PBXFileSystemSynchronizedBuildFileExceptionSet.swift
-[204/237] Compiling XcodeProj PBXFileSystemSynchronizedExceptionSet.swift
-[205/237] Compiling XcodeProj PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet.swift
-[206/237] Compiling XcodeProj PBXFileSystemSynchronizedRootGroup.swift
-[207/237] Compiling XcodeProj XCScheme+TestParallelization.swift
-[208/237] Compiling XcodeProj XCScheme+TestPlanReference.swift
-[209/237] Compiling XcodeProj XCScheme+TestableReference.swift
-[210/237] Compiling XcodeProj XCScheme.swift
-[211/237] Compiling XcodeProj XCSchemeManagement.swift
-[212/237] Compiling XcodeProj BuildSettingsProvider.swift
-[213/237] Compiling XcodeProj Collection+Extras.swift
-[214/237] Compiling XcodeProj String+md5.swift
-[215/237] Compiling XcodeProj BuildFileSetting.swift
-[216/237] Compiling XcodeProj BuildPhase.swift
-[217/237] Compiling XcodeProj PBXBuildFile.swift
-[218/237] Compiling XcodeProj PBXBuildPhase.swift
-[219/237] Compiling XcodeProj PBXBuildRule.swift
-[220/237] Compiling XcodeProj PBXCopyFilesBuildPhase.swift
-[221/237] Compiling XcodeProj PBXFrameworksBuildPhase.swift
-[222/282] Compiling ProjectSpec PathContainer.swift
-[223/282] Compiling ProjectSpec Platform.swift
-[224/282] Compiling ProjectSpec Plist.swift
-[225/285] Compiling ProjectSpec Template.swift
-[226/285] Compiling ProjectSpec TestPlan.swift
-[227/285] Compiling ProjectSpec TestTargeReference.swift
-[228/285] Compiling ProjectSpec BuildToolPlugin.swift
-[229/285] Compiling ProjectSpec CacheFile.swift
-[230/285] Compiling ProjectSpec Config.swift
-[231/285] Compiling ProjectSpec Decoding.swift
-[232/285] Compiling ProjectSpec Dependency.swift
-[233/285] Compiling ProjectSpec DeploymentTarget.swift
-[234/285] Compiling ProjectSpec Dictionary+Extension.swift
-[235/285] Compiling ProjectSpec Encoding.swift
-[236/285] Compiling ProjectSpec VersionExtensions.swift
-[237/285] Compiling ProjectSpec XCProjExtensions.swift
-[238/285] Compiling ProjectSpec Yaml.swift
-[239/285] Compiling ProjectSpec TargetReference.swift
-[240/285] Compiling ProjectSpec TargetScheme.swift
-[241/285] Compiling ProjectSpec TargetSource.swift
-[242/285] Compiling ProjectSpec Project.swift
-[243/285] Compiling ProjectSpec ProjectReference.swift
-[244/285] Compiling ProjectSpec ProjectTarget.swift
-[245/285] Compiling ProjectSpec SpecFile.swift
-[246/285] Compiling ProjectSpec SpecLoader.swift
-[247/285] Compiling ProjectSpec SpecOptions.swift
-[248/285] Compiling ProjectSpec FileType.swift
-[249/285] Compiling ProjectSpec GroupOrdering.swift
-[250/285] Compiling ProjectSpec Linkage.swift
-[251/285] Compiling ProjectSpec NSRegularExpressionExtensions.swift
-[252/285] Compiling ProjectSpec SpecParsingError.swift
-[253/285] Compiling ProjectSpec SpecValidation.swift
-[254/285] Compiling ProjectSpec SpecValidationError.swift
-[255/285] Compiling ProjectSpec BuildRule.swift
-[256/285] Compiling ProjectSpec BuildScript.swift
-[257/285] Compiling ProjectSpec BuildSettingsContainer.swift
-[258/285] Compiling ProjectSpec BuildSettingsExtractor.swift
-[259/285] Compiling ProjectSpec SupportedDestination.swift
-[260/285] Compiling ProjectSpec SwiftPackage.swift
-[261/285] Compiling ProjectSpec Target.swift
-[262/285] Emitting module ProjectSpec
-[263/285] Compiling ProjectSpec AggregateTarget.swift
-[264/285] Compiling ProjectSpec Array+Extension.swift
-[265/285] Compiling ProjectSpec Breakpoint.swift
-[266/285] Compiling ProjectSpec BuildPhaseSpec.swift
-[267/285] Compiling ProjectSpec Scheme.swift
-[268/285] Compiling ProjectSpec Settings.swift
-[269/285] Compiling ProjectSpec SourceType.swift
-[270/301] Emitting module Spectre
-[271/301] Compiling Spectre Global.swift
-[272/301] Compiling Spectre Case.swift
-[273/301] Compiling XcodeGenKit SchemeGenerator.swift
-[274/302] Compiling Spectre Expectation.swift
-[275/302] Compiling Spectre Reporter.swift
-[276/302] Compiling XcodeGenKit ProjectGenerator.swift
-[277/302] Compiling XcodeGenKit SettingsBuilder.swift
-[278/302] Compiling XcodeGenKit XCProjExtensions.swift
-[279/302] Compiling XcodeGenKit Version.swift
-[280/302] Compiling XcodeGenKit SettingsPresetFile.swift
-[281/302] Compiling XcodeGenKit StringCatalogDecoding.swift
-[282/302] Compiling XcodeGenKit SourceGenerator.swift
-[283/302] Compiling Spectre Context.swift
-[284/302] Compiling XcodeGenKit resource_bundle_accessor.swift
-[285/302] Compiling Spectre GlobalContext.swift
-[286/302] Compiling Spectre Failure.swift
-[287/302] Compiling XcodeGenKit InfoPlistGenerator.swift
-[288/302] Compiling XcodeGenKit CarthageVersionLoader.swift
-[289/302] Compiling XcodeGenKit FileWriter.swift
-[290/302] Compiling XcodeGenKit ProjectFormat.swift
-[291/302] Compiling XcodeGenKit BreakpointGenerator.swift
-[292/302] Compiling XcodeGenKit CarthageDependencyResolver.swift
-[293/302] Compiling XcodeGenKit PBXProjGenerator.swift
-[294/302] Emitting module XcodeGenKit
-[295/302] Compiling Spectre Reporters.swift
-[296/302] Compiling Spectre Path.swift
-[297/302] Compiling Spectre XCTest.swift
-[298/312] Compiling XcodeGenCLI XcodeGenCLI.swift
-[299/312] Compiling XcodeGenCLI ProjectCommand.swift
-[300/312] Emitting module XcodeGenCLI
-[301/312] Compiling XcodeGenCLI GenerationError.swift
-[302/312] Compiling XcodeGenCLI GenerateCommand.swift
-[303/312] Compiling XcodeGenCLI Arguments.swift
-[304/312] Compiling XcodeGenCLI CacheCommand.swift
-[305/312] Compiling XcodeGenCLI DumpCommand.swift
-[306/314] Emitting module XcodeGen
-[307/314] Compiling XcodeGen main.swift
-[307/314] Write Objects.LinkFileList
-[308/314] Linking xcodegen
-[309/314] Applying xcodegen
-[311/314] Emitting module TestSupport
-[312/314] Compiling TestSupport TestHelpers.swift
-[313/336] Compiling FixtureTests FixtureTests.swift
-[314/336] Emitting module FixtureTests
-[315/336] Emitting module PerformanceTests
-[316/336] Compiling PerformanceTests PerformanceTests.swift
-[317/336] Compiling PerformanceTests TestProject.swift
-[318/336] Compiling XcodeGenKitTests CarthageDependencyResolverTests.swift
-[319/336] Emitting module XcodeGenKitTests
-[320/336] Compiling XcodeGenKitTests BreakpointGeneratorTests.swift
-[321/336] Compiling XcodeGenCoreTests AtomicTests.swift
-[322/336] Compiling XcodeGenCoreTests GlobTests.swift
-[323/336] Compiling XcodeGenCoreTests PathExtensionsTests.swift
-[324/336] Emitting module XcodeGenCoreTests
-[325/336] Compiling XcodeGenCoreTests ArrayExtensionsTests.swift
-[326/336] Compiling XcodeGenKitTests SchemeGeneratorTests.swift
-[327/336] Compiling XcodeGenKitTests SourceGeneratorTests.swift
-[328/336] Compiling ProjectSpecTests Dictionary+Extension_Tests.swift
-[329/336] Compiling ProjectSpecTests SpecLoadingTests.swift
-[330/336] Compiling ProjectSpecTests ProjectSpecTests.swift
-[331/336] Compiling ProjectSpecTests InvalidConfigsFormatTests.swift
-[332/336] Emitting module ProjectSpecTests
-[333/336] Compiling XcodeGenKitTests PBXProjGeneratorTests.swift
-[334/336] Compiling XcodeGenKitTests ProjectGeneratorTests.swift
-[335/338] Compiling XcodeGenPackageTests runner.swift
-[336/338] Emitting module XcodeGenPackageTests
-[336/338] Write Objects.LinkFileList
-[337/338] Linking XcodeGenPackageTests
-Build complete! (36.42s)
+[1/7] Write sources
+[3/7] Write swift-version--58304C5D6DBC2206.txt
+[5/9] Emitting module ProjectSpec
+[6/9] Compiling ProjectSpec Project.swift
+[7/10] Compiling ProjectSpec CacheFile.swift
+[7/14] Write Objects.LinkFileList
+[9/14] Emitting module ProjectSpecTests
+[10/14] Compiling ProjectSpecTests ProjectSpecTests.swift
+[10/14] Write Objects.LinkFileList
+[11/14] Linking xcodegen
+[12/14] Applying xcodegen
+[13/14] Linking XcodeGenPackageTests
+Build complete! (2.17s)
