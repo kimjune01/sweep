@@ -431,16 +431,6 @@ async def deposit_issue_to_triaged(issue: IssueCandidate,
         ts=ts.isoformat(),
     )
     TRIAGED_INBOX.parent.mkdir(parents=True, exist_ok=True)
-    if control_state.is_dry():
-        dry_path = TRIAGED_INBOX.parent / "triaged.dry.jsonl"
-        with open(dry_path, "a") as f:
-            f.write(json.dumps(asdict(msg)) + "\n")
-        observe.event("dry_skip", site="sift_deliver",
-                      actor="triaged", msg_id=msg.msg_id,
-                      repo=issue.repo, pr=issue.number)
-        # Don't mark_seen under dry — the operator should be able to clear
-        # the flag and have the same issues re-deliver to the live inbox.
-        return msg.msg_id
     with open(TRIAGED_INBOX, "a") as f:
         f.write(json.dumps(asdict(msg)) + "\n")
     seen.mark_seen(key)

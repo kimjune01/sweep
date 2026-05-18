@@ -29,7 +29,7 @@ from pathlib import Path
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from sweep import control_state, gh_io, observe, slop_offer_seed
+from sweep import gh_io, observe, slop_offer_seed
 from sweep.types import Message, forward_ledger
 
 
@@ -106,16 +106,6 @@ async def immunize_cycle(msg: Message) -> dict:
         observe.event("immunize_skipped", repo=repo, issue=msg.pr,
                       reason=f"policy_resettled:{policy}")
         return {"skipped": "policy_resettled", "policy": policy}
-
-    # Dry mode: emit the routing decision but don't actually seed —
-    # mirrors the rest of the pipeline's dry semantics.
-    if control_state.is_dry():
-        observe.event("dry_skip", site="immunize_cycle",
-                      repo=repo, issue=msg.pr)
-        observe.event("immunize_redirected", repo=repo, issue=msg.pr,
-                      seeded=False, dry=True,
-                      source=(msg.sender or "unknown"))
-        return {"redirected": True, "seeded": False, "dry": True}
 
     # Worth-pursuing decision: not every hostile repo is a good
     # slop-offer target. Filter on minimum signal (visibility) and

@@ -25,6 +25,7 @@ import typer
 
 from sweep import missing_calls, models as _models
 from sweep.cli import cockpit as _cockpit
+from sweep.cli import feed as _feed
 from sweep.cli import hygraph as _hygraph
 from sweep.cli import lanes as _lanes
 from sweep.cli import leakdog as _leakdog
@@ -81,6 +82,7 @@ app.add_typer(up_app, name="up")
 app.add_typer(down_app, name="down")
 app.add_typer(status_app, name="status")
 _cockpit.register(app)
+_feed.register(app)
 _hygraph.register(app)
 _lanes.register(app)
 _leakdog.register(app)

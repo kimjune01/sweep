@@ -43,7 +43,7 @@ The branch `temporal-pipeline` is 87 commits ahead of `master`. Below is what's 
 
 - `sweep/control_state.py` — flag primitives at `~/.sweep/control/{dry,paused}`. Presence-only, atomic writes.
 - `sweep dry on/off/status` and `sweep pause on/off/status` — CLI toggles. Same files the TUI writes.
-- Dry mode skips external mutations at three sites: `deliver_to_inbox`, `route_classified`, and `prospect_one_pass`'s deposit step — each writes to a `.dry.jsonl` sibling and emits a `dry_skip` event. The drip skill's `gh pr create` honors the same flag.
+- Dry mode is **outbound-only**: gates only sites that emit a maintainer-visible notification — `tissue.post_cycle` (issue comment), `claim` (looking-at-this comment), and `pause_gate` (submit-actor / new PR). Internal card routing (sift → triage, immunize seeding, etc.) keeps flowing in dry mode so the operator can observe what *would* go out without freezing the pipeline. See [[feedback_dry_mode_outbound_only]].
 - Soft-pause: `prospect_one_pass`, `qa_one_entry`, and `route_classified` no-op at takt entry (counters `paused_skip:*`). In-flight work completes; clears manually.
 - `sweep cockpit` status line surfaces 🚦 PAUSED and 🌵 DRY when active.
 - `tui/` — Bubble Tea action bar built to `bin/sweep-tui`. One-line horizontal bar with three boxes (dry, pause, floor); polls `~/.sweep/control/` every 5s so external CLI flips show up live; `d`/`p` toggle, `r` manual refresh, `f` shells out to `sweep cockpit`, `q` quit. File-backed flags persist across launches and the CLI.
@@ -57,39 +57,33 @@ Seven rounds of adversarial bug hunt (`bug-hunt.md` is the current report). 30 b
 
 **Dual-mandate filter** (2026-05-17 grooming): every item ordered by whether it moves both axes — 📈 merge rate + 🔬 falsifiable hypothesis. Ergonomics-only (🛠) demoted to "Later" or "Ergonomics (single-operator deferral)" below. Refactor-only items (code purity, no value delta) demoted to "Defer until witness."
 
-### 📈🔬 Dual-axis (do these first)
+### 📈🔬 Dual-axis (candidates, not queue)
 
-#### 1. Pre-investigate: discussion as prework
+**Mode: operating, not building.** The substrate is shipping PRs and accumulating attest verdicts; the bet is that running it long enough surfaces which of these items the merge-rate/science axes actually need. Don't pull from this list to fill time — pull when a witness from the live pipeline points at one. Single-WIP still applies when something does get pulled; partials are listed first because they represent already-spent attention.
 
-📈 cuts re-discovery; PR body references prior maintainer thinking. 🔬 falsifier: pre-investigate cards merge at same rate as bare-investigate cards over N≥20 pairs → kill the pre-pass. See HYPOTHESIS_GRAPH H24 + the "From bulk-attest practice round" section below.
+#### 1. Maintainer-ROI ranking (H24 implementation)
 
-#### 2. Maintainer-ROI ranking (H24 implementation)
+📈 sorts the budget toward higher-prior bets. 🔬 H24 has explicit falsifiers (ROI score correlates with components but not merge rate → refit; ROI score correlates with neither → kill the feature). Slots between sift and triage as a sort key. Witness: bulk-attest practice round's wide variance in outcome wasn't predicted by language/size, but did correlate with rough ROI proxies. Status: not started — no `roi_score` / `maintainer_roi` references in sift/triage as of 2026-05-18.
 
-📈 sorts the budget toward higher-prior bets. 🔬 H24 has explicit falsifiers (ROI score correlates with components but not merge rate → refit; ROI score correlates with neither → kill the feature). Slots between sift and triage as a sort key. Witness: bulk-attest practice round's wide variance in outcome wasn't predicted by language/size, but did correlate with rough ROI proxies.
+#### 2. Adversarial cascade in qa — PARTIAL
 
-#### 3. Adversarial cascade in qa
+📈 catches bugs round-1 misses, lifts merge-on-real-fix rate. 🔬 falsifier: round-2/round-3 produce zero additional verdicts vs round-1 over N≥50 cards → cascade is theater, cut it. Status: `qa_actor.py:268–281` calls codex + gemini sequentially, but (a) no `qa_volley_hist` round-N instrumentation, (b) `qa_actor.py:276` still calls gemini, not the opus replacement per [[project_gemini_dropped_cost]]. Remaining work: swap gemini→opus, wire round-2/round-3 retry loop, add per-round histogram counters.
 
-📈 catches bugs round-1 misses, lifts merge-on-real-fix rate. 🔬 falsifier: round-2/round-3 produce zero additional verdicts vs round-1 over N≥50 cards → cascade is theater, cut it. `qa_volley_hist` is the instrumentation already in place. Wire the round-2/round-3 retry loop in `qa_actor.py`.
+#### 3. /compose skill — PARTIAL
 
-#### 4. /compose skill
+📈 PR body quality is a known merge predictor (H17 hypothesis-graph footer; same axis applies to compose-written sections). 🔬 falsifier: PRs whose compose template-provenance differs from skill-provenance merge at the same rate → template is enough, kill the skill. Status: wiring complete (qa → attest → compose → submit + idempotent splice); `compose.py:16–17` self-describes as "template today, /compose skill call later." Remaining work: write the skill, swap `_render_compose_block` to call it, keep provenance label so the A/B is measurable.
 
-📈 PR body quality is a known merge predictor (H17 hypothesis-graph footer; same axis applies to compose-written sections). 🔬 falsifier: PRs whose compose template-provenance differs from skill-provenance merge at the same rate → template is enough, kill the skill. Wiring is in place (qa → attest → compose → submit + idempotent splice); the skill replaces the template.
+#### 4. Pokayoke migration — PARTIAL
 
-#### 5. Auto-infer test_env / test_cmd / test_setup_cmd
+📈 indirect — collapses scattered intake checks into one contract, so new wrong-shape classes only require one new function + entry in per-actor list. 🔬 measurable: drop in `andon_unexpected` events. Status: `pokayoke.py` shipped 2026-05-17 with 6 intake functions; **zero callers migrated** as of 2026-05-18 (no imports in attest/compose/qa_actor/amend). Sequence: attest → SkillActor universal → qa → compose.
 
-📈 every new repo currently needs 3 manual `sweep retro set` invocations before its first attest; that friction throttles the substrate's reach. 🔬 falsifier: heuristic-inferred params produce attest verdicts at the same rate as operator-set ones → ship the heuristic; otherwise the LLM-inference fallback. Detect from lockfiles (pnpm-lock.yaml, Cargo.lock, go.sum, Gemfile.lock) + workflow YAMLs.
+#### 5. Force-push producer — PARTIAL
+
+📈 PRs that need rebase / force-push block merge until the operator notices; surfacing them shortens human latency. 🔬 falsifier: surfaced force-push intents that the operator clears at the same rate as ambient noticing → channel was already adequate. Status: glyph + routing exist (`inbox.py:25` ⬆️; `pr_state.py:569` sets `bucket = "rebase"` on CONFLICTING). Remaining work: rename `rebase` intent → `force-push` where applicable, add detection for the non-CONFLICTING force-push cases (drip non-fast-forward escalation, comment scan).
 
 #### 6. Codex/gemini attestations under `attestations/<slug>/` umbrella
 
-📈 multi-family review footer in PR body extends the H17 hypothesis ("hypothesis-graph link in PR body raises merge rate") with a second receipt class. 🔬 measurable lift over PRs with attestation footer only. Today qa publishes the test triple; codex/gemini verdicts stay substrate-private. Symmetric work — publish `codex-attestation.json` + `gemini-attestation.json` (verdict + sha256, not full transcript; avoids bot-shaped-communication critique).
-
-#### 7. Force-push producer
-
-📈 PRs that need rebase / force-push block merge until the operator notices; surfacing them in the inbox shortens the human latency. 🔬 falsifier: surfaced force-push intents that the operator clears at the same rate as ambient noticing → channel was already adequate. Renderer is ready (⬆️); candidates: pr_state comment scan, drip non-fast-forward escalation, CONTRIBUTING.md parse.
-
-#### 8. Pokayoke migration
-
-📈 indirect — collapses scattered intake checks into one contract, so new wrong-shape classes only require one new function + entry in per-actor list. 🔬 measurable: drop in `andon_unexpected` events (the rejection-as-third-outcome trichotomy lands properly). Module shipped 2026-05-17; callers (attest, SkillActor, qa, compose) still have ad-hoc inline checks. Sequence: attest → SkillActor universal → qa → compose.
+📈 multi-family review footer in PR body extends the H17 hypothesis ("hypothesis-graph link in PR body raises merge rate") with a second receipt class. 🔬 measurable lift over PRs with attestation footer only. Today qa publishes the test triple; codex/gemini verdicts stay substrate-private. Symmetric work — publish `codex-attestation.json` + `gemini-attestation.json` (verdict + sha256, not full transcript; avoids bot-shaped-communication critique). Status: not started — `attestation_writer.py` has no codex/gemini path.
 
 ### Defer until witness (no current pain)
 
@@ -104,6 +98,7 @@ These improve operator quality-of-life without moving the merge-rate or hypothes
 
 - **clig.dev ergonomics pass** (was #1). CLI polish: exit codes, --json, confirmations, NO_COLOR, completion, --version, --quiet. BOOTSTRAP-CLIG.md self-contained.
 - **Retro skill markdown** (was #2). Replaces old prose with `sweep observe events`-driven SOAP drafting. Operator-facing.
+- **`sweep lanes --interactive` (Ohno-circle TUI).** Press a digit to drill into that lane row's PR detail (`sweep pr <N>` output) inline, modal-style; `q` exits, `r` refreshes. Multi-digit handled via 250ms timeout (type "12" fast = #12; pause = #1). Stdlib termios raw mode, ~80 lines, no new deps. Today the flow is `sweep lanes` then `sweep pr <N>` in a separate command; this collapses it into one stdin loop. Lower-lift alternative to extending the Go sweep-tui binary with a lanes page. Earns its keep when the operator does enough drill-throughs per session that the cost of the second command becomes noticeable — wait until you find yourself repeatedly typing `sweep pr N` against the same lanes render.
 - **Onboarding** (was #7). Hardlink/symlink convention; ~/.sweep/ directory map; TUI/CLI relationship; first-cycle walkthrough. README §5 is currently a command catalog, not a narrative.
 - **Documentation: operator escape hatches.** When operator bypasses andon manually. Onboarding-adjacent.
 
@@ -122,6 +117,11 @@ These improve operator quality-of-life without moving the merge-rate or hypothes
 - `test_attestation` upgrade — applies test-only diff from fix branch onto master before the master-side gate, so PRs that ADD a test get gated on "does the new test fail on master" rather than the misleading "test suite passes on master" trivial outcome.
 - `no_tests_in_pr` verdict — distinct routing path (non-halting; sinks the PR with structured reason). Distinguishes "PR adds no test" from "test exists but passes on master." Pairs with the remediation-prompt write-tests bootstrap.
 - `sweep qa backfill-bulk` — bulk-enqueues open authored PRs into qa.jsonl with sink-pair / eviction filters and auto-sinks the approved ones.
+
+### Shipped post-grooming (2026-05-18)
+
+- **Pre-investigate: discussion as prework** (was Up-next #1). `sweep/activities/reinvestigate_prep.py::write_reinvestigate_context_pack()` hoists CI failure logs + check-runs into a context pack before the reinvestigate skill runs; called from `skill_runner.py:168`. Falsifier still open: need N≥20 pre-investigate-vs-bare merge-rate pairs before deciding to keep or kill.
+- **Auto-infer test_env / test_cmd / test_setup_cmd** (was Up-next #5). `sweep/activities/infer.py::infer_test_cmd` reads manifest files (`pyproject.toml`, `Cargo.toml`, lockfiles) and LLM-infers when ambiguous; result cached in `retro_params`. Replaces the three manual `sweep retro set` invocations per new repo.
 
 ### Defer until witness (continued)
 
