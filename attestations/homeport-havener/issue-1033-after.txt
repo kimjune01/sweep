@@ -1,10 +1,10 @@
-[1779080069] [1mHavener Library Package Suite[0m - 0/0 specs  [38;5;10mSUCCESS![0m 219.366µs PASS
-coverage: 0.4% of statements
-[1779080069] [1mHavener Command Package Suite[0m - 6/6 specs [38;5;10m•[0m[38;5;10m•[0m[38;5;10m•[0m[38;5;10m•[0m[38;5;10m•[0m[38;5;10m•[0m [38;5;10mSUCCESS![0m 5.648921ms PASS
+[1779082064] [1mHavener Command Package Suite[0m - 6/6 specs [38;5;10m•[0m[38;5;10m•[0m[38;5;10m•[0m[38;5;10m•[0m[38;5;10m•[0m[38;5;10m•[0m [38;5;10mSUCCESS![0m 8.168738ms PASS
 coverage: 19.0% of statements
+[1779082064] [1mHavener Library Package Suite[0m - 0/0 specs  [38;5;10mSUCCESS![0m 116.292µs PASS
+coverage: 0.4% of statements
 composite coverage: 12.6% of statements
 
-Ginkgo ran 2 suites in 4.281861849s
+Ginkgo ran 2 suites in 4.254515417s
 Test Suite Passed
 
 --- stderr ---
