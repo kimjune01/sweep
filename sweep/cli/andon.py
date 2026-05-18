@@ -39,7 +39,7 @@ from sweep.cli._common import (
     SCOUT_ACTOR_ID,
     SIFT_ACTOR_ID,
     SUBMIT_ACTOR_ID,
-    TISSUE_ACTOR_ID,
+    COMMENT_ISSUE_ACTOR_ID,
     TRIAGE_ACTOR_ID,
 )
 from sweep.system import TEMPORAL_ADDR
@@ -87,8 +87,8 @@ _CLEAR_TARGETS = {
     "sift_cycle":          SIFT_ACTOR_ID,
     "scout":               SCOUT_ACTOR_ID,
     "scout_cycle":         SCOUT_ACTOR_ID,
-    "tissue":              TISSUE_ACTOR_ID,
-    "tissue_cycle":        TISSUE_ACTOR_ID,
+    "comment-issue":              COMMENT_ISSUE_ACTOR_ID,
+    "comment_issue_cycle":        COMMENT_ISSUE_ACTOR_ID,
     "post":                POST_ACTOR_ID,
     "post_cycle":          POST_ACTOR_ID,
     "immunize":            IMMUNIZE_ACTOR_ID,

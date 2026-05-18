@@ -1,6 +1,6 @@
 """Bless — classifier-router for issue-comment responses.
 
-When a maintainer responds to a tissue we posted (detected by leakdog's
+When a maintainer responds to a comment-issue we posted (detected by leakdog's
 engagement sweep), the response lands here as a card. Bless classifies
 it into one of:
 
@@ -14,7 +14,7 @@ matches and stop calling LLM. The actor's cost asymptotically tends to
 "deterministic pattern match + file write" for the long tail of
 "thanks, closing" / "you're right" / similar low-information replies.
 
-Auto and template outputs share the same downstream: draft → tissue-
+Auto and template outputs share the same downstream: draft → comment-issue-
 drafts queue → operator approves → post posts. Human outputs go to a
 separate human-issues queue that the operator handles directly,
 no automated reply.
@@ -136,7 +136,7 @@ def _parse_skill_output(stdout: str) -> Optional[dict]:
 
 async def _run_bless_skill(repo: str, issue: int, draft_id: str) -> tuple[str, int]:
     """Shell /bless <ref> <draft_id>. Timeout: 120s; skill reads a
-    handful of GitHub fields + the tissue state file, drafts a reply.
+    handful of GitHub fields + the comment-issue state file, drafts a reply.
     Generous enough for Sonnet variance."""
     ref = f"{repo}#{issue}"
     proc = subprocess.run(
@@ -150,10 +150,10 @@ async def _run_bless_skill(repo: str, issue: int, draft_id: str) -> tuple[str, i
 def _deposit_tissue_draft(*, repo: str, issue: int, source_id: str,
                             comment: str, signal: str,
                             template_name: str = "") -> str:
-    """Write an auto/template-classified reply into the tissue-drafts
+    """Write an auto/template-classified reply into the comment-issue-drafts
     queue. Reuses the existing operator-approval surface — same `sweep
-    tissue list` / `approve` / `discard` flow as upstream tissues."""
-    from sweep.activities.tissue import TISSUE_DRAFTS
+    comment-issue list` / `approve` / `discard` flow as upstream tissues."""
+    from sweep.activities.comment_issue import TISSUE_DRAFTS
     ts = dt.datetime.now(dt.timezone.utc)
     draft_id = (f"bless-{repo.replace('/', '-')}-{issue}-"
                 f"{ts.strftime('%Y%m%dT%H%M%S')}")
@@ -168,7 +168,7 @@ def _deposit_tissue_draft(*, repo: str, issue: int, source_id: str,
         "source_card": f"bless:{source_id}",
         "signal":      signal,                 # "auto" | "template"
         "template":    template_name,          # "" for auto
-        "from_tissue": source_id,              # the tissue this replies to
+        "from_tissue": source_id,              # the comment-issue this replies to
     }
     TISSUE_DRAFTS.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -218,7 +218,7 @@ async def kick_bless_card(*, repo: str, issue: int,
                            reply_author: str,
                            comment_url: str = "",
                            incoming: Message | None = None) -> str | None:
-    """Engagement detector → bless. Carries the original tissue draft_id
+    """Engagement detector → bless. Carries the original comment-issue draft_id
     plus the reply context inline so bless can match templates without
     a gh round-trip in the hot path."""
     from sweep.activities.pr_state import _signal_actor
@@ -260,7 +260,7 @@ async def bless_cycle(msg: Message) -> dict:
 
     Emits exactly one terminal event:
       - bless_routed (kind=template|auto|human) — card routed to the
-        appropriate downstream (tissue-drafts or human-issues)
+        appropriate downstream (comment-issue-drafts or human-issues)
       - bless_skipped (reason) — nothing to do (empty reply, missing
         payload, dedupe)
     """

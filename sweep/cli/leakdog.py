@@ -66,7 +66,7 @@ def _inbox_pending(actor: str) -> int:
 # minting fresh msg_ids for the same logical item, wasting writes and
 # polluting downstream counts.
 _DEDUP_ACTORS = ("triaged", "investigate", "qa", "respond", "human",
-                 "retro_audit", "tissue", "bless", "immunize", "post",
+                 "retro_audit", "comment-issue", "bless", "immunize", "post",
                  "submit", "remit")
 
 
@@ -180,24 +180,24 @@ def _compute_balances(hours: int) -> tuple[list[tuple], list[tuple]]:
     respond_not_pushed = count("respond_done",
                                pred=lambda e: not e.get("pushed"))
 
-    # side-hatch: investigate → tissue → approval → posted.
+    # side-hatch: investigate → comment-issue → approval → posted.
     # Three hops, each with its own event balance:
-    #   - tissue:   drafts (LLM-shaped, can skip via policy or skill SKIP)
+    #   - comment-issue:   drafts (LLM-shaped, can skip via policy or skill SKIP)
     #   - approval: drafts wait for operator approve/discard
     #   - posted:   post-actor posts approved drafts via gh (engagement
     #               detector tracks reaction inside the 7-day window via
     #               tissue_engaged / tissue_muted, fed by leakdog tick)
-    tissue_cards = aged("tissue_card_deposited", lag_minutes=30)
-    tissue_drafted = count("tissue_drafted")
-    tissue_skipped = count("tissue_skipped")
-    tissue_pending = _inbox_pending("tissue")
+    tissue_cards = aged("comment_issue_card_deposited", lag_minutes=30)
+    comment_issue_drafted = count("comment_issue_drafted")
+    comment_issue_skipped = count("comment_issue_skipped")
+    comment_issue_pending = _inbox_pending("comment-issue")
     # draft → approval: operator approval/discard is the queue between them.
-    tissue_approved = count("tissue_approved")
-    tissue_discarded = count("tissue_discarded")
-    tissue_drafts_pending = _inbox_pending("tissue-drafts")
+    comment_issue_approved = count("comment_issue_approved")
+    comment_issue_discarded = count("comment_issue_discarded")
+    comment_issue_drafts_pending = _inbox_pending("comment-issue-drafts")
     # approval → posted: post-actor posts approved drafts; tracks landed vs failed.
-    posts_landed = count("tissue_posted")
-    posts_failed = count("tissue_post_failed")
+    posts_landed = count("comment_issue_posted")
+    posts_failed = count("comment_issue_post_failed")
     posts_pending = _inbox_pending("post")
 
     # immunize: anti-AI escape hatch. Cards from sift (repo-level)
@@ -208,7 +208,7 @@ def _compute_balances(hours: int) -> tuple[list[tuple], list[tuple]]:
     immunize_skipped = count("immunize_skipped")
     immunize_pending = _inbox_pending("immunize")
 
-    # bless: classifier-router for tissue replies. Cards from leakdog
+    # bless: classifier-router for comment-issue replies. Cards from leakdog
     # engagement detector. Three outputs: template (auto-draft from
     # catalog), auto (LLM draft, currently off), human (human-issues
     # queue). "Screened" here = bless_skipped (no_fence, timeouts).
@@ -226,10 +226,10 @@ def _compute_balances(hours: int) -> tuple[list[tuple], list[tuple]]:
     ]
     hatches = [
         ("immunize", immunize_cards,  immunize_pursued, immunize_skipped, immunize_pending),
-        ("tissue",   tissue_cards,    tissue_drafted,   tissue_skipped,   tissue_pending),
+        ("comment-issue",   tissue_cards,    comment_issue_drafted,   comment_issue_skipped,   comment_issue_pending),
         ("bless",    bless_cards,     bless_routed,     bless_skipped,    bless_pending),
-        ("draft → approval",   tissue_drafted,  tissue_approved, tissue_discarded, tissue_drafts_pending),
-        ("approval → posted",  tissue_approved, posts_landed,    posts_failed,     posts_pending),
+        ("draft → approval",   comment_issue_drafted,  comment_issue_approved, comment_issue_discarded, comment_issue_drafts_pending),
+        ("approval → posted",  comment_issue_approved, posts_landed,    posts_failed,     posts_pending),
     ]
     return spine, hatches
 

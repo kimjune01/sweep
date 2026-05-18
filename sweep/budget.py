@@ -59,14 +59,21 @@ SHARES: dict[str, float] = {
     "sift":          0.18,   # per-issue cycle: cached meta + sometimes issue_events
     "scout":         0.02,   # one search per cycle, alternating sources
     "qa":            0.15,
-    "investigate":   0.15,
+    # investigate + reinvestigate bumped +10pp each on 2026-05-18 after
+    # the context pack landed. The old 15/10 caps were sized for the
+    # opus fan-out era when every cycle was ~30 invisible-subprocess
+    # gh calls; with the pack the actual call count is closer to 6-8
+    # but the SUBPROCESS_ESTIMATE stayed at 30 (conservative until we
+    # have real measurements). Bumping the share so the estimate's
+    # conservatism doesn't false-andon every burst.
+    "investigate":   0.25,
     # reinvestigate gets its own share (separate from investigate)
     # because engagement-lane demand is reactive — a bulk CI-failing
     # storm can drown new-bug investigation if they share a budget.
-    # Lower than investigate's 15% because most engagement-lane work
+    # Lower than investigate's because most engagement-lane work
     # is rote (reqa/respond handle the mechanical fixes; reinvestigate
     # is the harder case that recurs less often per repo).
-    "reinvestigate": 0.10,
+    "reinvestigate": 0.20,
     "respond":       0.10,
     "remit":         0.10,
 }
@@ -88,28 +95,54 @@ SUBPROCESS_ESTIMATE: dict[str, int] = {
 # Per-actor self-throttle caps: max card completions per LOCAL_WINDOW.
 # Distinct from the SHARES-derived ops budget — that's "calls against
 # the GitHub rate limit"; this is "operator-paced flow control on
-# expensive skills." Witness: reinvestigate's flood-after-bulk-dump
-# tripped the budget andon every 15min until throttled. Cap is in
-# card-completion units (counted from events.jsonl) so it's robust
-# to per-card op variance.
+# expensive skills." Cap is in card-completion units (counted from
+# events.jsonl) so it's robust to per-card op variance.
 #
 # To add a throttle: pick the actor key + the event-kind(s) emitted
 # at completion + the cap.
 THROTTLE_CAPS: dict[str, tuple[tuple[str, ...], int]] = {
-    # reinvestigate: 2 cards / 15min. Engagement-lane flood control.
-    "reinvestigate": (("reinvestigate_done",), 2),
+    # (kept for actors that want completion-rate control; reinvestigate
+    # moved to WIP_CAPS below — concurrent-instances semantics is what
+    # Little's-Law-style flow control actually wants.)
+}
+
+
+# Per-actor WIP caps: max in_flight instances at any moment. Differs
+# from THROTTLE_CAPS in semantics: rate vs. parallelism. WIP cap is
+# the right shape for "don't let reinvestigate spawn N concurrent
+# Claude subprocesses" — once 2 are running, a third has to wait for
+# one to finish, regardless of how fast they finish.
+#
+# Read from inbox_state — the durable started/acked ledgers are the
+# ground truth for what's in flight right now.
+WIP_CAPS: dict[str, int] = {
+    "reinvestigate": 2,  # at most 2 concurrent investigations open
 }
 
 
 def is_throttled(actor: str, *, minutes: int = LOCAL_WINDOW_MINUTES) -> bool:
-    """Return True if `actor` has completed cap-or-more cards in the
-    local window. Counts completion events from events.jsonl directly
-    (ground truth) rather than deriving from ops-recording (which can
-    drift if a card's code path varies). pause_gate calls this from
-    `should_idle`.
+    """Return True if `actor` should idle. Two semantically distinct
+    throttles, checked in order:
 
-    Fail-open: any error reading the event log returns False so a
-    broken throttle doesn't strand the actor."""
+      1. WIP_CAPS[actor]: max concurrent in_flight cards. Reads
+         inbox_state's `in_flight` partition (started-but-not-acked
+         msg_ids). At-or-above the cap → idle until one finishes.
+      2. THROTTLE_CAPS[actor]: max completions in the local window.
+         Reads events.jsonl for the configured completion-kind events.
+
+    Fail-open: any error returns False so a broken throttle doesn't
+    strand the actor."""
+    wip_cap = WIP_CAPS.get(actor)
+    if wip_cap is not None:
+        try:
+            from sweep.inbox_state import inbox_states
+            s = inbox_states(actor)
+            in_flight = len(s.get("in_flight", []))
+            if in_flight >= wip_cap:
+                return True
+        except Exception:
+            pass  # fail-open
+
     cfg = THROTTLE_CAPS.get(actor)
     if cfg is None:
         return False

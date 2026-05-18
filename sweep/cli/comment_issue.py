@@ -1,7 +1,7 @@
-"""`sweep tissue` — operator approval surface for side-hatch comments.
+"""`sweep comment-issue` — operator approval surface for side-hatch comments.
 
-Tissue actor drafts polite issue comments from no-fix investigations.
-Drafts land in `~/.sweep/inbox/tissue-drafts.jsonl` awaiting approval —
+Comment-issue actor drafts polite issue comments from no-fix investigations.
+Drafts land in `~/.sweep/inbox/comment-issue-drafts.jsonl` awaiting approval —
 this CLI is the human gate. Approving posts via `gh issue comment` and
 records the result in attestations. Discarding drops the draft.
 
@@ -24,12 +24,12 @@ import typer
 from sweep import control_state, observe
 
 
-DRAFTS_PATH = Path.home() / ".sweep" / "inbox" / "tissue-drafts.jsonl"
+DRAFTS_PATH = Path.home() / ".sweep" / "inbox" / "comment-issue-drafts.jsonl"
 ACKS_PATH = Path.home() / ".sweep" / "inbox" / "_acks.jsonl"
 
 
-tissue_app = typer.Typer(
-    help="Tissue — side-hatch comments awaiting operator approval",
+comment_issue_app = typer.Typer(
+    help="comment-issue — side-hatch comments awaiting operator approval",
     no_args_is_help=True,
 )
 
@@ -71,7 +71,7 @@ def _ack(draft_id: str, outcome: str, **extra) -> None:
     rec = {
         "draft_id": draft_id,
         "ts":       dt.datetime.now(dt.timezone.utc).isoformat(),
-        "from":     "tissue-cli",
+        "from":     "comment-issue-cli",
         "outcome":  outcome,
         **extra,
     }
@@ -79,16 +79,16 @@ def _ack(draft_id: str, outcome: str, **extra) -> None:
         f.write(json.dumps(rec) + "\n")
 
 
-@tissue_app.command("list")
-def tissue_list() -> None:
-    """Show pending tissue drafts — repo, issue, char count, comment preview."""
+@comment_issue_app.command("list")
+def comment_issue_list() -> None:
+    """Show pending comment-issue drafts — repo, issue, char count, comment preview."""
     drafts = _load_drafts()
     acked = _load_acked_ids()
     pending = [d for d in drafts if d.get("draft_id") not in acked]
     if not pending:
-        typer.echo("# Tissue drafts\n\n_No pending drafts._")
+        typer.echo("# comment-issue drafts\n\n_No pending drafts._")
         return
-    lines = [f"# Tissue drafts ({len(pending)} pending)", ""]
+    lines = [f"# comment-issue drafts ({len(pending)} pending)", ""]
     for d in pending:
         comment = (d.get("comment") or "").strip()
         preview = comment.replace("\n", " ")
@@ -102,8 +102,8 @@ def tissue_list() -> None:
         lines.append(f"  https://github.com/{d.get('repo')}/issues/{d.get('issue')}")
         lines.append("")
     lines.append("")
-    lines.append("_`sweep tissue approve <draft_id>` to post, "
-                 "`sweep tissue discard <draft_id>` to drop._")
+    lines.append("_`sweep comment-issue approve <draft_id>` to post, "
+                 "`sweep comment-issue discard <draft_id>` to drop._")
     typer.echo("\n".join(lines))
 
 
@@ -114,17 +114,17 @@ def _find_draft(draft_id: str) -> dict | None:
     return None
 
 
-@tissue_app.command("approve")
-def tissue_approve(
-    draft_id: str = typer.Argument(..., help="Draft id from `sweep tissue list`"),
+@comment_issue_app.command("approve")
+def comment_issue_approve(
+    draft_id: str = typer.Argument(..., help="Draft id from `sweep comment-issue list`"),
 ) -> None:
     """Approve a draft: deposit it on the post inbox + signal post-actor.
     Posting itself happens in `post_cycle` — the CLI's job is just the
-    human gate. Separation of concerns: drafting (tissue) and posting
+    human gate. Separation of concerns: drafting (comment-issue) and posting
     (post) are different actors with different failure modes, different
     blast radius. The CLI doesn't touch gh."""
     import asyncio
-    from sweep.activities.tissue import enqueue_post
+    from sweep.activities.comment_issue import enqueue_post
 
     acked = _load_acked_ids()
     if draft_id in acked:
@@ -141,7 +141,7 @@ def tissue_approve(
     except Exception as e:
         typer.echo(f"enqueue failed: {e}", err=True)
         raise typer.Exit(1)
-    observe.event("tissue_approved", draft_id=draft_id,
+    observe.event("comment_issue_approved", draft_id=draft_id,
                   repo=repo, issue=issue,
                   draft_chars=len(draft.get("comment", "")))
     _ack(draft_id, "approved", repo=repo, issue=issue,
@@ -153,9 +153,9 @@ def tissue_approve(
                    f"(signal pending — actor will catch on next drain)")
 
 
-@tissue_app.command("discard")
-def tissue_discard(
-    draft_id: str = typer.Argument(..., help="Draft id from `sweep tissue list`"),
+@comment_issue_app.command("discard")
+def comment_issue_discard(
+    draft_id: str = typer.Argument(..., help="Draft id from `sweep comment-issue list`"),
     reason: str = typer.Option("", "--reason", help="Optional drop reason"),
 ) -> None:
     """Drop the draft without posting. Acks so it falls off `list`."""
@@ -167,7 +167,7 @@ def tissue_discard(
     if not draft:
         typer.echo(f"no draft with id {draft_id}", err=True)
         raise typer.Exit(2)
-    observe.event("tissue_discarded", draft_id=draft_id,
+    observe.event("comment_issue_discarded", draft_id=draft_id,
                   repo=draft.get("repo"), issue=draft.get("issue"),
                   reason=reason[:200])
     _ack(draft_id, "discarded", reason=reason[:200],

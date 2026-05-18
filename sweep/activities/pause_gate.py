@@ -43,13 +43,13 @@ async def should_idle(actor_name: str) -> bool:
     # drains. No special code path for dry — just time.
     if budget_key == "submit" and control_state.is_dry():
         return True
-    # Ping/post/tissue: the `post_disabled` flag is the single safety
+    # Ping/post/comment-issue: the `post_disabled` flag is the single safety
     # latch for every maintainer-visible action. When set, these
     # actors park at the inbox boundary — cards accumulate in their
     # jsonl files rather than being consumed-then-skipped, so flipping
     # the flag back off drains the held queue as a single burst-on-
     # resume. Without this, "skipped while disabled" is lossy.
-    if budget_key in ("ping", "post", "tissue"):
+    if budget_key in ("ping", "post", "comment-issue"):
         from pathlib import Path as _P
         if (_P.home() / ".sweep" / "control" / "post_disabled").exists():
             return True

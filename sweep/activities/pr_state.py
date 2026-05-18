@@ -44,7 +44,8 @@ _ACTOR_WORKFLOW_IDS = {
     "metronome":     "metronome-actor",
     "retro":         "retro-actor",
     "sift":        "sift-actor",
-    "tissue":      "tissue-actor",
+    "comment-issue":      "comment-issue-actor",
+    "sign":        "sign-actor",
     "post":        "post-actor",
     "immunize":    "immunize-actor",
     "bless":       "bless-actor",
@@ -465,6 +466,20 @@ def _is_mechanical_check(check_name: str) -> bool:
     return any(pat in n for pat in _MECHANICAL_CHECK_PATTERNS)
 
 
+_CLA_CLASS_PATTERNS = ("cla", "license/cla", "dco", "developer certificate",
+                       "contributor license", "sign-off")
+
+
+def _is_cla_class_check(check_name: str) -> bool:
+    """True when the failing check is a CLA-class signing requirement
+    that the sign-actor can address by posting the bot's magic phrase.
+    Matches on check name substring (case-insensitive)."""
+    if not check_name:
+        return False
+    n = check_name.lower()
+    return any(pat in n for pat in _CLA_CLASS_PATTERNS)
+
+
 def _msg_id(repo: str, pr: int, bucket: str) -> str:
     """Deterministic id from (repo, pr, bucket). Stable across retries —
     earlier call-time-minute formulation produced different ids on
@@ -553,14 +568,19 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     elif merge == "CONFLICTING":
         bucket = "rebase"
         reasons.append("merge conflicts")
-    # 4. reqa vs reinvestigate — split CI failures by whether the failing
-    # check looks like a mechanical fix the reqa actor can drive (lint,
-    # format, changelog) versus a real failure that needs reading code.
-    # Pattern match on the check name. Unknown → reinvestigate (cautious:
-    # reqa shouldn't burn cycles guessing at things it can't fix).
-    # Both route to the engagement lane (existing PR; remit-fed).
+    # 4. reqa vs reinvestigate vs sign — split CI failures by check kind.
+    # CLA-class failures (cla-assistant, license check, dco) route to
+    # sign-actor which posts the bot's magic-phrase comment + recheck.
+    # The operator's policy is blanket: copyright released, sign the
+    # CLA. Encoded here so the substrate doesn't burn a /investigate
+    # cycle on a non-investigation problem. mechanical checks (lint,
+    # format) go to reqa; everything else needing code-read goes to
+    # reinvestigate.
     elif ci == "failing":
-        if _is_mechanical_check(state.failing_check):
+        if _is_cla_class_check(state.failing_check):
+            bucket = "sign"
+            reasons.append(f"CLA-class failing check: {state.failing_check or 'unspecified'}")
+        elif _is_mechanical_check(state.failing_check):
             bucket = "reqa"
             reasons.append(f"CI failure: {state.failing_check or 'unspecified'}")
         else:

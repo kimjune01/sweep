@@ -553,10 +553,13 @@ _SKILL_EVENTS: dict = {
     "amend_applied":         ("amend",         None),
     "attestation_published": ("attest",        None),
     "ping_drafted":          ("ping",          None),
-    "tissue_posted":         ("tissue",        None),
-    "tissue_skipped":        ("tissue",        "reason"),
+    "comment_issue_posted":         ("comment-issue",        None),
+    "comment_issue_skipped":        ("comment-issue",        "reason"),
     "sign_posted":           ("sign",          None),
     "sift_deposited":        ("sift",          None),
+    "file_issue_drafted":    ("file-issue",    None),
+    "file_issue_skipped":    ("file-issue",    "reason"),
+    "issue_filed":           ("file-issue-post", None),
 }
 
 
@@ -764,3 +767,207 @@ def retro_fix_ready(
     print(f"- line_count:  {line_count}")
     print(f"- description: {description}")
     print(f"- log:         {FIX_READY_LOG}")
+
+
+# ---------------------------------------------------------------- reclassify
+
+@retro_app.command("reclassify")
+def retro_reclassify(
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Only show what would change; don't emit events or deposit cards.",
+    ),
+) -> None:
+    """Re-run the investigate-artifact classifier on every (repo, issue) whose
+    latest investigate/reinvestigate event points to an existing hypothesis
+    graph. Useful when the classifier widens or after a routing bug fix that
+    silently dropped human-gated cards.
+
+    Emits `investigate_reclassified` events for any verdict change and
+    re-deposits human-inbox cards for human-gated outcomes (idempotent —
+    msg_ids dedupe in the inbox view)."""
+    import asyncio as _asyncio
+    import datetime as _dt
+    from pathlib import Path as _Path
+
+    from sweep.activities.skill_runner import (
+        _classify_investigate_artifact,
+        _kick_human_decision,
+    )
+
+    # Latest investigate/reinvestigate event per (repo, issue).
+    latest: dict = {}
+    for r in observe.events_recent(limit=200000):
+        if r.get("kind") not in ("investigate_done", "reinvestigate_done"):
+            continue
+        repo = r.get("repo")
+        issue = r.get("issue") or r.get("pr")
+        if not repo or issue is None:
+            continue
+        key = (repo, int(issue))
+        prev = latest.get(key)
+        if prev is None or r.get("ts", "") > prev.get("ts", ""):
+            latest[key] = r
+
+    if not latest:
+        print("# no investigate events found")
+        return
+
+    rows: list = []  # (repo, issue, prev_signal, new_signal, summary) — changes only
+    kicks: list = []  # (repo, issue, signal, summary, artifact_path) — every human-gated
+    comment_kicks: list = []  # (repo, issue, signal) — comment-issue side-hatch on no-fix
+    obsolete_acks: list = []  # msg_ids of human cards that should now be acked
+    missing = 0
+    unchanged_nonhuman = 0
+    for (repo, issue), ev in latest.items():
+        art = ev.get("artifact_path")
+        if not art:
+            continue
+        path = _Path(art)
+        if not path.exists():
+            missing += 1
+            continue
+        result = _classify_investigate_artifact(path)
+        if result is None:
+            continue
+        new_signal = result["signal"]
+        prev_signal = _ev_signal(ev)
+        if new_signal != prev_signal:
+            rows.append((repo, issue, prev_signal, new_signal, result["summary"]))
+        elif not result.get("human_gated"):
+            unchanged_nonhuman += 1
+        # Always re-deposit human-inbox cards for human-gated outcomes —
+        # msg_id dedupes if one already exists. This is the recovery path
+        # for cards lost to the Path-import bug in _kick_human_decision.
+        if result.get("human_gated"):
+            kicks.append((repo, issue, new_signal, result["summary"], str(path)))
+        else:
+            # No longer human-gated. Any pre-existing human-inbox cards
+            # from prior unclassified verdicts are now obsolete; ack
+            # them so the operator's inbox shrinks to reality.
+            slug = repo.replace("/", "-")
+            for old_sig in ("unclassified", "human-gated"):
+                obsolete_acks.append(
+                    f"investigate-decision-{slug}-{issue}-{old_sig}"
+                )
+            # No-fix verdicts with a real summary are the comment-issue
+            # side-hatch trigger (parallel to investigate_cycle's
+            # routing). Reclassify owns this because the verdict only
+            # exists now; the original investigate_cycle ran before the
+            # widened patterns matched.
+            if result.get("no_fix") and result.get("summary"):
+                comment_kicks.append((repo, issue, new_signal))
+
+    print(f"# Reclassify report ({len(latest)} unique repo/issue, "
+          f"{missing} missing artifacts, {unchanged_nonhuman} unchanged-non-human)")
+    print()
+    if rows:
+        print("## Verdict changes")
+        print()
+        print("| repo#issue | was | now | summary |")
+        print("|------------|-----|-----|---------|")
+        for repo, issue, prev_sig, new_sig, summary in rows:
+            s = (summary or "")[:80].replace("|", "\\|")
+            print(f"| `{repo}#{issue}` | {prev_sig} | **{new_sig}** | {s} |")
+        print()
+    else:
+        print("_no verdict changes_")
+        print()
+
+    if kicks:
+        print(f"## Human-inbox cards to deposit ({len(kicks)})")
+        print()
+        print("_includes unchanged human-gated outcomes — recovery from "
+              "the silently-dropped-card bug. msg_id dedupes if already present._")
+        print()
+
+    if dry_run:
+        print(f"_dry-run: {len(rows)} verdict change(s) would be recorded; "
+              f"{len(kicks)} human-inbox card(s) would be deposited_")
+        return
+
+    # Apply: emit reclassify events + re-kick human cards + ack obsolete cards.
+    for repo, issue, prev_sig, new_sig, summary in rows:
+        observe.event(
+            "investigate_reclassified",
+            repo=repo, issue=issue,
+            prev_signal=prev_sig, new_signal=new_sig,
+            summary=(summary or "")[:200],
+        )
+    deposited = 0
+    if kicks:
+        async def _deposit_all() -> int:
+            n = 0
+            for repo, issue, signal, summary, art in kicks:
+                try:
+                    await _kick_human_decision(
+                        repo=repo, pr=int(issue),
+                        signal=signal, summary=summary or "",
+                        artifact_path=art,
+                    )
+                    n += 1
+                except Exception as e:
+                    observe.event(
+                        "reclassify_kick_failed",
+                        repo=repo, issue=issue,
+                        error_type=type(e).__name__, error=str(e)[:200],
+                    )
+            return n
+        deposited = _asyncio.run(_deposit_all())
+    # comment-issue kicks: newly-no-fix verdicts route to the side-hatch.
+    comment_deposited = 0
+    if comment_kicks:
+        from sweep.activities.comment_issue import kick_comment_issue_card
+        async def _kick_comments() -> int:
+            n = 0
+            for repo, issue, signal in comment_kicks:
+                try:
+                    await kick_comment_issue_card(
+                        repo=repo, issue=int(issue),
+                        source="reclassify", signal=signal,
+                    )
+                    n += 1
+                except Exception as e:
+                    observe.event(
+                        "reclassify_comment_kick_failed",
+                        repo=repo, issue=issue,
+                        error_type=type(e).__name__, error=str(e)[:200],
+                    )
+            return n
+        comment_deposited = _asyncio.run(_kick_comments())
+    # Ack obsolete cards: any human-inbox msg_id from a prior
+    # classification that no longer holds. Idempotent — appending an
+    # ack for a non-existent or already-acked msg_id is a no-op in
+    # inbox_state's set lookup.
+    acked = 0
+    if obsolete_acks:
+        ack_file = _Path.home() / ".sweep" / "inbox" / "_acks.jsonl"
+        ack_file.parent.mkdir(parents=True, exist_ok=True)
+        now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+        with ack_file.open("a") as f:
+            for mid in obsolete_acks:
+                f.write(json.dumps({
+                    "msg_id": mid,
+                    "acked_at": now_iso,
+                    "by": "reclassify-obsolete",
+                }) + "\n")
+                acked += 1
+    print()
+    print(f"_applied: {len(rows)} reclassify events; "
+          f"{deposited}/{len(kicks)} human cards deposited; "
+          f"{comment_deposited}/{len(comment_kicks)} comment-issue cards kicked; "
+          f"{acked} obsolete ack(s) written_")
+
+
+def _ev_signal(ev: dict) -> str:
+    """Read back the verdict bucket from an investigate_done event payload."""
+    if ev.get("produced_pr"):
+        return "shipped"
+    if ev.get("no_fix"):
+        return "no-fix"
+    if ev.get("human_gated"):
+        summary = ev.get("summary") or ""
+        if "unclassified halt" in summary:
+            return "unclassified"
+        return "human-gated"
+    return "(none)"

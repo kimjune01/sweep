@@ -9,7 +9,7 @@ matching triage_decision (or "—" if none in window).
 Infeed: `triage_decision` events.
 
 Outfeed: anything that lands in a maintainer's GitHub notifications.
-Today that's `submit_published` (PR opened), `tissue_posted` (issue
+Today that's `submit_published` (PR opened), `comment_issue_posted` (issue
 comment), and `sign_posted` (PR sign-off comment). Body splices
 (amend/compose) are deliberately excluded — they don't notify.
 
@@ -28,7 +28,7 @@ import typer
 from sweep import observe
 
 INFEED_KIND = "triage_decision"
-OUTFEED_KINDS = ("submit_published", "tissue_posted", "sign_posted")
+OUTFEED_KINDS = ("submit_published", "comment_issue_posted", "sign_posted")
 
 SCAN_LIMIT = 500
 # Outfeed→triage join window. If no matching triage_decision for the
@@ -141,9 +141,9 @@ def _outfeed_line(
     if kind == "submit_published":
         pr = ev.get("pr") or "-"
         return f"- `{when:>7}` {_pr_anchor(repo, pr)} PR opened{lat_str}"
-    if kind == "tissue_posted":
+    if kind == "comment_issue_posted":
         issue = ev.get("issue") or "-"
-        return f"- `{when:>7}` {_issue_anchor(repo, issue)} tissue comment{lat_str}"
+        return f"- `{when:>7}` {_issue_anchor(repo, issue)} comment-issue comment{lat_str}"
     if kind == "sign_posted":
         pr = ev.get("pr") or "-"
         return f"- `{when:>7}` {_pr_anchor(repo, pr)} sign-off comment{lat_str}"

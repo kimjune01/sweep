@@ -62,8 +62,8 @@ async def leakdog_tick() -> dict:
     except Exception as e:
         out["per_actor_budget_error"] = f"{type(e).__name__}: {str(e)[:200]}"
 
-    # --- Tissue engagement detector ------------------------------
-    # For each posted tissue inside its 7-day window, poll the issue
+    # --- Comment-issue engagement detector ------------------------------
+    # For each posted comment-issue inside its 7-day window, poll the issue
     # for any activity since post_ts (reply, reaction, close, label,
     # mention). Emit `tissue_engaged` on first hit; emit `tissue_muted`
     # when the window closes silent. Both events feed the H23 verdict.
@@ -218,6 +218,15 @@ async def _refresh_human_inbox() -> dict:
 
     # Queued = inbox msg whose msg_id is not in acks. Dedupe by (repo, pr)
     # so a re-delivered PR only burns one gh call.
+    #
+    # ONLY consider cards whose sender == "remit" — those are pure
+    # bucket-mirroring cards (remit classified to human; if the bucket
+    # has since moved, ack). Cards from other senders (dco-batch,
+    # investigate, manual-backfill, sign actor's _kick_human_decision)
+    # represent operator-action requests that survive until the operator
+    # acks them. Leakdog acking those was the 2026-05-18 leak where
+    # dco-pushready cards kept getting re-acked despite the force-push
+    # never having been executed.
     by_pr: dict[tuple, list[str]] = {}
     for line in inbox_path.read_text().splitlines():
         if not line.strip(): continue
@@ -227,6 +236,8 @@ async def _refresh_human_inbox() -> dict:
             continue
         if m.get("msg_id") in acked:
             continue
+        if m.get("sender") != "remit":
+            continue  # operator-action card; not leakdog's to ack
         repo, pr = m.get("repo"), m.get("pr")
         if not repo or not pr:
             continue
@@ -272,23 +283,23 @@ async def _refresh_human_inbox() -> dict:
     return {"checked": len(by_pr), "acked": len(new_acks)}
 
 
-# ------------------------------------------------------------------- tissue
+# ------------------------------------------------------------------- comment-issue
 # 7-day window per [[H23]]. If no maintainer engagement inside this
 # window, the comment is considered muted — a real signal, not a leak.
 TISSUE_WATCH_DAYS = 7
 
 
 async def _tissue_engagement_sweep() -> dict:
-    """Walk posted-tissue state, poll each issue for activity since
+    """Walk posted-comment-issue state, poll each issue for activity since
     post_ts. Promote to `engaged` on first activity; promote to `muted`
     when the 7-day window closes silent. Idempotent — state file
-    tracks status so a tissue is never engaged/muted twice."""
+    tracks status so a comment-issue is never engaged/muted twice."""
     import datetime as _dt
     import json as _json
     from pathlib import Path
     from sweep import gh_io, observe
 
-    state_path = Path.home() / ".sweep" / "state" / "tissue_posted.json"
+    state_path = Path.home() / ".sweep" / "state" / "comment_issue_posted.json"
     if not state_path.exists():
         return {"watching": 0, "engaged": 0, "muted": 0}
 

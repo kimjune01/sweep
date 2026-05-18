@@ -38,7 +38,7 @@ HUMAN_INBOX = Path.home() / ".sweep" / "inbox" / "human.jsonl"
 # for "already pinged this SHA?" — events.jsonl is observability,
 # not authority.
 PING_LEDGER = Path.home() / ".sweep" / "control" / "ping_drafted.jsonl"
-# Same operator kill switch tissue/post honor. When set, ping_cycle
+# Same operator kill switch comment-issue/post honor. When set, ping_cycle
 # refuses to even draft — drafts piling up while post is disabled
 # would all fire at once on re-enable, defeating the safety the
 # flag exists for. Cleared by `rm ~/.sweep/control/post_disabled`.
@@ -243,7 +243,7 @@ async def ping_cycle(msg: Message) -> dict:
             "ping: payload.head_sha required", non_retryable=True,
         )
 
-    # Operator kill switch (shared with tissue/post). When set, refuse
+    # Operator kill switch (shared with comment-issue/post). When set, refuse
     # to draft — draft accumulation while post is disabled defeats the
     # safety the flag exists for. Cleared via `rm ~/.sweep/control/
     # post_disabled`. Next ping kick re-evaluates fresh.

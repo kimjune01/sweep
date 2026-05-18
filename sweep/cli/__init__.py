@@ -53,7 +53,9 @@ from sweep.cli.sift import sift_app
 from sweep.cli.qa import qa_app
 from sweep.cli.retro import retro_app
 from sweep.cli.slop_offer import slop_offer_app
-from sweep.cli.tissue import tissue_app
+from sweep.cli.comment_issue import comment_issue_app
+from sweep.cli.file_issue import file_issue_app
+from sweep.cli.hold_issue import hold_issue_app
 
 
 app = typer.Typer(
@@ -74,7 +76,9 @@ app.add_typer(cerify_app, name="cerify")
 app.add_typer(observe_app, name="observe")
 app.add_typer(retro_app, name="retro")
 app.add_typer(slop_offer_app, name="slop-offer")
-app.add_typer(tissue_app, name="tissue")
+app.add_typer(comment_issue_app, name="comment-issue")
+app.add_typer(file_issue_app, name="file-issue")
+app.add_typer(hold_issue_app, name="hold-issue")
 app.add_typer(drip_app, name="drip")
 app.add_typer(dry_app, name="dry")
 app.add_typer(pause_app, name="pause")

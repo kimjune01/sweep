@@ -47,6 +47,19 @@ SCHEDULE: list[tuple[str, timedelta]] = [
     # budget entries, rotates oversized logs. Per-file policies live in
     # sweep/broom.py; tunables under ~/.sweep/control/retain/<name>.
     ("broom", timedelta(hours=24)),
+    # reinvestigate — nudge the actor every 5 min to pull its queue.
+    # Engagement-lane cards land on reinvestigate.jsonl from remit;
+    # without a wake-up signal (worker restart, missed Temporal signal),
+    # queued work can sit despite WIP-cap headroom. This is a cheap
+    # "check your inbox" tick, not a card-deposit — uses the signal
+    # channel directly so it doesn't bloat the queue.
+    ("reinvestigate", timedelta(minutes=5)),
+    # sign — same shape: nudge sign-actor to pull queued CLA/DCO cards.
+    # Cards land from remit (failing CLA-class check classification) and
+    # may also arrive via manual backfill. Cycle is cheap (gh fetch +
+    # sonnet shim + at most two gh comment posts) so 5-min cadence is
+    # generous.
+    ("sign", timedelta(minutes=5)),
 ]
 
 
@@ -135,6 +148,42 @@ async def _kick(target: str) -> None:
         except Exception as e:
             observe.event("metronome_evict_failed",
                           error_type=type(e).__name__, error=str(e)[:200])
+    elif target == "sign":
+        try:
+            import datetime as _dt
+            from sweep.types import Message
+            from sweep.activities.pr_state import _signal_actor
+            ts = _dt.datetime.now(_dt.timezone.utc)
+            nudge = Message(
+                msg_id=f"sign-nudge-{ts.strftime('%Y%m%dT%H%M%S')}",
+                sender="metronome", intent="nudge",
+                repo="", pr=None, branch=None,
+                payload={}, ts=ts.isoformat(),
+            )
+            wf = await _signal_actor("sign", nudge)
+            observe.event("metronome_sign_nudge", wf=wf or "(no-wf)")
+        except Exception as e:
+            observe.event("metronome_sign_nudge_failed",
+                          error_type=type(e).__name__, error=str(e)[:200])
+    elif target == "reinvestigate":
+        # Wake-up signal only — no inbox write. The actor's own loop
+        # decides what to pull based on WIP cap + queue depth.
+        try:
+            import datetime as _dt
+            from sweep.types import Message
+            from sweep.activities.pr_state import _signal_actor
+            ts = _dt.datetime.now(_dt.timezone.utc)
+            nudge = Message(
+                msg_id=f"reinvestigate-nudge-{ts.strftime('%Y%m%dT%H%M%S')}",
+                sender="metronome", intent="nudge",
+                repo="", pr=None, branch=None,
+                payload={}, ts=ts.isoformat(),
+            )
+            wf = await _signal_actor("reinvestigate", nudge)
+            observe.event("metronome_reinvestigate_nudge", wf=wf or "(no-wf)")
+        except Exception as e:
+            observe.event("metronome_reinvestigate_nudge_failed",
+                          error_type=type(e).__name__, error=str(e)[:200])
     elif target == "broom":
         # 5S sweep — drop acked inbox, dangling tombstones, aged
         # events/sink/budget, rotate logs. Stays in-process (no
@@ -188,6 +237,14 @@ async def metronome_tick(manual: Message | None = None) -> dict:
     fired: list[str] = []
     earliest_next: float | None = None
 
+    # Jitter: each cadence gets multiplied by uniform(0.9, 1.1) per
+    # tick so independent metronome targets don't fire in lockstep.
+    # Without this, every 5-min target (heart/usage/evict/reinvestigate/
+    # sign/broom-ish) syncs to the same modulo-300s phase and produces
+    # a thundering-herd burst every 5 min instead of paced firing.
+    # Flat distribution (rather than gaussian) keeps the bound hard at
+    # ±10%; no long-tail wait.
+    import random as _random
     for target, cadence in SCHEDULE:
         last_iso = state.get(target)
         if last_iso:
@@ -198,14 +255,14 @@ async def metronome_tick(manual: Message | None = None) -> dict:
         else:
             last = None
 
-        next_due = (last + cadence) if last else now
+        jittered = cadence * _random.uniform(0.9, 1.1)
+        next_due = (last + jittered) if last else now
         if next_due <= now:
             try:
                 await _kick(target)
                 state[target] = now.isoformat()
                 fired.append(target)
-                # Next due is now + cadence
-                target_next = (now + cadence - now).total_seconds()
+                target_next = jittered.total_seconds()
             except Exception as e:
                 observe.event(
                     "metronome_kick_failed", target=target,

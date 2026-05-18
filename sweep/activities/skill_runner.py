@@ -23,9 +23,11 @@ When adding a skill actor:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import os
 import subprocess
+from pathlib import Path
 
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
@@ -275,10 +277,19 @@ async def triage_cycle(msg: Message) -> dict:
     if not msg.repo or not msg.pr:
         raise ApplicationError("triage: repo + issue required",
                                non_retryable=True)
-    from sweep import observe, gh_io
+    from sweep import observe, gh_io, pokayoke
     from sweep import budget as _budget
     from sweep.activities.scout import kick_scout_card
     _budget.record_subprocess_estimate("triage")
+    # Front-of-cycle pokayoke gate. Sift filters at deposit time, but
+    # in-flight cards from before eviction still land here; the intake
+    # contract is the activity-side backstop.
+    skip = pokayoke.triage_intake(msg)
+    if skip:
+        observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
+                      decision=skip.code, reason=skip.detail, score=0)
+        return {"label": "triage", "rc": 0, "decision": skip.code,
+                "reason": skip.detail}
     # Front-of-cycle gate: if the repo is hostile to AI contributions,
     # route to immunize and short-circuit. Catches what sift's 24h
     # AI-policy cache missed (policy added since last refresh, or the
@@ -304,6 +315,29 @@ async def triage_cycle(msg: Message) -> dict:
             return {"label": "triage", "rc": 0, "decision": "anti-ai"}
     except Exception:
         pass  # never let the gate failure mask the real triage path
+
+    # Host-compat gate: when the issue's title/labels mention a
+    # platform/stack we can't reproduce in our linux-docker env
+    # (CUDA, Windows-only APIs, kernel modules, etc.), evict the
+    # whole repo. One such issue per repo is enough — the project
+    # has a dimension we'd just hit at the test-env gate anyway.
+    # Cheap pre-LLM check; no token cost.
+    try:
+        view = gh_io.issue_view(msg.repo, int(msg.pr),
+                                fields="title,labels")
+        reason = _host_incompat_signal(
+            view.get("title", ""), view.get("labels", []))
+        if reason:
+            _evict_repo(msg.repo, reason)
+            observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
+                          decision="evicted",
+                          reason=reason,
+                          score=0)
+            return {"label": "triage", "rc": 0, "decision": "evicted",
+                    "reason": reason}
+    except Exception:
+        pass  # gate-failure must never mask the real triage path
+
     try:
         cached = _read_triage_attestation(msg.repo, msg.pr)
         if cached is not None:
@@ -407,9 +441,27 @@ async def investigate_cycle(msg: Message) -> dict:
     Emits an `investigate_done` event so the funnel is legible: without
     it we can see "investigations enqueued" and "qa converged" but
     nothing between, and can't tell silent-no-fix from broken bridge."""
+    # Metronome nudges arrive via the same deliver signal as real cards
+    # but carry intent="nudge" + empty repo/pr. They mean "check your
+    # inbox" — return a no-op so the actor's run loop continues into
+    # the next inbox pull. Same handling in reinvestigate_cycle and
+    # sign_cycle.
+    if msg.intent == "nudge":
+        return {"outcome": "nudge-noop"}
     if not msg.repo or not msg.pr:
         raise ApplicationError("investigate: repo + issue required",
                                non_retryable=True)
+
+    # Pokayoke gate — skip evicted/killed repos before any work.
+    from sweep import pokayoke as _pokayoke
+    _skip = _pokayoke.investigate_intake(msg)
+    if _skip:
+        observe.event("investigate_done", repo=msg.repo, issue=msg.pr,
+                      rc=0, produced_pr=False, no_fix=True,
+                      human_gated=False,
+                      summary=f"skipped: {_skip.detail}")
+        return {"label": "investigate", "rc": 0, "skipped": _skip.code,
+                "reason": _skip.detail}
 
     # Andon if the host can't produce the test_env this repo requires.
     # The /investigate skill running without env-awareness produces
@@ -453,6 +505,7 @@ async def _kick_human_decision(repo: str, pr: int, *,
     import datetime as _dt
     import json as _json
     from dataclasses import asdict as _asdict
+    from pathlib import Path
     from sweep.types import Message
     from sweep.activities.pr_state import _signal_actor
 
@@ -470,7 +523,15 @@ async def _kick_human_decision(repo: str, pr: int, *,
             "signal": signal,
             "summary": summary,
             "artifact_path": artifact_path,
-            "reason": "skill's go-with-the-flow heuristic couldn't pick",
+            # Reason is signal-specific: "unclassified" means the
+            # pattern-matcher didn't recognize the artifact's halt
+            # vocabulary; anything else means the skill itself
+            # reached a decision point that requires operator input.
+            "reason": (
+                "classifier matched no termination signal in artifact"
+                if signal == "unclassified"
+                else f"skill halted at decision point ({signal})"
+            ),
         },
         ts=ts.isoformat(),
     )
@@ -519,19 +580,32 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
     runner = "codex" if primary.provider == "openai" else "claude"
 
     # Pre-fetch the gh context pack so the skill doesn't have to do its
-    # own gh issue/PR lookups. Reduces the gh-call budget the skill
-    # consumes (those calls were invisible to per-actor accounting),
-    # makes context deterministic across runs, and shaves tool-use
-    # round-trips. See sweep/activities/investigate_prep.py for what's
-    # in the pack and what's deliberately left for the skill to fetch.
+    # own gh issue/PR lookups. Two pack shapes by caller:
+    #
+    #   investigate (production lane): issue + related PRs + self-history
+    #     + CI status. The "investigate a bug report" frame.
+    #   reinvestigate (engagement lane): PR header + failing-check rollup
+    #     + per-job log tails + recent commits + recent comments. The
+    #     "PR's CI went red, look at the failure" frame.
+    #
+    # Both write to INVESTIGATE_CONTEXT so the skill markdown reads one
+    # env var. The pack content tells the skill which mode it's in.
     extra_env: dict[str, str] = {}
     try:
-        from sweep.activities.investigate_prep import write_context_pack
-        ctx_path = write_context_pack(msg.repo, int(msg.pr), msg.msg_id)
+        if caller == "reinvestigate":
+            from sweep.activities.reinvestigate_prep import write_reinvestigate_context_pack
+            ctx_path = write_reinvestigate_context_pack(
+                msg.repo, int(msg.pr), msg.msg_id)
+            pack_kind = "reinvestigate"
+        else:
+            from sweep.activities.investigate_prep import write_context_pack
+            ctx_path = write_context_pack(msg.repo, int(msg.pr), msg.msg_id)
+            pack_kind = "investigate"
         extra_env["INVESTIGATE_CONTEXT"] = str(ctx_path)
         observe.event("investigate_context_packed", repo=msg.repo,
                       issue=msg.pr, ctx_path=str(ctx_path),
-                      ctx_bytes=ctx_path.stat().st_size)
+                      ctx_bytes=ctx_path.stat().st_size,
+                      pack_kind=pack_kind)
     except Exception as e:
         observe.event("investigate_context_pack_failed", repo=msg.repo,
                       issue=msg.pr, error_type=type(e).__name__,
@@ -563,24 +637,44 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                 artifact_fresh=artifact_fresh,
             )
             # Side-hatch routing: a no-fix verdict with a real summary
-            # is exactly the case where tissue earns its keep. Skip
+            # is exactly the case where comment-issue earns its keep. Skip
             # for human_gated (the operator is the decider) and shipped
             # (PR speaks for itself). Activity-owned routing — same
             # pattern as [[O1]]: the wrapper decides, not the skill.
             if classified["no_fix"] and classified.get("summary"):
-                from sweep.activities.tissue import kick_tissue_card
+                from sweep.activities.comment_issue import kick_comment_issue_card
                 try:
-                    await kick_tissue_card(
+                    await kick_comment_issue_card(
                         msg.repo, int(msg.pr),
                         source="investigate",
                         signal=classified["signal"],
                         incoming=msg,
                     )
                 except Exception as e:
-                    observe.event("kick_tissue_failed",
+                    observe.event("kick_comment_issue_failed",
                                   repo=msg.repo, issue=msg.pr,
                                   error_type=type(e).__name__,
                                   error=str(e)[:200])
+
+            # Side-hatch routing #2: separate-bug discoveries kick the
+            # `file-issue` actor. Detection is the same cheap pattern-
+            # match shape as the main classifier — the skill itself
+            # decides whether the finding is concrete enough to draft
+            # (SKIP when not). See memory/feedback_file_and_forget.
+            try:
+                if _has_separate_bug_signal(artifact):
+                    from sweep.activities.file_issue import kick_file_issue_card
+                    await kick_file_issue_card(
+                        msg.repo, int(msg.pr),
+                        source="investigate",
+                        signal="separate_bug_found",
+                        incoming=msg,
+                    )
+            except Exception as e:
+                observe.event("kick_file_issue_failed",
+                              repo=msg.repo, issue=msg.pr,
+                              error_type=type(e).__name__,
+                              error=str(e)[:200])
 
             # Production-lane handoff: if the investigation produced
             # a fresh fix branch, kick qa-actor for verification before
@@ -646,16 +740,16 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                                   error_type=type(e).__name__,
                                   error=str(e)[:200])
 
-            # Ambiguous case: skill ran, classifier returned a signal
-            # but none of the routing branches matched (not no-fix, not
-            # produced-pr, not human-gated — e.g. "three options,
-            # awaiting choice" shape). The substrate's rule: when in
-            # doubt, route to operator inbox so the work is visible.
-            # Punt-to-inbox is the andon for skill-side ambiguity.
-            if (not classified["produced_pr"]
-                    and not classified["no_fix"]
-                    and not classified["human_gated"]
-                    and classified.get("summary")):
+            # Route human-gated outcomes to the human inbox. Includes:
+            #   - explicit "awaiting human go/no-go" patterns
+            #   - contributor-legal blockers (CLA / DCO / sign-off)
+            #   - the default unclassified case (no recognized signal)
+            # All three are operator-decision shapes; "decided by silent
+            # termination" was the old leak that hid CLA blockers and
+            # the 40% shim-fallback bucket. Ambiguous branch (no flag
+            # set) is now structurally unreachable since the classifier
+            # defaults unclassified to human_gated=True.
+            if classified["human_gated"] and classified.get("summary"):
                 try:
                     await _kick_human_decision(
                         msg.repo, msg.pr,
@@ -675,26 +769,26 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
     parsed = skill_result.shim("investigate", result.get("stdout_tail", ""))
     if skill_result.is_rejected(parsed):
         skill_result.record_rejection("investigate", msg.__dict__, parsed)
-        # Side-hatch: a self-PR halt rejection often has tissue value
+        # Side-hatch: a self-PR halt rejection often has comment-issue value
         # ("noticed you're on it, leaving you to it"). Route it to
-        # tissue with the rejection reason as the signal. If no
-        # artifact ever got written, tissue's artifact_missing screen
+        # comment-issue with the rejection reason as the signal. If no
+        # artifact ever got written, comment-issue's artifact_missing screen
         # drops the card — only artifact-bearing rejections produce
         # drafts. Filter to self-PR halts only; broader policy-gate
-        # rejections (kill list, AI hostile) aren't tissue-worthy.
+        # rejections (kill list, AI hostile) aren't comment-issue-worthy.
         reason = str(parsed.get("reject_reason") or "")
         if "self-pr" in reason.lower() or "self pr" in reason.lower() \
                 or "maintainer self-pr halt" in reason.lower():
-            from sweep.activities.tissue import kick_tissue_card
+            from sweep.activities.comment_issue import kick_comment_issue_card
             try:
-                await kick_tissue_card(
+                await kick_comment_issue_card(
                     msg.repo, int(msg.pr),
                     source="investigate-reject",
                     signal="self-pr-halt",
                     incoming=msg,
                 )
             except Exception as e:
-                observe.event("kick_tissue_failed",
+                observe.event("kick_comment_issue_failed",
                               site="investigate_reject",
                               repo=msg.repo, issue=msg.pr,
                               error_type=type(e).__name__,
@@ -759,14 +853,27 @@ _INVESTIGATE_SIGNALS: list[tuple[str, list[str]]] = [
         "phase 8 — pushed", "phase 8 — shipped",
         "pushed branch", "drip-ready",
         "opened pr", "pr opened at",
+        # Pipeline-mode handoff: investigate writes a readiness record
+        # for /drip rather than pushing. The artifact line is the
+        # canonical signal that the PR is queued (skill markdown spec).
+        "readiness record at", "readiness record:",
     ]),
     # Fix is ready but waiting on operator decision. Includes the
-    # "blocked on a decision not an investigator's to make" pattern.
+    # "blocked on a decision not an investigator's to make" pattern,
+    # plus contributor-legal blockers (CLA / DCO / sign-off / license)
+    # which intentionally route to human per pr_state.py:453 (the
+    # substrate can't sign for the operator).
     ("human-gated", [
         "awaiting human gate", "awaiting human go/no-go",
         "phase 8 (ship) — awaiting", "phase 8 — awaiting",
         "standing by for decision", "human approval", "go/no-go",
         "blocked on a decision",
+        # Contributor-legal class — always human-gated, never no-fix.
+        "cla blocker", "cla bot", "blocked on cla",
+        "contributor license agreement", "contributor agreement",
+        "dco check", "dco failed", "sign-off required",
+        "sign off required", "developer certificate of origin",
+        "license check failed", "license/cla",
     ]),
     # Investigation concluded no fix should ship.
     ("no-fix", [
@@ -781,8 +888,145 @@ _INVESTIGATE_SIGNALS: list[tuple[str, list[str]]] = [
         "reframe: this is",
         "## halt", "## halt reason", "## halt point",
         "verdict: stale", "verdict**: **stale",
+        # Phrases observed in human-routed unclassifieds 2026-05-18 that
+        # legitimately mean "no fix to ship" — extracted from gemba read.
+        "no fix is warranted", "no fix warranted",
+        "no code fix is warranted", "no code fix warranted",
+        "no fix recommended", "no fix needed",
+        "diagnosis halted at",
+        "no action required", "no action recommended",
+        "halt — phase", "halt -- phase",
+        # The artifact explicitly tells the substrate to route to the
+        # comment-issue actor (previously named tissue — legacy artifacts
+        # use that vocab, so accept both). Honor as no-fix so the
+        # side-hatch fires automatically. Reduces inbox load.
+        "route to tissue", "route to /tissue", "route to `/tissue`",
+        "route to comment-issue", "route to /comment-issue", "route to `/comment-issue`",
+        "tissue-style comment", "tissue comment on", "filing as a tissue",
+        "filing as **tissue**", "filing as a **tissue**",
+        "emit a tissue", "emit a tissue comment", "tissue with the diagnos",
+        "comment-issue-style comment", "comment-issue comment on",
+        "filing as a comment-issue", "filing as **comment-issue**",
+        "filing as a **comment-issue**", "emit a comment-issue",
+        "emit a comment-issue comment", "comment-issue with the diagnos",
+        "no_fix_to_ship", "no-fix-to-ship",
+        "skipping; the change is mechanical",
+        "no pr to file", "no pr is justified", "no pr warranted",
     ]),
 ]
+
+
+# ---------------------------------------------------------------- triage host-compat
+#
+# Keywords in the issue's title or labels that indicate the bug needs an
+# environment our linux-docker substrate can't reproduce in. When any
+# match, triage evicts the repo (not just the issue) — one such issue
+# per repo is enough signal that the project has a dimension we can't
+# support; better to stop paying tokens on candidates that will fail at
+# the test-env gate anyway.
+#
+# Conservative list. False positives mean we evict a repo unnecessarily;
+# operator can pull entries out of ~/.sweep/control/sift_evicted.txt by
+# hand. Prefer specific platform/vendor terms over generic ones like
+# "gpu" (which appears in unrelated discussion in many repos).
+_HOST_INCOMPAT_TERMS = (
+    # GPU compute we don't have
+    "cuda", "nvidia driver", "rocm", "amd gpu", "tensorrt",
+    "compute shader", "gpgpu",
+    # Windows-only stacks
+    "windows-only", "winapi", "win32 api", "wdk", "windows kernel",
+    "wpf", "winforms", "directx", "direct3d", "uwp", "winui",
+    ".net framework", "wsl-only",
+    # macOS/iOS bundles
+    "metal api", "uikit", "appkit", "xcode required", "ios-only",
+    # Kernel / drivers
+    "kernel module", "ebpf program", "out-of-tree driver",
+)
+
+
+def _host_incompat_signal(title: str, labels: list) -> str | None:
+    """Return a one-line reason if the issue's title or labels indicate
+    we can't reproduce in our env. Otherwise None.
+
+    `labels` is the gh shape: list of {"name": str, ...} OR list of
+    str — both accepted. Conservative substring scan; we'd rather
+    miss a repo than evict the wrong one (operator can re-add)."""
+    haystack = (title or "").lower()
+    for lab in labels or []:
+        name = lab.get("name") if isinstance(lab, dict) else str(lab)
+        if name:
+            haystack += " " + str(name).lower()
+    for term in _HOST_INCOMPAT_TERMS:
+        if term in haystack:
+            return f"host-incompat: {term!r} in issue title/labels"
+    return None
+
+
+_EVICTED_PATH = Path.home() / ".sweep" / "control" / "sift_evicted.txt"
+
+
+def _evict_repo(repo: str, reason: str) -> None:
+    """Append to the evicted-repos file. Same path sift uses for
+    auto-eviction. Idempotent at read time (fnmatch dedup), and a
+    no-op if the repo is already listed."""
+    try:
+        if _EVICTED_PATH.exists():
+            for line in _EVICTED_PATH.read_text().splitlines():
+                pat = line.split("#", 1)[0].strip().lower()
+                if pat == repo.lower():
+                    return  # already evicted
+    except OSError:
+        pass
+    _EVICTED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    with _EVICTED_PATH.open("a") as f:
+        f.write(f"{repo}  # auto-evicted {ts} ({reason})\n")
+    observe.event("repo_evicted", repo=repo, reason=reason, source="triage")
+
+
+# Phrases that suggest the investigation found a *separate* bug worth
+# filing — discovered during the work but not the issue under
+# investigation. The /file-issue skill is the actual decider (it reads
+# the artifact and judges concreteness); this cheap pattern-match is
+# just the trigger. False positives are fine — skill SKIPs them.
+_SEPARATE_BUG_PHRASES = (
+    "separate issue", "separately filed", "warrants its own issue",
+    "should be reported separately", "should be filed separately",
+    "open a new issue", "a new issue for", "needs its own issue",
+    "unrelated bug", "unrelated regression", "adjacent bug",
+    "side-bug", "side bug", "secondary bug",
+    "also noticed", "also found", "also discovered",
+    "noticed adjacent", "in addition there is a bug",
+)
+
+
+def _has_separate_bug_signal(path) -> bool:
+    """Cheap substring scan over the artifact tail. Returns True if
+    any pattern in _SEPARATE_BUG_PHRASES appears. False on read error
+    or empty file — file actor is opt-in by signal, no signal = no fire."""
+    try:
+        text = path.read_text()
+    except OSError:
+        return False
+    if not text.strip():
+        return False
+    tail = text[-6000:].lower()
+    return any(p in tail for p in _SEPARATE_BUG_PHRASES)
+
+
+def _last_meaningful_line(text: str) -> str:
+    """Return the last non-empty, non-table-rule line of the artifact,
+    trimmed of markdown header markers. Used as the fallback summary
+    for unclassified halts so the operator gets a real signal per card."""
+    for raw in reversed(text.splitlines()):
+        s = raw.strip()
+        if not s:
+            continue
+        # Skip pure table rules, divider lines, code-fence markers.
+        if set(s) <= set("-|: ") or s in ("```", "---"):
+            continue
+        return s.lstrip("#").strip()[:200]
+    return ""
 
 
 def _classify_investigate_artifact(path) -> dict | None:
@@ -812,7 +1056,20 @@ def _classify_investigate_artifact(path) -> dict | None:
         if matched_signal:
             break
     if not matched_signal:
-        return None
+        # No recognized signal in the artifact. Route to human so the
+        # operator decides — cheap-to-glance vs. invisible-drop is the
+        # right asymmetry. Surface the artifact's last meaningful line
+        # as the summary so the operator can tell cards apart at a
+        # glance rather than seeing N copies of the same generic
+        # "unclassified" string.
+        return {
+            "signal": "unclassified",
+            "produced_pr": False,
+            "no_fix": False,
+            "human_gated": True,
+            "summary": _last_meaningful_line(text)
+                       or "unclassified halt (artifact empty)",
+        }
 
     # Summary: the first non-empty line of the halt-region that contains
     # the matched pattern, trimmed for the event.

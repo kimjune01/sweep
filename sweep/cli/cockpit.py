@@ -26,7 +26,7 @@ CAPS: dict[str, dict[str, int | None]] = {
     "investigate":   {"queued": 5, "in_flight": 5},   # LLM, root-causing (production)
     "reinvestigate": {"queued": 5, "in_flight": 2},   # engagement-lane investigate
     "immunize":      {"queued": 10, "in_flight": 1},  # anti-AI routing to slop-offer
-    "tissue":        {"queued": 5, "in_flight": 1},   # side-hatch comment drafts
+    "comment-issue":        {"queued": 5, "in_flight": 1},   # side-hatch comment drafts
     "bless":         {"queued": 5, "in_flight": 1},   # response classifier-router
     "post":          {"queued": 5, "in_flight": 1},   # operator-approved posts
     "qa":            {"queued": 5, "in_flight": 5},   # LLM, gates (production)
@@ -46,7 +46,7 @@ FLOW_NAMES: dict[str, str] = {
     "investigate":   "Investigate",
     "reinvestigate": "Re-investigate",
     "immunize":      "Immunize",
-    "tissue":        "Tissue",
+    "comment-issue":        "Tissue",
     "bless":         "Bless",
     "post":          "Post",
     "qa":            "QA",
@@ -60,7 +60,7 @@ FLOW_NAMES: dict[str, str] = {
 # (investigate+reinvestigate, qa+reqa). Same skill, different application.
 FLOW_ORDER = ("scout", "sift", "triaged", "immunize",
               "investigate", "reinvestigate",
-              "tissue", "bless", "post",
+              "comment-issue", "bless", "post",
               "qa", "reqa",
               "respond", "retro_audit", "human")
 
@@ -135,7 +135,7 @@ def _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode) 
 def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
     actionable = ["scout", "sift", "triaged", "immunize",
                   "investigate", "reinvestigate",
-                  "tissue", "bless", "post",
+                  "comment-issue", "bless", "post",
                   "qa", "reqa",
                   "respond", "human"]
     if include_wait:

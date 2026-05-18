@@ -53,7 +53,9 @@ from sweep.activities.respond import kick_respond_card
 from sweep.activities.rope import kick_rope_card, rope_cycle
 from sweep.activities.bless import bless_cycle
 from sweep.activities.immunize import immunize_cycle
-from sweep.activities.tissue import tissue_cycle, post_cycle
+from sweep.activities.comment_issue import comment_issue_cycle, post_cycle
+from sweep.activities.file_issue import file_issue_cycle
+from sweep.activities.sign import sign_cycle, kick_sign_card
 from sweep.activities.usage_probe import probe_claude_usage
 from sweep.activities.qa import (
     codex_review,
@@ -167,11 +169,17 @@ async def _amain() -> None:
             # respond — push verbs. respond_cycle lives in skill_runner;
             # kick_respond_card is the actor-to-actor handoff helper.
             kick_respond_card,
-            # tissue (drafts) + post (posts) — side-hatch on no-fix
-            # investigations. tissue drafts, post posts; separation of
+            # comment-issue (drafts) + post (posts) — side-hatch on no-fix
+            # investigations. comment-issue drafts, post posts; separation of
             # concerns means LLM hiccups and gh hiccups don't share an
             # andon.
-            tissue_cycle, post_cycle,
+            comment_issue_cycle, post_cycle,
+            # file-issue (fresh-issue drafts) — sibling to comment-issue,
+            # different output channel (`gh issue create`, not `gh issue
+            # comment`). Posting handled inline by `sweep file-issue
+            # approve`; results land in the hold-issue holding bin.
+            file_issue_cycle,
+            sign_cycle, kick_sign_card,
             # immunize — anti-AI repo routing (worth-pursuing decider
             # for slop-offer candidates). Receives from sift (two
             # branches) and triage.

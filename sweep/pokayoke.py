@@ -239,6 +239,26 @@ def reqa_intake(msg) -> SkipReason | None:
     ])
 
 
+def triage_intake(msg) -> SkipReason | None:
+    """Checks at triage_cycle entry. The eviction/kill checks alone —
+    triage runs on raw issues (no PR state to check). Sift already
+    filters these at deposit, but in-flight cards from before eviction
+    can still land here; pokayoke is the activity-side backstop."""
+    return first_skip([
+        lambda: is_repo_evicted(msg.repo),
+    ])
+
+
+def investigate_intake(msg) -> SkipReason | None:
+    """Checks at investigate_cycle entry. Same shape as triage_intake —
+    investigate gets cards from triaged, which inherit triage's
+    upstream filtering, but the activity-side guard catches anything
+    in-flight from before eviction."""
+    return first_skip([
+        lambda: is_repo_evicted(msg.repo),
+    ])
+
+
 def reinvestigate_intake(msg) -> SkipReason | None:
     return first_skip([
         lambda: is_repo_evicted(msg.repo),

@@ -79,6 +79,8 @@ async def reinvestigate_cycle(msg: Message) -> dict:
     Precondition: msg.pr required. Without a PR number this card was
     misrouted (production-lane investigate handles new issues).
     """
+    if msg.intent == "nudge":
+        return {"outcome": "nudge-noop"}
     if not msg.pr:
         raise ApplicationError(
             "reinvestigate: msg.pr required (engagement-lane only); "
@@ -114,7 +116,7 @@ async def reinvestigate_cycle(msg: Message) -> dict:
 
     # On a fresh fix that isn't a no-fix or human-gated halt, hand off
     # to reqa for verification before respond pushes. Investigate's
-    # tissue side-hatch already fires for no-fix; we don't duplicate it.
+    # comment-issue side-hatch already fires for no-fix; we don't duplicate it.
     if result.get("artifact_fresh") and not (result.get("no_fix") or result.get("human_gated")):
         try:
             await kick_reqa_card(

@@ -102,7 +102,7 @@ class QaOneEntryRequest:
 
 
 Bucket = Literal["close", "human", "rebase", "qa", "reqa", "investigate",
-                 "reinvestigate", "done", "wait"]
+                 "reinvestigate", "sign", "done", "wait"]
 
 # Each bucket has a destination inbox + intent verb the receiver consumes.
 #
@@ -133,6 +133,10 @@ BUCKET_ROUTING: dict[str, tuple[str, str]] = {
     "reqa":          ("reqa",          "reattest-followup"),
     "investigate":   ("investigate",   "diagnose"),
     "reinvestigate": ("reinvestigate", "diagnose-followup"),
+    # sign: deterministic CLA-class signing. Actor posts the bot's
+    # magic phrase + recheck, polls for resolution. Routed here when
+    # remit detects a failing CLA check on a PR sweep authored.
+    "sign":          ("sign",          "sign-cla"),
     "wait":          ("retro_audit",   "audit"),
 }
 

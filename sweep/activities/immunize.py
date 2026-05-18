@@ -120,8 +120,8 @@ async def immunize_cycle(msg: Message) -> dict:
 
     # Two output paths based on whether we have a specific issue:
     #   - issue-level (triage source): draft a deferential
-    #     acknowledgement, route through tissue-drafts → post so the
-    #     operator approval gate applies the same way as tissue.
+    #     acknowledgement, route through comment-issue-drafts → post so the
+    #     operator approval gate applies the same way as comment-issue.
     #   - repo-level (sift source, no issue): append to the
     #     legacy slop_offer_seeds file. The existing `sweep slop-offer`
     #     CLI flow consumes these for repo-level outreach.
@@ -156,14 +156,14 @@ async def immunize_cycle(msg: Message) -> dict:
 def _draft_acknowledgement_to_tissue(*, repo: str, issue: int,
                                       source: str, policy: str) -> str:
     """Draft a templated deferential acknowledgement and write it to
-    tissue-drafts. The operator approves via the same `sweep tissue`
+    comment-issue-drafts. The operator approves via the same `sweep comment-issue`
     CLI; post posts. Template-only for the first batch — the message
     is simple enough that variance doesn't help, and a uniform tone
     across slop-offer outreach reads as a coherent policy rather than
     a per-repo improvisation.
 
     Returns the draft_id so the immunize event can carry it forward."""
-    from sweep.activities.tissue import TISSUE_DRAFTS
+    from sweep.activities.comment_issue import TISSUE_DRAFTS
     ts = dt.datetime.now(dt.timezone.utc)
     draft_id = (f"immunize-{repo.replace('/', '-')}-{issue}-"
                 f"{ts.strftime('%Y%m%dT%H%M%S')}")

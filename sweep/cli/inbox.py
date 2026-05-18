@@ -59,8 +59,16 @@ def operator_inbox_lines() -> list[str]:
         # to act on it. Repo+pr are the per-PR contract.
         if repo and pr:
             url = f"https://github.com/{repo}/pull/{pr}"
+            # Prefer the artifact's per-card summary over the generic
+            # reason — summary carries the actual halt line ("Frontier
+            # closed at depth 1", "blocked on CLA", etc.), while reason
+            # is the routing-stage explanation. Both fall back cleanly.
+            summary = (payload.get("summary") or "").strip()
             reason = payload.get("reason", "")
-            suffix = f" — {reason}" if reason else ""
+            tail = summary or reason
+            if summary and reason and summary != reason:
+                tail = f"{summary}  _({reason})_"
+            suffix = f" — {tail[:200]}" if tail else ""
             lines.append(f"- {glyph} [{repo}#{pr}]({url}){suffix}")
             continue
         # Pipeline-wide cards (retro-summary, future system notes):
@@ -91,7 +99,7 @@ _ARCHITECTURE_DIAGRAM = """\
    rope ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ attest ▸ compose ▸ submit ▸ push
     ▲              └──┬──┘                       │
     │                 ▼                          ▼
-    │              immunize ▸ tissue ▸ post
+    │              immunize ▸ comment-issue ▸ post
     │
     └── idle signals from investigate / qa (rope regulates scout depth)
 
@@ -103,7 +111,7 @@ _ARCHITECTURE_DIAGRAM = """\
                   └▸ human           you — the manual peer to respond
 
  side-channels
-   leakdog ▸ bless ┬▸ tissue-drafts ▸ post
+   leakdog ▸ bless ┬▸ comment-issue-drafts ▸ post
                    └▸ human-issues
 
    · dry holds at submit · everything else flows on real-world time
@@ -130,6 +138,7 @@ def inbox_default(ctx: typer.Context) -> None:
 @inbox_app.command("actor")
 def actor_inspect(
     actor: str = typer.Argument(..., help="triaged | investigate | qa | respond | human | retro"),
+    as_json: bool = typer.Option(False, "--json", help="Emit unacked cards as JSON for the TUI overlay"),
 ) -> None:
     """Dump one actor's inbox jsonl, dedupe by msg_id, show acked vs unacked."""
     valid = {"triaged", "investigate", "qa", "respond", "human", "retro"}
@@ -158,16 +167,134 @@ def actor_inspect(
     acked = load_msg_id_set(INBOX_DIR / "_acks.jsonl")
     unacked = [m for mid, m in seen.items() if mid not in acked]
 
+    ordered = sorted(unacked, key=lambda x: x.get("ts", ""))
+    if as_json:
+        out = [{
+            "msg_id": m.get("msg_id"), "repo": m.get("repo"),
+            "pr": m.get("pr"), "intent": m.get("intent"),
+            "reason": (m.get("payload") or {}).get("reason", ""),
+            "cmd": next((m.get("payload", {}).get(k) for k in (m.get("payload") or {})
+                         if k == "cmd" or k.endswith("_cmd")), ""),
+        } for m in ordered]
+        print(json.dumps(out))
+        return
+
     print(f"# {inbox}")
     print(
         f"# raw_lines={raw}  unique_msgs={len(seen)}  "
         f"unacked={len(unacked)}  acked={len(seen) - len(unacked)}"
     )
     print()
-    for m in sorted(unacked, key=lambda x: x.get("ts", "")):
+    for i, m in enumerate(ordered, 1):
         intent = m.get("intent", "?")
         repo = m.get("repo", "?")
         pr = m.get("pr") or "-"
         ts = m.get("ts", "")[:19]
-        reason = (m.get("payload") or {}).get("reason", "")
-        print(f"  [{ts}] {intent:9s} {repo}#{pr}  {reason}")
+        payload = m.get("payload") or {}
+        reason = payload.get("reason", "")
+        print(f"  [{i:>2}] [{ts}] {intent:9s} {repo}#{pr}  {reason}")
+        # Copy-paste line: surface concrete commands when the card
+        # carries one. Convention: payload fields named *_cmd or `cmd`
+        # are runnable shell snippets the operator pastes verbatim.
+        cmd_keys = [k for k in payload
+                    if k == "cmd" or k.endswith("_cmd")]
+        for ck in cmd_keys:
+            cmd = (payload.get(ck) or "").strip()
+            if cmd:
+                print(f"       $ {cmd}")
+
+    # Persist the indexed list so `sweep inbox done <N>` resolves the
+    # same way `sweep pr <N>` resolves against recent_lanes.json. One
+    # entry per displayed card; only unacked since that's what `done`
+    # would target.
+    if actor == "human":
+        from pathlib import Path as _P
+        state_dir = _P.home() / ".sweep" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        idx = [{"msg_id": m.get("msg_id"), "repo": m.get("repo"),
+                "pr": m.get("pr")} for m in ordered]
+        try:
+            (state_dir / "recent_inbox.json").write_text(json.dumps(idx))
+        except OSError:
+            pass
+
+
+@inbox_app.command("done")
+def inbox_done(
+    ref: str = typer.Argument(..., help="<N> from last `sweep inbox actor human`, or owner/repo#PR"),
+) -> None:
+    """Ack every unacked human-inbox card matching the ref AND re-remit
+    the PR so the substrate re-observes world-state. "Operator action
+    complete" is not the same as "world is in the expected state" — let
+    remit reclassify and route from current truth."""
+    import re as _re
+    from pathlib import Path as _P
+    from sweep.inbox_state import INBOX_DIR as _INBOX
+    import datetime as _dt
+    import asyncio as _asyncio
+
+    recent_path = _P.home() / ".sweep" / "state" / "recent_inbox.json"
+
+    # Resolve ref → (repo, pr).
+    int_re = _re.compile(r"^\d+$")
+    pr_re = _re.compile(r"^([\w.-]+/[\w.-]+)#(\d+)$")
+    if int_re.match(ref):
+        if not recent_path.exists():
+            raise typer.BadParameter(
+                f"no recent inbox index; run `sweep inbox actor human` first"
+            )
+        try:
+            entries = json.loads(recent_path.read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            raise typer.BadParameter(f"recent inbox index unreadable: {e}")
+        idx = int(ref)
+        if not (1 <= idx <= len(entries)):
+            raise typer.BadParameter(
+                f"index {idx} out of range; last render had {len(entries)} unacked cards"
+            )
+        e = entries[idx - 1]
+        repo, pr = e.get("repo"), e.get("pr")
+    else:
+        m = pr_re.match(ref)
+        if not m:
+            raise typer.BadParameter(f"expected <N> or owner/repo#PR, got {ref!r}")
+        repo, pr = m.group(1), int(m.group(2))
+
+    if not repo or not pr:
+        raise typer.BadParameter(f"resolved ref has no repo/pr: {ref}")
+
+    inbox = _INBOX / "human.jsonl"
+    acks = _INBOX / "_acks.jsonl"
+    if not inbox.exists():
+        print("(no human inbox file)")
+        return
+
+    already_acked = load_msg_id_set(acks)
+    to_ack: list[str] = []
+    for line in inbox.read_text().splitlines():
+        if not line.strip(): continue
+        try: m = json.loads(line)
+        except json.JSONDecodeError: continue
+        if m.get("msg_id") in already_acked: continue
+        if m.get("repo") == repo and m.get("pr") == pr:
+            to_ack.append(m.get("msg_id"))
+
+    if not to_ack:
+        print(f"  no unacked cards for {repo}#{pr}")
+        return
+
+    ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    with open(acks, "a") as f:
+        for mid in to_ack:
+            f.write(json.dumps({
+                "msg_id": mid, "ts": ts, "from": "operator-action",
+                "outcome": "action-complete; re-remitted",
+            }) + "\n")
+    print(f"  acked {len(to_ack)} card(s) for {repo}#{pr}")
+
+    # Re-remit so remit-actor re-observes PR state and re-classifies.
+    async def _kick():
+        from sweep.activities.remit import kick_remit_card
+        return await kick_remit_card(repo, pr, sender="operator-done")
+    wf = _asyncio.run(_kick())
+    print(f"  re-remitted: {wf or '(no wf)'}")
