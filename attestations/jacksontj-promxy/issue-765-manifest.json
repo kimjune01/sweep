@@ -1,0 +1,18 @@
+{
+  "kind": "test_attestation",
+  "name": "issue-765",
+  "test_cmd": "make test",
+  "expected_test_name": "742-zero-targets-logging-metric",
+  "head_sha": "aba29febb5d370a4e97afb4f45e6fac0943fbdcf",
+  "host": "darwin-arm64",
+  "test_env": "docker:sweep-tester:latest",
+  "elapsed_seconds": 136.48011708259583,
+  "after": {
+    "bytes": 938,
+    "sha256": "1ae0e64f4ba58ec2c224848aef2fe19b72e29bee2a80f4dd41a8881b784fd60c"
+  },
+  "before": {
+    "bytes": 1474,
+    "sha256": "38fad53b8c41ef939b6819e056d1bfded4e6ab94e32a8c11609f6f97d449d479"
+  }
+}

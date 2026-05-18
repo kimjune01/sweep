@@ -1,0 +1,18 @@
+GO111MODULE=on go test -race -mod=vendor -tags netgo,builtinassets ./...
+?   	github.com/jacksontj/promxy	[no test files]
+?   	github.com/jacksontj/promxy/cmd/promxy	[no test files]
+?   	github.com/jacksontj/promxy/cmd/remote_write_exporter	[no test files]
+ok  	github.com/jacksontj/promxy/pkg/alertbackfill	1.018s
+ok  	github.com/jacksontj/promxy/pkg/config	1.014s
+ok  	github.com/jacksontj/promxy/pkg/logging	1.012s
+?   	github.com/jacksontj/promxy/pkg/middleware	[no test files]
+ok  	github.com/jacksontj/promxy/pkg/promclient	1.543s
+ok  	github.com/jacksontj/promxy/pkg/promhttputil	1.012s
+?   	github.com/jacksontj/promxy/pkg/proxyquerier	[no test files]
+ok  	github.com/jacksontj/promxy/pkg/proxystorage	1.022s
+ok  	github.com/jacksontj/promxy/pkg/remote	12.706s
+ok  	github.com/jacksontj/promxy/pkg/server	1.047s
+ok  	github.com/jacksontj/promxy/pkg/servergroup	1.031s
+ok  	github.com/jacksontj/promxy/test	76.362s
+
+--- stderr ---

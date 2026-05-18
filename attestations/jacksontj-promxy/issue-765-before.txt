@@ -1,0 +1,25 @@
+GO111MODULE=on go test -race -mod=vendor -tags netgo,builtinassets ./...
+FAIL	github.com/jacksontj/promxy/pkg/servergroup [setup failed]
+?   	github.com/jacksontj/promxy	[no test files]
+FAIL	github.com/jacksontj/promxy/cmd/promxy [build failed]
+FAIL	github.com/jacksontj/promxy/cmd/remote_write_exporter [build failed]
+FAIL	github.com/jacksontj/promxy/pkg/alertbackfill [build failed]
+FAIL	github.com/jacksontj/promxy/pkg/config [build failed]
+ok  	github.com/jacksontj/promxy/pkg/logging	1.012s
+?   	github.com/jacksontj/promxy/pkg/middleware	[no test files]
+FAIL	github.com/jacksontj/promxy/pkg/promclient [build failed]
+FAIL	github.com/jacksontj/promxy/pkg/promhttputil [build failed]
+FAIL	github.com/jacksontj/promxy/pkg/proxyquerier [build failed]
+FAIL	github.com/jacksontj/promxy/pkg/proxystorage [build failed]
+FAIL	github.com/jacksontj/promxy/pkg/remote [build failed]
+ok  	github.com/jacksontj/promxy/pkg/server	1.052s
+FAIL	github.com/jacksontj/promxy/test [build failed]
+FAIL
+
+--- stderr ---
+go: downloading go1.24.6 (linux/arm64)
+# github.com/jacksontj/promxy/pkg/servergroup
+pkg/servergroup/servergroup_test.go:13:2: cannot find module providing package github.com/prometheus/common/sigv4: import lookup disabled by -mod=vendor
+# github.com/prometheus/prometheus/model/labels
+vendor/github.com/prometheus/prometheus/model/labels/test_utils.go:60:13: invalid argument: cannot make Labels; type must be slice, map, or channel
+make: *** [Makefile:27: test] Error 1
