@@ -1,6 +1,6 @@
-Test Suite 'All tests' started at 2026-05-17 21:32:22.384.
-Test Suite 'XcodeGenPackageTests.xctest' started at 2026-05-17 21:32:22.385.
-Test Suite 'ArrayExtensionsTests' started at 2026-05-17 21:32:22.385.
+Test Suite 'All tests' started at 2026-05-17 21:54:03.903.
+Test Suite 'XcodeGenPackageTests.xctest' started at 2026-05-17 21:54:03.904.
+Test Suite 'ArrayExtensionsTests' started at 2026-05-17 21:54:03.904.
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testEmptyArray]' started.
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testEmptyArray]' passed (0.000 seconds).
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testIndexCannotBeFound]' started.
@@ -9,19 +9,19 @@ Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testSearchingForFirstIndex]'
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testSearchingForFirstIndex]' passed (0.000 seconds).
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testSearchingReturnsFirstIndexWhenMultipleElementsHaveSameValue]' started.
 Test Case '-[XcodeGenCoreTests.ArrayExtensionsTests testSearchingReturnsFirstIndexWhenMultipleElementsHaveSameValue]' passed (0.000 seconds).
-Test Suite 'ArrayExtensionsTests' passed at 2026-05-17 21:32:22.386.
+Test Suite 'ArrayExtensionsTests' passed at 2026-05-17 21:54:03.905.
 	 Executed 4 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
-Test Suite 'AtomicTests' started at 2026-05-17 21:32:22.386.
+Test Suite 'AtomicTests' started at 2026-05-17 21:54:03.905.
 Test Case '-[XcodeGenCoreTests.AtomicTests testSimultaneousWriteOrder]' started.
 Test Case '-[XcodeGenCoreTests.AtomicTests testSimultaneousWriteOrder]' passed (0.000 seconds).
-Test Suite 'AtomicTests' passed at 2026-05-17 21:32:22.386.
+Test Suite 'AtomicTests' passed at 2026-05-17 21:54:03.905.
 	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
-Test Suite 'BreakpointGeneratorTests' started at 2026-05-17 21:32:22.386.
+Test Suite 'BreakpointGeneratorTests' started at 2026-05-17 21:54:03.905.
 Test Case '-[XcodeGenKitTests.BreakpointGeneratorTests testBreakpoints]' started.
 Test Case '-[XcodeGenKitTests.BreakpointGeneratorTests testBreakpoints]' passed (0.004 seconds).
-Test Suite 'BreakpointGeneratorTests' passed at 2026-05-17 21:32:22.390.
+Test Suite 'BreakpointGeneratorTests' passed at 2026-05-17 21:54:03.909.
 	 Executed 1 test, with 0 failures (0 unexpected) in 0.004 (0.004) seconds
-Test Suite 'CarthageDependencyResolverTests' started at 2026-05-17 21:32:22.390.
+Test Suite 'CarthageDependencyResolverTests' started at 2026-05-17 21:54:03.909.
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testBaseBuildPath]' started.
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testBaseBuildPath]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testBuildPathForPlatform]' started.
@@ -32,46 +32,46 @@ Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testExecutablePath
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testExecutablePath]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testRelatedDependenciesForPlatform]' started.
 Test Case '-[XcodeGenKitTests.CarthageDependencyResolverTests testRelatedDependenciesForPlatform]' passed (0.000 seconds).
-Test Suite 'CarthageDependencyResolverTests' passed at 2026-05-17 21:32:22.391.
+Test Suite 'CarthageDependencyResolverTests' passed at 2026-05-17 21:54:03.910.
 	 Executed 5 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
-Test Suite 'DictionaryExtensionTests' started at 2026-05-17 21:32:22.391.
+Test Suite 'DictionaryExtensionTests' started at 2026-05-17 21:54:03.910.
 Test Case '-[ProjectSpecTests.DictionaryExtensionTests testRemovingNil_ShouldReturnNewDictionaryWithoutOptionalValues]' started.
 Test Case '-[ProjectSpecTests.DictionaryExtensionTests testRemovingNil_ShouldReturnNewDictionaryWithoutOptionalValues]' passed (0.000 seconds).
-Test Suite 'DictionaryExtensionTests' passed at 2026-05-17 21:32:22.392.
+Test Suite 'DictionaryExtensionTests' passed at 2026-05-17 21:54:03.911.
 	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
-Test Suite 'FixturePerformanceTests' started at 2026-05-17 21:32:22.392.
+Test Suite 'FixturePerformanceTests' started at 2026-05-17 21:54:03.911.
 Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:60: Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' measured [Time, seconds] average: 0.014, relative standard deviation: 45.090%, values: [0.031832, 0.018835, 0.014300, 0.013081, 0.011845, 0.010863, 0.010550, 0.010525, 0.010118, 0.010125], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' passed (0.479 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:60: Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' measured [Time, seconds] average: 0.012, relative standard deviation: 15.230%, values: [0.017596, 0.013226, 0.012551, 0.011208, 0.011535, 0.011529, 0.011209, 0.011196, 0.011413, 0.011547], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.FixturePerformanceTests testCacheFileGeneration]' passed (0.473 seconds).
 Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:51: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' measured [Time, seconds] average: 0.013, relative standard deviation: 54.698%, values: [0.032760, 0.020427, 0.013901, 0.011812, 0.010450, 0.009469, 0.009057, 0.008690, 0.008568, 0.008800], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' passed (0.385 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:51: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' measured [Time, seconds] average: 0.013, relative standard deviation: 46.342%, values: [0.027660, 0.018586, 0.013771, 0.011175, 0.009144, 0.009031, 0.008917, 0.008896, 0.008766, 0.009890], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureDecoding]' passed (0.382 seconds).
 Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:68: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' measured [Time, seconds] average: 0.060, relative standard deviation: 8.140%, values: [0.074200, 0.062538, 0.057394, 0.057774, 0.058000, 0.061379, 0.060557, 0.057690, 0.057418, 0.057533], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' passed (0.869 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:68: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' measured [Time, seconds] average: 0.064, relative standard deviation: 13.624%, values: [0.090003, 0.060727, 0.065183, 0.059917, 0.060348, 0.061846, 0.062981, 0.060874, 0.060282, 0.059791], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureGeneration]' passed (0.904 seconds).
 Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:79: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' measured [Time, seconds] average: 0.034, relative standard deviation: 7.285%, values: [0.037742, 0.034212, 0.034980, 0.039590, 0.033521, 0.032789, 0.031876, 0.035700, 0.031561, 0.032185], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' passed (0.662 seconds).
-Test Suite 'FixturePerformanceTests' passed at 2026-05-17 21:32:24.787.
-	 Executed 4 tests, with 0 failures (0 unexpected) in 2.395 (2.395) seconds
-Test Suite 'FixtureTests' started at 2026-05-17 21:32:24.787.
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:79: Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' measured [Time, seconds] average: 0.033, relative standard deviation: 4.459%, values: [0.037507, 0.032959, 0.032400, 0.032975, 0.032902, 0.032852, 0.032817, 0.031893, 0.032957, 0.032517], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.FixturePerformanceTests testFixtureWriting]' passed (0.655 seconds).
+Test Suite 'FixturePerformanceTests' passed at 2026-05-17 21:54:06.325.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 2.414 (2.414) seconds
+Test Suite 'FixtureTests' started at 2026-05-17 21:54:06.325.
 Test Case '-[FixtureTests.FixtureTests testProjectFixture]' started.
-Test Case '-[FixtureTests.FixtureTests testProjectFixture]' passed (0.139 seconds).
-Test Suite 'FixtureTests' passed at 2026-05-17 21:32:24.926.
-	 Executed 1 test, with 0 failures (0 unexpected) in 0.139 (0.139) seconds
-Test Suite 'GeneratedPerformanceTests' started at 2026-05-17 21:32:24.926.
+Test Case '-[FixtureTests.FixtureTests testProjectFixture]' passed (0.138 seconds).
+Test Suite 'FixtureTests' passed at 2026-05-17 21:54:06.463.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.138 (0.138) seconds
+Test Suite 'GeneratedPerformanceTests' started at 2026-05-17 21:54:06.463.
 Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:27: Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' measured [Time, seconds] average: 0.087, relative standard deviation: 9.610%, values: [0.110267, 0.082063, 0.082999, 0.081390, 0.080933, 0.082593, 0.083798, 0.085933, 0.090507, 0.085822], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' passed (1.256 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:27: Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' measured [Time, seconds] average: 0.090, relative standard deviation: 10.503%, values: [0.118038, 0.086613, 0.086850, 0.086387, 0.085824, 0.086405, 0.086660, 0.086752, 0.087034, 0.087167], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.GeneratedPerformanceTests testGeneration]' passed (1.298 seconds).
 Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:18: Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' measured [Time, seconds] average: 0.012, relative standard deviation: 55.877%, values: [0.030791, 0.016556, 0.012810, 0.010797, 0.009298, 0.008479, 0.008314, 0.008347, 0.007882, 0.007763], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' passed (0.520 seconds).
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:18: Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' measured [Time, seconds] average: 0.011, relative standard deviation: 39.276%, values: [0.022435, 0.014384, 0.011812, 0.010299, 0.009164, 0.008381, 0.008151, 0.008137, 0.008343, 0.008251], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.GeneratedPerformanceTests testLoading]' passed (0.509 seconds).
 Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' started.
-/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:37: Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' measured [Time, seconds] average: 0.086, relative standard deviation: 3.869%, values: [0.092949, 0.084644, 0.083666, 0.083130, 0.082986, 0.088106, 0.089217, 0.090764, 0.084590, 0.084665], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
-Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' passed (1.337 seconds).
-Test Suite 'GeneratedPerformanceTests' passed at 2026-05-17 21:32:28.039.
-	 Executed 3 tests, with 0 failures (0 unexpected) in 3.113 (3.113) seconds
-Test Suite 'GlobTests' started at 2026-05-17 21:32:28.039.
+/Users/junekim/.sweep/worktrees/yonaskolb__XcodeGen/Tests/PerformanceTests/PerformanceTests.swift:37: Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' measured [Time, seconds] average: 0.088, relative standard deviation: 8.843%, values: [0.110854, 0.087559, 0.085049, 0.086691, 0.083958, 0.086129, 0.084056, 0.083940, 0.085489, 0.084480], performanceMetricID:com.apple.XCTPerformanceMetric_WallClockTime, baselineName: "", baselineAverage: , polarity: prefers smaller, maxPercentRegression: 10.000%, maxPercentRelativeStandardDeviation: 10.000%, maxRegression: 0.100, maxStandardDeviation: 0.100
+Test Case '-[PerformanceTests.GeneratedPerformanceTests testWriting]' passed (1.356 seconds).
+Test Suite 'GeneratedPerformanceTests' passed at 2026-05-17 21:54:09.626.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 3.163 (3.163) seconds
+Test Suite 'GlobTests' started at 2026-05-17 21:54:09.626.
 Test Case '-[XcodeGenCoreTests.GlobTests testBlacklistedDirectories]' started.
 Test Case '-[XcodeGenCoreTests.GlobTests testBlacklistedDirectories]' passed (0.001 seconds).
 Test Case '-[XcodeGenCoreTests.GlobTests testBraces]' started.
@@ -109,16 +109,16 @@ Test Case '-[XcodeGenCoreTests.GlobTests testIndexing]' passed (0.001 seconds).
 Test Case '-[XcodeGenCoreTests.GlobTests testIterateTwice]' started.
 Test Case '-[XcodeGenCoreTests.GlobTests testIterateTwice]' passed (0.001 seconds).
 Test Case '-[XcodeGenCoreTests.GlobTests testNothingMatches]' started.
-Test Case '-[XcodeGenCoreTests.GlobTests testNothingMatches]' passed (0.000 seconds).
-Test Suite 'GlobTests' passed at 2026-05-17 21:32:28.056.
-	 Executed 19 tests, with 0 failures (0 unexpected) in 0.016 (0.017) seconds
-Test Suite 'PBXProjGeneratorTests' started at 2026-05-17 21:32:28.056.
+Test Case '-[XcodeGenCoreTests.GlobTests testNothingMatches]' passed (0.001 seconds).
+Test Suite 'GlobTests' passed at 2026-05-17 21:54:09.641.
+	 Executed 19 tests, with 0 failures (0 unexpected) in 0.014 (0.015) seconds
+Test Suite 'PBXProjGeneratorTests' started at 2026-05-17 21:54:09.641.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testDefaultLastUpgradeCheckWhenUserDidNotSpecifyValue]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testDefaultLastUpgradeCheckWhenUserDidNotSpecifyValue]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testDefaultLastUpgradeCheckWhenUserDidSpecifyInvalidValue]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testDefaultLastUpgradeCheckWhenUserDidSpecifyInvalidValue]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testGroupOrdering]' started.
-Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testGroupOrdering]' passed (0.021 seconds).
+Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testGroupOrdering]' passed (0.018 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testOverrideLastUpgradeCheckWhenUserDidSpecifyValue]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testOverrideLastUpgradeCheckWhenUserDidSpecifyValue]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testPlatformDependencies]' started.
@@ -129,20 +129,20 @@ Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSetWithMu
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSetWithMultipleTargets]' passed (0.000 seconds).
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSetWithNoTargets]' started.
 Test Case '-[XcodeGenKitTests.PBXProjGeneratorTests testProductsGroupIsSetWithNoTargets]' passed (0.000 seconds).
-Test Suite 'PBXProjGeneratorTests' passed at 2026-05-17 21:32:28.084.
-	 Executed 8 tests, with 0 failures (0 unexpected) in 0.027 (0.027) seconds
-Test Suite 'PathExtensionsTests' started at 2026-05-17 21:32:28.084.
+Test Suite 'PBXProjGeneratorTests' passed at 2026-05-17 21:54:09.667.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.025 (0.025) seconds
+Test Suite 'PathExtensionsTests' started at 2026-05-17 21:54:09.667.
 Test Case '-[XcodeGenCoreTests.PathExtensionsTests testPathRelativeToPath]' started.
 Test Case '-[XcodeGenCoreTests.PathExtensionsTests testPathRelativeToPath]' passed (0.000 seconds).
-Test Suite 'PathExtensionsTests' passed at 2026-05-17 21:32:28.084.
+Test Suite 'PathExtensionsTests' passed at 2026-05-17 21:54:09.667.
 	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
-Test Suite 'ProjectGeneratorTests' started at 2026-05-17 21:32:28.084.
+Test Suite 'ProjectGeneratorTests' started at 2026-05-17 21:54:09.667.
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testAggregateTargets]' started.
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testAggregateTargets]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testConfigGenerator]' started.
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testConfigGenerator]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithCustomDependencyDestinations]' started.
-Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithCustomDependencyDestinations]' passed (0.037 seconds).
+Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithCustomDependencyDestinations]' passed (0.039 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithDestination]' started.
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithDestination]' passed (0.012 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWithPlatformFilteredDependencies]' started.
@@ -150,54 +150,54 @@ Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testGenerateXcodeProjectWith
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testOptions]' started.
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testOptions]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testTargets]' started.
-Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testTargets]' passed (0.036 seconds).
-Test Suite 'ProjectGeneratorTests' passed at 2026-05-17 21:32:28.175.
-	 Executed 7 tests, with 0 failures (0 unexpected) in 0.091 (0.091) seconds
-Test Suite 'ProjectSpecTests' started at 2026-05-17 21:32:28.175.
+Test Case '-[XcodeGenKitTests.ProjectGeneratorTests testTargets]' passed (0.040 seconds).
+Test Suite 'ProjectGeneratorTests' passed at 2026-05-17 21:54:09.764.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.096 (0.097) seconds
+Test Suite 'ProjectSpecTests' started at 2026-05-17 21:54:09.764.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testAllTrackedFilesExcludesIgnoredFiles]' started.
-Test Case '-[ProjectSpecTests.ProjectSpecTests testAllTrackedFilesExcludesIgnoredFiles]' passed (0.001 seconds).
+Test Case '-[ProjectSpecTests.ProjectSpecTests testAllTrackedFilesExcludesIgnoredFiles]' passed (0.002 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testDeploymentTarget]' started.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testDeploymentTarget]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testJSONEncodable]' started.
-Test Case '-[ProjectSpecTests.ProjectSpecTests testJSONEncodable]' passed (0.001 seconds).
+Test Case '-[ProjectSpecTests.ProjectSpecTests testJSONEncodable]' passed (0.002 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testTargetFilename]' started.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testTargetFilename]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testTargetType]' started.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testTargetType]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.ProjectSpecTests testValidation]' started.
 Test Case '-[ProjectSpecTests.ProjectSpecTests testValidation]' passed (0.001 seconds).
-Test Suite 'ProjectSpecTests' passed at 2026-05-17 21:32:28.180.
-	 Executed 6 tests, with 0 failures (0 unexpected) in 0.004 (0.004) seconds
-Test Suite 'SchemeGeneratorTests' started at 2026-05-17 21:32:28.180.
+Test Suite 'ProjectSpecTests' passed at 2026-05-17 21:54:09.769.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.005 (0.005) seconds
+Test Suite 'SchemeGeneratorTests' started at 2026-05-17 21:54:09.769.
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testDefaultLastUpgradeVersionWhenUserDidNotSpecify]' started.
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testDefaultLastUpgradeVersionWhenUserDidNotSpecify]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testGenerateSchemeManagementOnHiddenTargetScheme]' started.
-Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testGenerateSchemeManagementOnHiddenTargetScheme]' passed (0.000 seconds).
+Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testGenerateSchemeManagementOnHiddenTargetScheme]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testOverrideLastUpgradeVersionWhenUserDidSpecify]' started.
-Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testOverrideLastUpgradeVersionWhenUserDidSpecify]' passed (0.000 seconds).
+Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testOverrideLastUpgradeVersionWhenUserDidSpecify]' passed (0.001 seconds).
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testSchemes]' started.
 Test Case '-[XcodeGenKitTests.SchemeGeneratorTests testSchemes]' passed (0.034 seconds).
-Test Suite 'SchemeGeneratorTests' passed at 2026-05-17 21:32:28.215.
-	 Executed 4 tests, with 0 failures (0 unexpected) in 0.035 (0.035) seconds
-Test Suite 'SortedArrayTests' started at 2026-05-17 21:32:28.215.
+Test Suite 'SchemeGeneratorTests' passed at 2026-05-17 21:54:09.805.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.036 (0.036) seconds
+Test Suite 'SortedArrayTests' started at 2026-05-17 21:54:09.805.
 Test Case '-[XcodeGenCoreTests.SortedArrayTests testEmpty]' started.
 Test Case '-[XcodeGenCoreTests.SortedArrayTests testEmpty]' passed (0.000 seconds).
 Test Case '-[XcodeGenCoreTests.SortedArrayTests testSortingOnInitialization]' started.
 Test Case '-[XcodeGenCoreTests.SortedArrayTests testSortingOnInitialization]' passed (0.000 seconds).
-Test Suite 'SortedArrayTests' passed at 2026-05-17 21:32:28.215.
+Test Suite 'SortedArrayTests' passed at 2026-05-17 21:54:09.805.
 	 Executed 2 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
-Test Suite 'SourceGeneratorTests' started at 2026-05-17 21:32:28.215.
+Test Suite 'SourceGeneratorTests' started at 2026-05-17 21:54:09.806.
 Test Case '-[XcodeGenKitTests.SourceGeneratorTests testSourceGenerator]' started.
-Test Case '-[XcodeGenKitTests.SourceGeneratorTests testSourceGenerator]' passed (0.100 seconds).
-Test Suite 'SourceGeneratorTests' passed at 2026-05-17 21:32:28.316.
-	 Executed 1 test, with 0 failures (0 unexpected) in 0.100 (0.100) seconds
-Test Suite 'SpecLoadingTests' started at 2026-05-17 21:32:28.316.
+Test Case '-[XcodeGenKitTests.SourceGeneratorTests testSourceGenerator]' passed (0.103 seconds).
+Test Suite 'SourceGeneratorTests' passed at 2026-05-17 21:54:09.909.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.103 (0.103) seconds
+Test Suite 'SpecLoadingTests' started at 2026-05-17 21:54:09.909.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testDecoding]' started.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testDecoding]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testPackagesVersion]' started.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testPackagesVersion]' passed (0.000 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testProjectSpecParser]' started.
-Test Case '-[ProjectSpecTests.SpecLoadingTests testProjectSpecParser]' passed (0.007 seconds).
+Test Case '-[ProjectSpecTests.SpecLoadingTests testProjectSpecParser]' passed (0.008 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoader]' started.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoader]' passed (0.008 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoaderDuplicateImports]' started.
@@ -206,12 +206,12 @@ Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoaderLoadingJSON]' start
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecLoaderLoadingJSON]' passed (0.001 seconds).
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecWarningValidation]' started.
 Test Case '-[ProjectSpecTests.SpecLoadingTests testSpecWarningValidation]' passed (0.001 seconds).
-Test Suite 'SpecLoadingTests' passed at 2026-05-17 21:32:28.334.
-	 Executed 7 tests, with 0 failures (0 unexpected) in 0.018 (0.018) seconds
-Test Suite 'XcodeGenPackageTests.xctest' passed at 2026-05-17 21:32:28.334.
-	 Executed 75 tests, with 0 failures (0 unexpected) in 5.945 (5.949) seconds
-Test Suite 'All tests' passed at 2026-05-17 21:32:28.334.
-	 Executed 75 tests, with 0 failures (0 unexpected) in 5.945 (5.950) seconds
+Test Suite 'SpecLoadingTests' passed at 2026-05-17 21:54:09.927.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.018 (0.019) seconds
+Test Suite 'XcodeGenPackageTests.xctest' passed at 2026-05-17 21:54:09.927.
+	 Executed 75 tests, with 0 failures (0 unexpected) in 6.019 (6.023) seconds
+Test Suite 'All tests' passed at 2026-05-17 21:54:09.927.
+	 Executed 75 tests, with 0 failures (0 unexpected) in 6.019 (6.024) seconds
 Generated 792 files and 72 directories
 No "auto" settings found
 Generated 792 files and 72 directories
@@ -222,8 +222,8 @@ Generated 792 files and 72 directories
 Building for debugging...
 [1/7] Write sources
 [3/7] Write swift-version--58304C5D6DBC2206.txt
-[5/9] Emitting module ProjectSpec
-[6/9] Compiling ProjectSpec Project.swift
+[5/9] Compiling ProjectSpec Project.swift
+[6/9] Emitting module ProjectSpec
 [7/10] Compiling ProjectSpec CacheFile.swift
 [7/14] Write Objects.LinkFileList
 [9/14] Compiling ProjectSpecTests ProjectSpecTests.swift
