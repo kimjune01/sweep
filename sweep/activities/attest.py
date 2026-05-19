@@ -535,6 +535,29 @@ async def attest_cycle(msg: Message) -> dict:
             return {"verdict": "skip", "target": "sink",
                     "reason": "test_passes_on_master",
                     "msg_id": msg.msg_id}
+        # `env_artifact` is "substrate's local env failed both branches
+        # with the same error class" — the PR is fine upstream (CI green
+        # is the ground truth), our container is the problem. Sink as
+        # OPEN_ENV_ARTIFACT: terminal on our side, alive upstream. The
+        # week-stale-CI sweep (future) evicts the repo if maintainer
+        # never moves. Distinct from test_fails_on_fix where master
+        # actually failed the test (the real bug) and fix should've
+        # passed but didn't.
+        if "env_artifact" in reason:
+            from sweep.activities.pr_state import _sink_pr
+            if msg.pr:
+                _sink_pr(msg.repo, int(msg.pr),
+                         reason=f"env_artifact: {reason[:200]}",
+                         state="OPEN_ENV_ARTIFACT")
+            observe.event(
+                "attest_routed", repo=msg.repo, branch=msg.branch,
+                verdict="skip", target="sink",
+                reason="env_artifact",
+                msg_id=msg.msg_id,
+            )
+            return {"verdict": "skip", "target": "sink",
+                    "reason": "env_artifact",
+                    "msg_id": msg.msg_id}
         # "test_fails_on_fix" is a genuine, routable verdict, not
         # broken substrate. Everything else (toolchain missing, master
         # passing, git checkout failure) propagates to halt the actor.

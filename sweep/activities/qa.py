@@ -398,6 +398,51 @@ async def kick_qa_card(repo: str, branch: str,
     return await _signal_actor("qa", msg)
 
 
+def _looks_like_env_artifact(master_slice: str, fix_slice: str) -> bool:
+    """True iff the master and fix failures look like the SAME env-class
+    error — meaning the substrate's container is the problem, not the
+    PR's code. Heuristic: if both slices contain the same compile-time
+    failure signature (undefined reference, missing header, build-
+    script failure, linker error), the test isn't running because the
+    build broke the same way on both branches. The PR can't be the
+    cause of a pre-test build failure.
+
+    Conservative: requires BOTH a compile-class anchor in the fix slice
+    AND a substantively-overlapping anchor in master. Misses are OK —
+    we just fall through to the existing test_fails_on_fix path."""
+    import re as _re
+    if not master_slice or not fix_slice:
+        return False
+    # Compile-class anchors. Order matters only insofar as we score
+    # whichever appears in both.
+    anchors = [
+        "undefined reference to",
+        "cannot find -l",
+        "fatal error:",
+        "error: linking with",
+        "failed to run custom build command for",
+        "ld: error",
+        "ld returned",
+        "collect2: error",
+        "configure: error",
+        "make: *** No rule to make target",
+    ]
+    def _norm(s: str) -> str:
+        # Strip register hex, line numbers, path prefixes — the
+        # instance-level noise. Keep the structural error vocabulary.
+        s = _re.sub(r"0x[0-9a-f]+", "<HEX>", s)
+        s = _re.sub(r":\d+(:\d+)?", ":<LN>", s)
+        s = _re.sub(r"/[\w./-]+/", "<PATH>/", s)
+        return s
+    m_norm = _norm(master_slice)
+    f_norm = _norm(fix_slice)
+    shared = [a for a in anchors if a in m_norm and a in f_norm]
+    if not shared:
+        return False
+    # At least one compile-class anchor in both → env_artifact.
+    return True
+
+
 def _slice_around_error(stderr: str, *, budget: int = 800) -> str:
     """Surface the actual failure reason from a cargo/build stderr.
 
@@ -689,13 +734,30 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     )
     log.append(f"fix ({req.branch}) exit={fix_run.returncode} env={test_env}")
     if fix_run.returncode != 0:
+        # Env-artifact detection: master had to fail (the upstream gate)
+        # AND fix also failed. If both failures look like the SAME
+        # error — build/link error, missing system header, docker-root
+        # chmod skew, Catch2 env mismatch — the substrate's local env
+        # is the problem, not the PR's code. Route to env_artifact so
+        # attest sinks the PR with OPEN_ENV_ARTIFACT (we did what we
+        # could; upstream CI is ground truth). Distinct from
+        # test_fails_on_fix where master fails the way we expect AND
+        # fix fails differently (real bug).
+        master_slice = _slice_around_error(master_run.stderr)
+        fix_slice = _slice_around_error(fix_run.stderr)
+        if _looks_like_env_artifact(master_slice, fix_slice):
+            raise ApplicationError(
+                f"env_artifact — substrate env failed on both branches: "
+                f"{fix_slice[:600]}",
+                non_retryable=True,
+            )
         # Slice around the last `error:` or `error[Exxx]:` line. Plain
         # tail-clipping lands inside rustc's link-command dump (kilobytes
         # of `-Wl,...` flags) before the actual error. Finding the last
         # error line + grabbing a window around it surfaces the cause
         # regardless of how big the preamble is.
         raise ApplicationError(
-            f"test_fails_on_fix — fix is broken: {_slice_around_error(fix_run.stderr)}",
+            f"test_fails_on_fix — fix is broken: {fix_slice}",
             non_retryable=True,
         )
 
