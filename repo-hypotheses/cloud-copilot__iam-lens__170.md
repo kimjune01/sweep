@@ -125,3 +125,10 @@ Local `gh issue view` could not reach `api.github.com`, and the web cache did no
 ## Pruning Log
 
 - Earlier H2 interpretation pruned: reviewer counterexample showed synthetic group principal context can over-add impossible resource-policy permissions.
+
+## Reinvestigate 2026-05-19 (no-op)
+
+- Context pack reports 0 failing checks; `mergeable=MERGEABLE`, review decision empty.
+- Last maintainer comment (davekerber, 2026-05-12): "this looks really good ... We need to setup a contributor license agreement, I'll be in touch as soon as we have that ready."
+- Trajectory: convergent on a non-code gate (CLA). Same shape as the `reference_hashicorp_cla_gate` memory — halt, don't burn cycles. No edges open; nothing for the substrate to push on until the maintainer returns with a CLA.
+- Edge: wait for maintainer follow-up; no perturbation available from our side.

@@ -42,6 +42,7 @@ from sweep.cli.attest import attest_app
 from sweep.cli.broom import broom_app
 from sweep.cli.cache import cache_app
 from sweep.cli.compose import compose_app
+from sweep.cli.dco import dco_app
 from sweep.cli.evict import evict_app
 from sweep.cli.cerify import cerify_app
 from sweep.cli.control import dry_app, pause_app
@@ -71,6 +72,7 @@ app.add_typer(attest_app, name="attest")
 app.add_typer(broom_app, name="broom")
 app.add_typer(cache_app, name="cache")
 app.add_typer(compose_app, name="compose")
+app.add_typer(dco_app, name="dco")
 app.add_typer(evict_app, name="evict")
 app.add_typer(cerify_app, name="cerify")
 app.add_typer(observe_app, name="observe")

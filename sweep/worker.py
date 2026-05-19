@@ -64,6 +64,7 @@ from sweep.activities.qa import (
     extract_qa_verdicts,
     gemini_review,
     is_repo_evicted_activity,
+    read_artifact_texts,
     test_attestation,
 )
 from sweep.activities.synth_test import synth_test_for_fix
@@ -97,6 +98,7 @@ async def _amain() -> None:
             # qa
             test_attestation, codex_review, gemini_review,
             extract_qa_verdicts,
+            read_artifact_texts,
             is_repo_evicted_activity,
             # synth_test — qa's test-writing step. Writer is shown the
             # issue + unfixed code only; fix diff hidden by design (see

@@ -93,6 +93,27 @@ When you see a competing PR mentioned (phrases like "competing PR",
 choose "ship-vs-competing" or "defer-competing" — never plain "shipped"
 or "no-fix". The competition signal is too important to lose.
 
+Halt vocabulary — read the artifact's LAST sections (## Frontier, ## Verdict,
+## Re-entry, ## Final, ## Pruning Log, ## Halt) for the terminal call:
+
+- "tissue-class, no PR" / "Route: /tissue" / "Route: tissue" → no-fix
+  (these explicitly mean "leave a comment, don't open a PR"). Set
+  should_comment=true; the investigation has maintainer value.
+- "no_fix_to_ship" / "no fix to ship" → no-fix.
+- "Single docs commit ships." / "<N> commit(s) ships." → shipped.
+- "Single PR ships" / "PR shipped at <ref>" → shipped (or
+  ship-vs-competing if a competing PR is also named).
+- "Halt." (terminal, by itself) at the end of artifact → no-fix.
+- "Verdict unchanged: <X>" → treat as <X>'s implied routing
+  (X="tissue-class, no PR" → no-fix; X="ship" → shipped).
+- A "Pruning Log" listing H₀-H₆ kept open as "frontier" alongside
+  killed hypotheses is NOT a verdict — that's the bookkeeping. Ignore
+  "kept open as a frontier" lines unless they ARE the verdict.
+
+When the artifact contains BOTH a verified-fix section (## Diagnosis +
+## Plan + concrete patch) AND a frontier section saying the fix should
+ship → shipped, not no-fix.
+
 should_comment guidance:
 - shipped / ship-vs-competing: false (qa speaks for itself)
 - defer-competing: true ONLY if the artifact has substantive add for the

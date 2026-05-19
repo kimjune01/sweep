@@ -19,14 +19,18 @@ ENV LC_ALL=C.UTF-8
 
 # System libs that show up in most build setup_cmds. Grouped so the
 # layer caches well and apt's cache gets cleaned in the same step.
+# mold added 2026-05-19 (databend andon, used by many Rust crates).
+# jq added 2026-05-19 (test scripts inline-munge JSON).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         clang \
         cmake \
         curl \
         git \
+        jq \
         libssl-dev \
         lld \
+        mold \
         ninja-build \
         pkg-config \
         ca-certificates \
@@ -48,6 +52,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --default-toolchain stable --no-modify-path \
     && rustup component add clippy rustfmt
 
+# sccache — Rust compile cache. Cheap to install, big win when CARGO_TARGET_DIR
+# is mounted at /cache (the per-repo build cache). Added 2026-05-19.
+RUN cargo install sccache --locked
+
 # Go — official .tar.gz install. Picked 1.23 as a sane stable target;
 # bump when the ecosystem moves.
 ENV GO_VERSION=1.23.4
@@ -63,6 +71,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+# Common Python lint/test tools many Makefiles invoke directly (not
+# from a project venv). Without these, `make lint` and `make test`
+# fail inside the container with `<tool>: No such file or directory`.
+# uv tool install puts them under /root/.local/bin which is on PATH
+# for the container's default user.
+ENV PATH=/root/.local/bin:$PATH
+RUN uv tool install ruff \
+    && uv tool install black \
+    && uv tool install mypy \
+    && uv tool install pytest
 
 # Node 20 + pnpm. Skipping corepack because `corepack prepare pnpm@latest
 # --activate` is fragile (signature-verification flakes against pnpm's

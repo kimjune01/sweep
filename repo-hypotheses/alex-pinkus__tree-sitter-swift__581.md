@@ -80,3 +80,13 @@ This produces a minimal, clean diff: one-line grammar.js change + corpus tests +
 ## Pruning log
 
 - H₁ (grammar fix is buggy): killed by other CI jobs passing on identical grammar.js change.
+
+---
+
+## Cycle 2 (2026-05-19, reinvestigate)
+
+Action: restored `package.json` to main verbatim via `git checkout main -- package.json`. Pushed as commit `25edbd0` to `kimjune01/tree-sitter-swift:fix-550-nonisolated-unsafe`.
+
+Took the simpler path (full file revert) rather than the prior plan's "surgical revert + add nothing", because the original PR's package.json change was a pure unintended regression — no element of it serves the fix. Same effective diff vs main: zero changes to package.json.
+
+src/grammar.json and src/node-types.json left as committed. Theory: they were produced by a recent enough `tree-sitter generate` to match `check-dirty.sh` expectations. Frontier edge E1 (check-dirty) and E2 (test-ci) remain open until CI re-runs.

@@ -250,3 +250,34 @@ Available local checks after formatting:
 - `ruff format --check py-polars/tests/unit/operations/test_qcut.py` — pass
 - `ruff check py-polars/tests/unit/operations/test_qcut.py` — pass
 - `RUSTUP_TOOLCHAIN=stable rustfmt --check crates/polars-ops/src/series/ops/cut.rs` — pass, with stable rustfmt warnings about ignored unstable rustfmt options
+
+---
+
+# Reinvestigate — 2026-05-19 — apply H₁/H₃/H₄ fixes after CI red
+
+The crash-recovery section above was a different branch (`fix/qcut-empty-include-breaks`). Returning to `fix/hist-string-panic` head `0e2e35d4cb` to address the 15-job CI failure originally diagnosed in H₁–H₄.
+
+## Actions taken (Phase 8 — operator-confirmed pipeline mode)
+
+| H | Fix | File |
+|---|---|---|
+| H₁ | `[0,1,1,1,0]` → `[1,1,1]` (polars: N edges → N−1 bins, no over/underflow) | `py-polars/tests/unit/operations/test_hist.py:546` |
+| H₂ | ruff format wrap on long `pytest.raises(...)` line | same file:537 |
+| H₃ | Re-route `s.hist(bins=pl.Series(...))` through `s.to_frame().select(pl.col.a.hist(...))` — Series.hist Python wrapper types bins as `list[float]`, Expr.hist accepts `IntoExpr` | same file |
+| H₄ | PR title → `fix(python,rust): Reject non-numeric inputs to hist() with a clear error` (regex needs `[A-Z].*`, scope matches Rust+Python diff) | `gh pr edit --title` |
+
+Comments stripped (the rule names what the test does — "Ensure strict_cast doesn't reject valid numeric upcasting" rotted into a tautology of the assertion).
+
+Commit `7def7916f2` pushed to `fork/fix/hist-string-panic`. Title updated.
+
+## Frontier edges
+
+| Edge | Experiment | Predicted | Status |
+|---|---|---|---|
+| F1 | New CI run on `7def7916f2` — ruff, mypy, test-python, labeler should turn green | Divergent in favor | pending |
+| F2 | mypy not available locally; the Expr-path rewrite is deductive, not inductive | Convergent | open |
+
+## Pruning log addendum
+
+- The original H₁/H₂/H₃/H₄ were never actually applied to the branch — the prior graph wrote the diagnosis but stopped before pushing. The reinvestigation is the missing inductive step. Compression target: investigate's pipeline mode should write a readiness record (`~/.sweep/triage-dry-run/<n>-pr.md`) and let /drip ship; a graph that ends in "Phase 8 gated" is unfinished, not done.
+

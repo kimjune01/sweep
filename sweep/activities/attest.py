@@ -170,6 +170,95 @@ def _route_retry(msg: Message, reason: str) -> Message:
                  extra_payload={"attest_failure_reason": reason[-2000:]})
 
 
+def _signoff_fix_branch(worktree: str, branch: str) -> None:
+    """Append `Signed-off-by:` to every commit on `branch` between
+    origin/HEAD and the tip. Sign-off is the substrate's DCO-style
+    attestation that "this is our work" — same ceremony as the test
+    attestation; same step.
+
+    Idempotent: when every commit already carries a Signed-off-by
+    trailer matching the committer's email, no rebase runs and SHAs
+    stay stable. Re-running attest on the same branch is a no-op for
+    signoff. Fail-soft: any error (detached HEAD, missing config,
+    rebase conflict) logs an observe event and returns without raising
+    — downstream test_attestation continues. The dco-batch fallback
+    path (operator queue) still catches anything this misses.
+    """
+    import subprocess
+    from sweep import observe
+
+    def _run(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", worktree, *args],
+            capture_output=True, text=True, timeout=timeout,
+        )
+
+    try:
+        # Resolve base (default branch on origin) and the committer
+        # email. Both required for the idempotency check.
+        default = _run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+        if default.returncode != 0:
+            observe.event("signoff_skipped", worktree=worktree,
+                          reason="no_origin_head")
+            return
+        base = (default.stdout or "").strip().split("/", 1)[-1] or "main"
+
+        email_p = _run(["config", "user.email"])
+        email = (email_p.stdout or "").strip()
+        if not email:
+            observe.event("signoff_skipped", worktree=worktree,
+                          reason="no_user_email")
+            return
+
+        # Ensure we're on the fix branch (caller may have left us on
+        # a different branch from a prior cycle).
+        co = _run(["checkout", "--quiet", branch])
+        if co.returncode != 0:
+            observe.event("signoff_skipped", worktree=worktree, branch=branch,
+                          reason="checkout_failed",
+                          stderr=(co.stderr or "")[:200])
+            return
+
+        # Idempotency check — list commits between base..branch and
+        # see if each already has a Signed-off-by trailer matching
+        # `email`. If yes, skip the rebase.
+        log = _run([
+            "log", f"origin/{base}..{branch}",
+            "--format=%H%n%(trailers:key=Signed-off-by,valueonly)%n---END---",
+        ])
+        if log.returncode == 0 and log.stdout.strip():
+            already_signed = True
+            for block in log.stdout.split("---END---"):
+                lines = [l for l in block.strip().splitlines() if l.strip()]
+                if not lines:
+                    continue
+                # First line is the SHA; the rest are signoff trailers.
+                trailers = lines[1:]
+                if not any(email in t for t in trailers):
+                    already_signed = False
+                    break
+            if already_signed:
+                observe.event("signoff_idempotent_skip", worktree=worktree,
+                              branch=branch)
+                return
+
+        # Rebase --signoff appends Signed-off-by only when the trailer
+        # isn't already present for that author — git's own dedup.
+        rb = _run(["rebase", "--signoff", f"origin/{base}"], timeout=60)
+        if rb.returncode != 0:
+            # Conflict or other failure. Abort the rebase to leave
+            # the worktree in a known state, then fall through. The
+            # dco-batch fallback handles signoff later.
+            _run(["rebase", "--abort"])
+            observe.event("signoff_rebase_failed", worktree=worktree,
+                          branch=branch, stderr=(rb.stderr or "")[:300])
+            return
+        observe.event("signoff_applied", worktree=worktree, branch=branch)
+    except Exception as e:
+        observe.event("signoff_unexpected", worktree=worktree, branch=branch,
+                      error_type=type(e).__name__, error=str(e)[:200])
+
+
 def _publish_attestation(*, req: QaOneEntryRequest, msg_id: str) -> str | None:
     """Move qa's local attestation triple to a public, linkable state:
     git add → commit → push → render pinned-SHA snippet. Each step
@@ -364,6 +453,16 @@ async def attest_cycle(msg: Message) -> dict:
     else:
         worktree = await ensure_worktree(msg.repo, msg.branch,
                                          int(msg.pr) if msg.pr else None)
+
+    # Sign-off attestation. DCO-style trailer on every commit in the
+    # fix branch — substrate certifying "this is our work" in the same
+    # ceremony where we certify the code passes tests. Done BEFORE
+    # test_attestation so the SHA captured is the signed SHA; publish/
+    # amend/ping all see the post-signoff state. Idempotent: skips the
+    # rebase when every commit between origin/HEAD..branch already
+    # carries a Signed-off-by trailer matching the author email.
+    _signoff_fix_branch(worktree, msg.branch)
+
     test_cmd = await infer_test_cmd(worktree, msg.repo)
     if not test_cmd:
         # infer_test_cmd returned empty — no test convention detected

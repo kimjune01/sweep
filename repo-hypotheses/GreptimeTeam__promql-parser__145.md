@@ -1,81 +1,93 @@
 # Hypothesis Graph: GreptimeTeam/promql-parser#145
 
-Date: 2026-05-18
+Date: 2026-05-19
 Repo: GreptimeTeam/promql-parser
-Issue/PR: #145
-Status: halted - no perturbation access
+Issue: #145 - Enforce additional check for info function
+Status: fix ready (Phase 8 awaits drip)
 
-## Dispatch Context
+## Issue restated
 
-- `sweep project-info GreptimeTeam/promql-parser` returned:
-  - canonical worktree: `/Users/junekim/.sweep/worktrees/GreptimeTeam__promql-parser`
-  - `worktree_exists: false`
-  - `test_env: docker:sweep-tester:latest`
-  - `test_cmd: null`
-- Shell `gh issue view 145 --repo GreptimeTeam/promql-parser ...` failed with GitHub API connectivity failure.
-- Shell `git clone https://github.com/GreptimeTeam/promql-parser.git /Users/junekim/.sweep/worktrees/GreptimeTeam__promql-parser` failed because `.sweep/worktrees` is not writable in this sandbox.
-- Shell `git clone https://github.com/GreptimeTeam/promql-parser.git GreptimeTeam__promql-parser` failed because shell DNS cannot resolve `github.com`.
-- Cargo registry cache check found no local `promql-parser` source.
-- Browser access can read public GitHub HTML for the repository, but that is not enough to run parser perturbations or verify a fix.
-
-Sources observed:
-- Repository page: https://github.com/GreptimeTeam/promql-parser
-- Open issue list: https://github.com/GreptimeTeam/promql-parser/issues
-- Pull request list: https://github.com/GreptimeTeam/promql-parser/pulls
+Prometheus enforces extra restrictions on the experimental `info()` function:
+type-check arg #2 as Vector, require it to be a `*VectorSelector` with empty
+`Name` (label-selectors only), and set `BypassEmptyMatcherCheck` so `info(x, {})`
+is valid. promql-parser doesn't define `info` at all today, so even arity
+checking is missing.
 
 ## Graph State Table
 
-| Node | Status | Trajectory Shape | Summary |
+| Node | Status | Trajectory | Summary |
 |---|---|---|---|
-| H0 | killed | divergent | Assumption: the target repo is locally perturbable. Observation: no worktree exists, clone is blocked, and no cached crate exists. |
+| H0 | killed | divergent | "Repo can be perturbed locally" — was false (no worktree). Now true after clone. |
+| H1 | confirmed | divergent | `info` is absent from `FUNCTIONS`; parse fails with `unknown function 'info'`. |
+| H2 | confirmed | divergent | Adding `info` with `(Vector, Vector), variadic=1, experimental=true` reproduces Prometheus's arity bounds (>=1, <=2). |
+| H3 | confirmed | divergent | `check_ast_for_call` already runs the per-arg type loop; an info-specific structural check placed *after* it matches Prometheus's error ordering (type error wins over label-only error). |
+| H4 | partial | convergent | `BypassEmptyMatcherCheck` equivalent — promql-parser's `check_ast_for_vector_selector` rejects empty-matcher selectors bottom-up before the call-level check sees them. Scope-out for this PR; flag as follow-up. |
 
 ## Nodes
 
-### H0 - Target system can be perturbed locally
+### H1 — `info` is undefined in FUNCTIONS
 
-- Hypothesis: `GreptimeTeam/promql-parser#145` can be investigated by cloning or locating a local worktree, then running parser tests/fixtures against the reported case.
-- Null: The target system cannot be poked from this environment; any diagnosis would be unverified.
-- Perturbation:
-  - Queried canonical project routing with `sweep project-info`.
-  - Attempted issue lookup via `gh`.
-  - Attempted clone into canonical `.sweep` worktree.
-  - Attempted clone into writable workspace.
-  - Checked Cargo registry cache for an existing source copy.
-- Trajectory:
-  - `project-info` reports no canonical worktree.
-  - `gh` cannot reach `api.github.com`.
-  - Clone into `.sweep/worktrees` is denied by filesystem permissions.
-  - Clone into the workspace fails at DNS resolution.
-  - No cached crate source is available.
-- Shape: Divergent against the hypothesis.
-- Kill condition: no local perturbation surface exists.
-- Edge: Human/operator can provide a local checkout under `/Users/junekim/Documents/sweep`, restore shell network/DNS, or update sandbox writable roots to include the canonical `.sweep/worktrees` path. Resume from Phase 1 after that.
+- Perturbation: `grep -rn '"info"' src/` → no hits in `function.rs`.
+- Trajectory: parse of `info()` returns `unknown function with name 'info'`.
+- Kill: `info` must be added to the static `FUNCTIONS` map before any further check applies.
+- Edge → H2.
 
-## Frontier Edges
+### H2 — Arg-types and variadic shape match Prometheus
 
-| Edge | Status | Predicted Classification | Next Perturbation |
-|---|---|---|---|
-| E0 | pending external access | divergent if access restored | With a local checkout, reproduce #145 using the smallest parser input from the issue, then add a failing test before changing code. |
+- Perturbation: add `function!("info", vec![Vector, Vector], 1, Vector, true)`.
+- Trajectory: `info()` → "expected at least 1"; `info(a,b,c)` → "expected at most 2"; `info(a, 1)` → "expected type vector". All match Prometheus error wording.
+- Kill: arity & type errors are now emitted by the generic path; no info-specific code needed for them.
+- Edge → H3.
+
+### H3 — Structural check ordering
+
+- Perturbation A: structural check placed *before* per-arg type loop.
+  - Trajectory: `info(x, 1)` reports "expected label selectors only" instead of the Prometheus-style "expected type vector ... got scalar". Oscillatory against the Prometheus error contract.
+- Perturbation B: structural check placed *after* per-arg type loop.
+  - Trajectory: `info(x, 1)` → "expected type vector ... got scalar"; `info(x, some_metric)` → "expected label selectors only, got vector selector instead"; `info(x, sum(m))` → "expected label selectors only". Converges with Prometheus's emission order.
+- Kill: option A. Ship option B.
+
+### H4 — BypassEmptyMatcherCheck (scoped out)
+
+- Observation: `check_ast_for_vector_selector` runs bottom-up via grammar productions (`promql.y`), so by the time `check_ast_for_call` runs, `info(x, {})` has already been rejected as "vector selector must contain at least one non-empty matcher".
+- Implementing the bypass requires either:
+  1. A `bypass_empty_matchers` field on `VectorSelector` set by the grammar/call rule before child validation, or
+  2. Two-pass validation (build AST first, then check_ast after).
+- Both are larger structural changes; the maintainer's ask in the issue says "Address this in our arity check as well" — covered by H2+H3. Defer the bypass to a follow-up if requested in review.
+
+## Provenance
+
+- `info` function was added upstream in prometheus/prometheus#14495 (PromQL "info" function, experimental). The restrictions block is in `promql/parser/parse.go` ~`checkAST`.
+- promql-parser tracks Prometheus's function table but did not include `info` when its limitk/limit_ratio cohort was added (see #141, #143 chore-bump). Gap, not deliberate exclusion.
 
 ## Reasoning Mode Table
 
 | Claim | Mode | Confidence | Provenance |
 |---|---|---:|---|
-| No canonical worktree exists for this repo. | Induction | 95% | `sweep project-info` output |
-| Shell cannot currently fetch from GitHub. | Induction | 95% | `gh` API failure and `git clone` DNS failure |
-| A browser-only repository view is insufficient for this investigation. | Deduction | 99% | Investigation rules require perturbation access; no tests or parser runs can be performed from HTML alone |
-| A code diagnosis for #145 would be overclaimed right now. | Deduction | 99% | No issue body, local source, or reproducible parser input is available through the perturbation surface |
+| `info` is missing from FUNCTIONS | Induction | 99% | grep + parse error message |
+| `(Vector, Vector), variadic=1, experimental=true` matches Prometheus | Deduction | 95% | Prometheus functions.go (the maintainer pasted equivalent Go) |
+| Structural check after type check matches Prometheus error ordering | Deduction | 95% | Prometheus parse.go `Args[1].Type()` check precedes the VectorSelector check |
+| Tests fail on master, pass with fix | Induction | 99% | Stash + cargo test verified locally |
 
-## Pruning Log
+## Frontier Edges
 
-- Pruned H0 because the environment cannot provide a local, runnable target system.
-- No code hypotheses generated. Fan-out would violate the perturbation-access rule and would be pure speculation.
+| Edge | Status | Next |
+|---|---|---|
+| BypassEmptyMatcherCheck for `info(x, {})` | deferred | Wait for review signal before expanding scope |
 
-## Re-entry Notes
+## Phase 5.5 Regression check
 
-Resume criteria:
+- `cargo test --lib` in `sweep-tester:latest`: 111 passed, 0 failed.
+- `cargo test --lib parser::parse::tests::test_function_call`:
+  - On master (test-slice cherry-picked): FAIL ("unknown function 'info'").
+  - With fix: PASS.
+- Diff: +45 lines across 3 files; no signature changes; no behavioral changes for non-`info` paths.
 
-1. Place a checkout at `/Users/junekim/Documents/sweep/GreptimeTeam__promql-parser` or make `/Users/junekim/.sweep/worktrees/GreptimeTeam__promql-parser` readable/writable.
-2. Ensure the issue body for `#145` is available locally or via `gh issue view`.
-3. Re-run `sweep project-info GreptimeTeam/promql-parser` before any build/test command.
-4. Run the smallest parser reproduction for #145, classify the trajectory, then append H1+ nodes below this checkpoint.
+## PR readiness
+
+- Base: `main` @ `2e4ebde7cef1351459229b2fbca4822c43d0cdfc`
+- Branch: `fix/info-arity-check`
+- Title: `feat: add info function with Prometheus-aligned arity and label-selector checks`
+- Summary: Adds the experimental `info` function to the function table and enforces Prometheus's additional restriction that the second argument, when present, must be a label-only vector selector.
+- Tests added in `parse.rs` cover: too-few args, too-many args, type mismatch on arg 2, vector-selector-with-metric-name on arg 2, and an arbitrary vector expr on arg 2.
+- Follow-up note for PR body: `BypassEmptyMatcherCheck` equivalent is deferred (would require structural changes to bottom-up VectorSelector validation); happy to follow up if maintainer wants it in this PR.

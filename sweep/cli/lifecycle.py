@@ -85,6 +85,9 @@ def _spawn(argv: list[str], log_file: Path) -> int:
     toolchain_bins = [
         str(Path.home() / ".cargo" / "bin"),
         str(Path.home() / ".rustup" / "toolchains" / "stable-aarch64-apple-darwin" / "bin"),
+        str(Path.home() / ".local" / "bin"),  # uv tool install (ruff, etc.)
+        str(Path.home() / "Library" / "Python" / "3.9" / "bin"),  # pip --user
+        str(Path.home() / "go" / "bin"),  # go install
         "/opt/homebrew/bin",
     ]
     extras = [p for p in toolchain_bins if Path(p).is_dir()]
