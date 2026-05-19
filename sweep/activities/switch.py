@@ -88,6 +88,19 @@ Signals:
   explicit "awaiting human go/no-go". Last resort for mid-investigation
   with no terminal verdict.
 
+- "cross-repo-skip": the artifact's verdict is that the fix lives in a
+  DIFFERENT repo from the one this issue is filed on (e.g. the
+  Mammotion-HA issue's root cause is in PyMammotion; the consumer-
+  side issue can't be fixed without a fix in the upstream library).
+  The substrate is wired one-repo-per-issue and does not currently
+  handle cross-repo coordination. Route to ack-and-evict silently —
+  no PR, no tissue, no human surface. Operator will revisit if/when
+  cross-repo is in scope. Cues: "fix lives in <other-repo>", "error
+  origin is in <other-repo>", "cross-repo PR needs operator review",
+  "let <maintainer> decide the fix shape on his own library", or any
+  diagnosis that points the fix at a repo whose name is not the
+  artifact's subject repo.
+
 When you see a competing PR mentioned (phrases like "competing PR",
 "existing PR", "another contributor's PR", "open PR #N from @user"),
 choose "ship-vs-competing" or "defer-competing" — never plain "shipped"
@@ -125,7 +138,7 @@ should_comment guidance:
 
 Output ONLY a JSON object matching this shape:
 {
-  "signal": "shipped" | "ship-vs-competing" | "defer-competing" | "no-fix" | "human-gated",
+  "signal": "shipped" | "ship-vs-competing" | "defer-competing" | "no-fix" | "human-gated" | "cross-repo-skip",
   "summary": "<one short sentence; <=150 chars>",
   "competing_pr": "<owner/repo#N if mentioned, else empty string>",
   "should_comment": true | false
@@ -179,12 +192,14 @@ def _parse_json(stdout: str) -> dict | None:
 
 
 def _materialize(parsed: dict) -> dict:
-    """Expand the verdict JSON into the full shape. Five signals collapse
-    into three routing targets:
+    """Expand the verdict JSON into the full shape. Six signals collapse
+    into four routing targets:
       shipped + ship-vs-competing → qa
       defer-competing             → silent (or comment-issue if should_comment)
       no-fix                      → comment-issue (if should_comment)
       human-gated                 → human inbox
+      cross-repo-skip             → silent ack (substrate doesn't do
+                                    cross-repo coordination right now)
     The ship-vs-competing and defer-competing variants stay distinct in
     the event log so we can measure the vibes-judgment hypothesis."""
     signal = parsed.get("signal", "human-gated")
@@ -194,6 +209,7 @@ def _materialize(parsed: dict) -> dict:
         "no_fix":         signal == "no-fix",
         "human_gated":    signal == "human-gated",
         "defer_competing": signal == "defer-competing",
+        "cross_repo_skip": signal == "cross-repo-skip",
         "competing_pr":   parsed.get("competing_pr", ""),
         "should_comment": bool(parsed.get("should_comment", False)),
         "summary":        parsed.get("summary", "")[:200],
@@ -390,9 +406,18 @@ async def _route(repo: str, issue: int, verdict: dict,
                                     should_comment=true (substantive add)
       no-fix                      → comment-issue iff should_comment=true;
                                     silent otherwise (uninformative finding)
+      cross-repo-skip             → silent-cross-repo (substrate doesn't
+                                    handle cross-repo coordination yet)
       human-gated                 → human inbox
-    Returns the actor name routed to ('silent-defer'/'silent-no-fix' for
-    the deliberately-no-action paths so the operator can grep them)."""
+    Returns the actor name routed to ('silent-*' for the deliberately-
+    no-action paths so the operator can grep them)."""
+    # cross-repo-skip: substrate is one-repo-per-issue. Ack-and-evict
+    # silently — no PR, no tissue, no human surface.
+    if verdict.get("cross_repo_skip"):
+        observe.event("switch_cross_repo_skip", repo=repo, issue=issue,
+                      summary=verdict.get("summary", "")[:200])
+        return "silent-cross-repo"
+
     if verdict.get("produced_pr"):
         # Need a branch to feed qa. Mirror the lookup investigate did
         # inline: worktree → git rev-parse → ls-remote check.
