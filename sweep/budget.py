@@ -358,8 +358,15 @@ def check_and_andon(actor: str) -> str | None:
 
 
 def is_blocked(actor: str) -> bool:
-    """Cheap: is the actor's own budget andon marker present?"""
-    return _andon_path(actor).exists()
+    """Budget andons are GLOBAL — any actor's budget overshoot halts the
+    whole line. The per-actor marker file (_andon_path) is just the
+    diagnostic trail naming which actor tripped it; the gate is global
+    pause state. Witnessed: sift skipping 4500+ cards yesterday because
+    its own marker was set, while other actors kept producing into its
+    inbox — exactly the local-andon shape we don't allow.
+    """
+    from sweep.control_state import is_paused
+    return is_paused()
 
 
 def all_actor_status() -> list[dict]:
