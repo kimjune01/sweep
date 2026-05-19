@@ -55,6 +55,7 @@ from sweep.activities.bless import bless_cycle
 from sweep.activities.immunize import immunize_cycle
 from sweep.activities.comment_issue import comment_issue_cycle, post_cycle
 from sweep.activities.file_issue import file_issue_cycle
+from sweep.activities.switch import switch_cycle
 from sweep.activities.sign import sign_cycle, kick_sign_card
 from sweep.activities.usage_probe import probe_claude_usage
 from sweep.activities.qa import (
@@ -179,6 +180,12 @@ async def _amain() -> None:
             # comment`). Posting handled inline by `sweep file-issue
             # approve`; results land in the hold-issue holding bin.
             file_issue_cycle,
+            # switch — LLM classifier as an actor. Receives artifact
+            # cards from investigate/reinvestigate, judges via Sonnet,
+            # routes to qa / comment-issue / human. Replaces the inline
+            # classifier in skill_runner; decouples LLM latency from
+            # investigate's takt.
+            switch_cycle,
             sign_cycle, kick_sign_card,
             # immunize — anti-AI repo routing (worth-pursuing decider
             # for slop-offer candidates). Receives from sift (two

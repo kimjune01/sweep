@@ -624,148 +624,48 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
     after_mtime = artifact.stat().st_mtime if artifact.exists() else 0.0
     artifact_fresh = after_mtime > before_mtime
     if artifact.exists():
-        classified = _classify_investigate_artifact(artifact)
-        if classified:
-            observe.event(
-                "investigate_done", repo=msg.repo, issue=msg.pr,
-                rc=result.get("rc", 0),
-                produced_pr=classified["produced_pr"],
-                no_fix=classified["no_fix"],
-                human_gated=classified["human_gated"],
-                summary=f"{classified['signal']}: {classified['summary'][:140]}",
+        # Investigate's responsibility ends at producing the artifact.
+        # switch (the central decision actor) classifies + routes the
+        # card to qa / comment-issue / human. Decoupling here means
+        # investigate's takt isn't blocked on a ~4s LLM call.
+        observe.event(
+            "investigate_done", repo=msg.repo, issue=msg.pr,
+            rc=result.get("rc", 0),
+            artifact_path=str(artifact),
+            artifact_fresh=artifact_fresh,
+            summary="(handed to switch for classification + routing)",
+        )
+        try:
+            from sweep.activities.switch import kick_switch_card
+            await kick_switch_card(
+                msg.repo, int(msg.pr),
                 artifact_path=str(artifact),
-                artifact_fresh=artifact_fresh,
+                source="investigate",
+                incoming=msg,
             )
-            # Side-hatch routing: a no-fix verdict with a real summary
-            # is exactly the case where comment-issue earns its keep. Skip
-            # for human_gated (the operator is the decider) and shipped
-            # (PR speaks for itself). Activity-owned routing — same
-            # pattern as [[O1]]: the wrapper decides, not the skill.
-            if classified["no_fix"] and classified.get("summary"):
-                from sweep.activities.comment_issue import kick_comment_issue_card
-                try:
-                    await kick_comment_issue_card(
-                        msg.repo, int(msg.pr),
-                        source="investigate",
-                        signal=classified["signal"],
-                        incoming=msg,
-                    )
-                except Exception as e:
-                    observe.event("kick_comment_issue_failed",
-                                  repo=msg.repo, issue=msg.pr,
-                                  error_type=type(e).__name__,
-                                  error=str(e)[:200])
+        except Exception as e:
+            observe.event("kick_switch_failed",
+                          repo=msg.repo, issue=msg.pr,
+                          error_type=type(e).__name__, error=str(e)[:200])
+        # Parallel side-hatch: if the artifact mentions a *separate* bug
+        # worth filing, kick file-issue too. Independent of switch's
+        # primary verdict — a shipped fix can still surface a side-bug.
+        try:
+            if _has_separate_bug_signal(artifact):
+                from sweep.activities.file_issue import kick_file_issue_card
+                await kick_file_issue_card(
+                    msg.repo, int(msg.pr),
+                    source="investigate",
+                    signal="separate_bug_found",
+                    incoming=msg,
+                )
+        except Exception as e:
+            observe.event("kick_file_issue_failed",
+                          repo=msg.repo, issue=msg.pr,
+                          error_type=type(e).__name__, error=str(e)[:200])
+        return result
 
-            # Side-hatch routing #2: separate-bug discoveries kick the
-            # `file-issue` actor. Detection is the same cheap pattern-
-            # match shape as the main classifier — the skill itself
-            # decides whether the finding is concrete enough to draft
-            # (SKIP when not). See memory/feedback_file_and_forget.
-            try:
-                if _has_separate_bug_signal(artifact):
-                    from sweep.activities.file_issue import kick_file_issue_card
-                    await kick_file_issue_card(
-                        msg.repo, int(msg.pr),
-                        source="investigate",
-                        signal="separate_bug_found",
-                        incoming=msg,
-                    )
-            except Exception as e:
-                observe.event("kick_file_issue_failed",
-                              repo=msg.repo, issue=msg.pr,
-                              error_type=type(e).__name__,
-                              error=str(e)[:200])
-
-            # Production-lane handoff: if the investigation produced
-            # a fresh fix branch, kick qa-actor for verification before
-            # the push. Branch derived from the substrate's worktree
-            # (the dir investigate's /investigate skill operates in
-            # by convention). qa-actor will run test_attestation, write
-            # the attestation files to <worktree>/attestations/<slug>,
-            # then kick compose. submit-actor's _attestation_gate is
-            # the structural backstop that refuses push without a
-            # verified manifest.
-            if classified["produced_pr"] and not classified["human_gated"]:
-                try:
-                    from sweep.activities.worktree import _safe_dir
-                    import subprocess
-                    wt = _safe_dir(msg.repo)
-                    if wt.exists():
-                        br_out = subprocess.run(
-                            ["git", "-C", str(wt), "rev-parse",
-                             "--abbrev-ref", "HEAD"],
-                            capture_output=True, text=True, timeout=5,
-                        )
-                        branch = br_out.stdout.strip() if br_out.returncode == 0 else ""
-                        if not branch or branch in ("HEAD", "main", "master"):
-                            observe.event("kick_qa_skipped",
-                                          repo=msg.repo, issue=msg.pr,
-                                          reason=f"branch={branch!r} not a fix branch")
-                        else:
-                            # [[O1]] sanity check: skill SAID it shipped; verify
-                            # the branch actually exists on the remote before
-                            # we wake qa to chase a phantom. Otherwise qa
-                            # tries to checkout a branch that origin doesn't
-                            # have and errors out, which masquerades as a
-                            # toolchain bug rather than a skill misreport.
-                            ls = subprocess.run(
-                                ["git", "-C", str(wt), "ls-remote",
-                                 "--heads", "origin", branch],
-                                capture_output=True, text=True, timeout=10,
-                            )
-                            if ls.returncode == 0 and ls.stdout.strip():
-                                # Route to qa first (adversarial review,
-                                # may edit the branch), then qa forwards
-                                # to attest for the test gate, then attest
-                                # forwards to compose for the PR body.
-                                # Previous shape (investigate → attest → qa)
-                                # double-attested because qa_actor still
-                                # ran test_attestation internally.
-                                from sweep.activities.qa import kick_qa_card
-                                await kick_qa_card(
-                                    msg.repo, branch,
-                                    sender="investigate",
-                                    incoming=msg,
-                                )
-                            else:
-                                observe.event("ghost_branch",
-                                              repo=msg.repo, issue=msg.pr,
-                                              branch=branch,
-                                              reason="skill claimed shipped; "
-                                                     "ls-remote shows branch not "
-                                                     "on origin")
-                except Exception as e:
-                    observe.event("kick_qa_failed",
-                                  repo=msg.repo, issue=msg.pr,
-                                  error_type=type(e).__name__,
-                                  error=str(e)[:200])
-
-            # Route human-gated outcomes to the human inbox. Includes:
-            #   - explicit "awaiting human go/no-go" patterns
-            #   - contributor-legal blockers (CLA / DCO / sign-off)
-            #   - the default unclassified case (no recognized signal)
-            # All three are operator-decision shapes; "decided by silent
-            # termination" was the old leak that hid CLA blockers and
-            # the 40% shim-fallback bucket. Ambiguous branch (no flag
-            # set) is now structurally unreachable since the classifier
-            # defaults unclassified to human_gated=True.
-            if classified["human_gated"] and classified.get("summary"):
-                try:
-                    await _kick_human_decision(
-                        msg.repo, msg.pr,
-                        signal=classified["signal"],
-                        summary=classified["summary"],
-                        artifact_path=str(artifact),
-                    )
-                except Exception as e:
-                    observe.event("kick_human_failed",
-                                  repo=msg.repo, issue=msg.pr,
-                                  error_type=type(e).__name__,
-                                  error=str(e)[:200])
-            return result
-
-    # Artifact missing or unclassifiable — degraded mode. Try the
-    # shim on stdout.
+    # Artifact missing — degraded mode. Try the shim on stdout.
     parsed = skill_result.shim("investigate", result.get("stdout_tail", ""))
     if skill_result.is_rejected(parsed):
         skill_result.record_rejection("investigate", msg.__dict__, parsed)
@@ -795,13 +695,18 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                               error=str(e)[:200])
         return result
     if parsed:
+        summary = "shim-fallback: " + str(parsed.get("summary", ""))[:180]
         observe.event(
             "investigate_done", repo=msg.repo, issue=msg.pr,
             rc=result.get("rc", 0),
             produced_pr=bool(parsed.get("produced_pr")),
             no_fix=bool(parsed.get("no_fix")),
-            summary="shim-fallback: " + str(parsed.get("summary", ""))[:180],
+            summary=summary,
         )
+        # Route — never silent return. If no specific bucket matched,
+        # send to human so the operator sees the artifact gap.
+        await _route_or_human(msg, parsed, summary,
+                              artifact_path=str(artifact))
         return result
     # Last-ditch heuristic so the funnel still shows *something*.
     tail = (result.get("stdout_tail") or "").lower()
@@ -809,12 +714,49 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
                    or "pushed branch" in tail or "drip-ready" in tail)
     no_fix = ("no fix" in tail or "blocked" in tail or "skip" in tail
               or "no actionable" in tail)
+    summary = "(heuristic-fallback, no artifact and no shim parse)"
     observe.event(
         "investigate_done", repo=msg.repo, issue=msg.pr,
         rc=result.get("rc", 0), produced_pr=produced_pr, no_fix=no_fix,
-        summary="(heuristic-fallback, no artifact and no shim parse)",
+        summary=summary,
+    )
+    await _route_or_human(
+        msg, {"produced_pr": produced_pr, "no_fix": no_fix}, summary,
+        artifact_path=str(artifact),
     )
     return result
+
+
+async def _route_or_human(msg, verdict: dict, summary: str,
+                          artifact_path: str) -> None:
+    """Catch-all router for the shim/heuristic paths. Kicks comment-issue
+    for no-fix verdicts; otherwise falls through to human inbox so the
+    operator sees the case. Never silent return.
+
+    Operator contract: every investigation routes to exactly one of
+    {qa, comment-issue, human}. The qa path requires a real fix branch,
+    which the shim path can't construct; so shim outcomes route only to
+    comment-issue (no-fix) or human (everything else)."""
+    try:
+        if verdict.get("no_fix"):
+            from sweep.activities.comment_issue import kick_comment_issue_card
+            await kick_comment_issue_card(
+                msg.repo, int(msg.pr),
+                source="investigate-shim",
+                signal="no-fix",
+                incoming=msg,
+            )
+            return
+        await _kick_human_decision(
+            msg.repo, msg.pr,
+            signal="shim-uncategorized",
+            summary=summary,
+            artifact_path=artifact_path,
+        )
+    except Exception as e:
+        observe.event("route_or_human_failed",
+                      repo=msg.repo, issue=msg.pr,
+                      error_type=type(e).__name__, error=str(e)[:200])
 
 
 def _investigate_artifact_path(repo: str, issue: int):
@@ -835,85 +777,6 @@ def _investigate_artifact_path(repo: str, issue: int):
     if old.exists():
         return old
     return new  # new path is the canonical destination for writes
-
-
-# Vocabulary the /investigate skill actually writes into halt sections.
-# Each match emits a clean outcome signal — higher quality than the
-# stdout-tail heuristic, and free (one file read, no Sonnet call).
-# Order matters: ship beats human-gate beats no-fix beats unknown,
-# because a shipped PR is the strongest claim. Patterns are
-# case-insensitive substring matches against the last ~6KB.
-#
-# Avoid loose URL patterns (e.g. "github.com/", "pull/") — every
-# artifact links to the issue URL, so those produced false positives.
-# Only match concrete ship markers the skill writes deliberately.
-_INVESTIGATE_SIGNALS: list[tuple[str, list[str]]] = [
-    # PR was actually opened.
-    ("shipped", [
-        "phase 8 — pushed", "phase 8 — shipped",
-        "pushed branch", "drip-ready",
-        "opened pr", "pr opened at",
-        # Pipeline-mode handoff: investigate writes a readiness record
-        # for /drip rather than pushing. The artifact line is the
-        # canonical signal that the PR is queued (skill markdown spec).
-        "readiness record at", "readiness record:",
-    ]),
-    # Fix is ready but waiting on operator decision. Includes the
-    # "blocked on a decision not an investigator's to make" pattern,
-    # plus contributor-legal blockers (CLA / DCO / sign-off / license)
-    # which intentionally route to human per pr_state.py:453 (the
-    # substrate can't sign for the operator).
-    ("human-gated", [
-        "awaiting human gate", "awaiting human go/no-go",
-        "phase 8 (ship) — awaiting", "phase 8 — awaiting",
-        "standing by for decision", "human approval", "go/no-go",
-        "blocked on a decision",
-        # Contributor-legal class — always human-gated, never no-fix.
-        "cla blocker", "cla bot", "blocked on cla",
-        "contributor license agreement", "contributor agreement",
-        "dco check", "dco failed", "sign-off required",
-        "sign off required", "developer certificate of origin",
-        "license check failed", "license/cla",
-    ]),
-    # Investigation concluded no fix should ship.
-    ("no-fix", [
-        "halt, do not ship", "do not ship", "no code pr is justified",
-        "stale — already implemented", "stale -- already implemented",
-        "already fixed upstream", "upstream fix is real",
-        "frontier: closed", "frontier closed",
-        "no actionable fix", "no fix to make",
-        "premise killed", "premise does not hold",
-        "halted at policy gate", "maintainer self-pr",
-        "prework_blocked", "[[prework_blocked]]",
-        "reframe: this is",
-        "## halt", "## halt reason", "## halt point",
-        "verdict: stale", "verdict**: **stale",
-        # Phrases observed in human-routed unclassifieds 2026-05-18 that
-        # legitimately mean "no fix to ship" — extracted from gemba read.
-        "no fix is warranted", "no fix warranted",
-        "no code fix is warranted", "no code fix warranted",
-        "no fix recommended", "no fix needed",
-        "diagnosis halted at",
-        "no action required", "no action recommended",
-        "halt — phase", "halt -- phase",
-        # The artifact explicitly tells the substrate to route to the
-        # comment-issue actor (previously named tissue — legacy artifacts
-        # use that vocab, so accept both). Honor as no-fix so the
-        # side-hatch fires automatically. Reduces inbox load.
-        "route to tissue", "route to /tissue", "route to `/tissue`",
-        "route to comment-issue", "route to /comment-issue", "route to `/comment-issue`",
-        "tissue-style comment", "tissue comment on", "filing as a tissue",
-        "filing as **tissue**", "filing as a **tissue**",
-        "emit a tissue", "emit a tissue comment", "tissue with the diagnos",
-        "comment-issue-style comment", "comment-issue comment on",
-        "filing as a comment-issue", "filing as **comment-issue**",
-        "filing as a **comment-issue**", "emit a comment-issue",
-        "emit a comment-issue comment", "comment-issue with the diagnos",
-        "no_fix_to_ship", "no-fix-to-ship",
-        "skipping; the change is mechanical",
-        "no pr to file", "no pr is justified", "no pr warranted",
-    ]),
-]
 
 
 # ---------------------------------------------------------------- triage host-compat
@@ -1013,79 +876,3 @@ def _has_separate_bug_signal(path) -> bool:
     tail = text[-6000:].lower()
     return any(p in tail for p in _SEPARATE_BUG_PHRASES)
 
-
-def _last_meaningful_line(text: str) -> str:
-    """Return the last non-empty, non-table-rule line of the artifact,
-    trimmed of markdown header markers. Used as the fallback summary
-    for unclassified halts so the operator gets a real signal per card."""
-    for raw in reversed(text.splitlines()):
-        s = raw.strip()
-        if not s:
-            continue
-        # Skip pure table rules, divider lines, code-fence markers.
-        if set(s) <= set("-|: ") or s in ("```", "---"):
-            continue
-        return s.lstrip("#").strip()[:200]
-    return ""
-
-
-def _classify_investigate_artifact(path) -> dict | None:
-    """Pattern-match the halt section of a hypothesis graph to extract
-    `produced_pr`, `no_fix`, `human_gated`, and a short summary line.
-
-    Returns None when no signal matches — caller falls back to the
-    shim/heuristic path. Reads only the last ~6KB of the file; halt
-    sections live at the end."""
-    try:
-        text = path.read_text()
-    except OSError:
-        return None
-    if not text.strip():
-        return None
-    # Last chunk holds the halt section in the convention investigate uses.
-    tail = text[-6000:].lower()
-
-    matched_signal: str | None = None
-    matched_pat: str = ""
-    for signal, patterns in _INVESTIGATE_SIGNALS:
-        for pat in patterns:
-            if pat in tail:
-                matched_signal = signal
-                matched_pat = pat
-                break
-        if matched_signal:
-            break
-    if not matched_signal:
-        # No recognized signal in the artifact. Route to human so the
-        # operator decides — cheap-to-glance vs. invisible-drop is the
-        # right asymmetry. Surface the artifact's last meaningful line
-        # as the summary so the operator can tell cards apart at a
-        # glance rather than seeing N copies of the same generic
-        # "unclassified" string.
-        return {
-            "signal": "unclassified",
-            "produced_pr": False,
-            "no_fix": False,
-            "human_gated": True,
-            "summary": _last_meaningful_line(text)
-                       or "unclassified halt (artifact empty)",
-        }
-
-    # Summary: the first non-empty line of the halt-region that contains
-    # the matched pattern, trimmed for the event.
-    summary = matched_pat
-    for line in reversed(text.splitlines()):
-        line_s = line.strip()
-        if not line_s:
-            continue
-        if matched_pat in line_s.lower():
-            summary = line_s.lstrip("#").strip()
-            break
-
-    return {
-        "signal": matched_signal,
-        "produced_pr": matched_signal == "shipped",
-        "no_fix":      matched_signal == "no-fix",
-        "human_gated": matched_signal == "human-gated",
-        "summary":     summary,
-    }

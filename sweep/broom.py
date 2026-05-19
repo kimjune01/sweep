@@ -132,32 +132,19 @@ def _load_msg_ids(path: Path) -> set[str]:
 
 
 def _sweep_inbox(path: Path, acked: set[str], dry_run: bool) -> SweepResult:
-    """Drop acked entries from an actor inbox. Tombstone-based: unacked
-    messages stay regardless of age (they're work in flight)."""
+    """No-op. Inbox files are append-only audit logs; operator decides
+    when to archive (see `sweep broom archive`). The previous behavior
+    (drop acked entries inline, optionally with a retain window) was a
+    leak — the system silently discarded information the operator
+    needed to debug throughput and find silent failures. See
+    memory/feedback_done_visibility for the gemba that surfaced it.
+
+    File-size growth handled separately by rotation when a single
+    inbox passes the rotate threshold; archive moves old slices to
+    gzipped tombstones the operator can grep if needed."""
     before_bytes, before_lines = _stat(path)
-    if before_lines == 0:
-        return SweepResult(path, "drop-acked", before_bytes, before_bytes,
-                           0, 0, 0, dry_run)
-    keep: list[str] = []
-    dropped = 0
-    for ln in path.read_text().splitlines():
-        if not ln.strip():
-            continue
-        try:
-            d = json.loads(ln)
-        except json.JSONDecodeError:
-            keep.append(ln)  # preserve malformed lines for inspection
-            continue
-        mid = d.get("msg_id")
-        if mid and mid in acked:
-            dropped += 1
-        else:
-            keep.append(ln)
-    _atomic_rewrite(path, keep, dry_run)
-    after_bytes = sum(len(ln) + 1 for ln in keep) if not dry_run else (
-        sum(len(ln) + 1 for ln in keep))
-    return SweepResult(path, "drop-acked", before_bytes, after_bytes,
-                       before_lines, len(keep), dropped, dry_run)
+    return SweepResult(path, "keep-all", before_bytes, before_bytes,
+                       before_lines, before_lines, 0, dry_run)
 
 
 def _sweep_ledger_keep_referenced(path: Path, live_ids: set[str],

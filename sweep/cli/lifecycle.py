@@ -110,7 +110,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         NOTIFICATION_POLLER_ID, SIFT_ACTOR_ID, QA_ACTOR_ID,
         BLESS_ACTOR_ID, IMMUNIZE_ACTOR_ID, SCOUT_ACTOR_ID, SWEEP_TASK_QUEUE,
         COMMENT_ISSUE_ACTOR_ID, TRIAGE_ACTOR_ID, USAGE_POLLER_ID, POST_ACTOR_ID,
-        FILE_ISSUE_ACTOR_ID,
+        FILE_ISSUE_ACTOR_ID, SWITCH_ACTOR_ID,
         REMIT_ACTOR_ID, SUBMIT_ACTOR_ID, COMPOSE_ACTOR_ID, ROPE_ACTOR_ID,
         REINVESTIGATE_ACTOR_ID, REQA_ACTOR_ID, ATTEST_ACTOR_ID,
         AMEND_ACTOR_ID, HEART_ACTOR_ID, METRONOME_ACTOR_ID, RETRO_ACTOR_ID,
@@ -165,6 +165,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (COMMENT_ISSUE_ACTOR_ID,       SkillActor.run,     ("comment_issue_cycle",)),
         (POST_ACTOR_ID,         SkillActor.run,     ("post_cycle",)),
         (FILE_ISSUE_ACTOR_ID,   SkillActor.run,     ("file_issue_cycle",)),
+        (SWITCH_ACTOR_ID,       SkillActor.run,     ("switch_cycle",)),
         (IMMUNIZE_ACTOR_ID,     SkillActor.run,     ("immunize_cycle",)),
         (BLESS_ACTOR_ID,        SkillActor.run,     ("bless_cycle",)),
         # Usage probing folded into metronome (5min cadence). Keeping
@@ -251,6 +252,9 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "file-issue", SkillActor.deliver, FILE_ISSUE_ACTOR_ID)
     if drained:
         anomalies.append(f"{FILE_ISSUE_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "switch", SkillActor.deliver, SWITCH_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{SWITCH_ACTOR_ID}: drained {drained} pending")
     drained = await _drain_inbox(client, "immunize", SkillActor.deliver, IMMUNIZE_ACTOR_ID)
     if drained:
         anomalies.append(f"{IMMUNIZE_ACTOR_ID}: drained {drained} pending")
