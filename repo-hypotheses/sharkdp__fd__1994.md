@@ -30,6 +30,11 @@
 - Live state: `gh pr view 1994` → `mergeable=MERGEABLE`, head=`10f0c97`, fresh CICD run 26056160415 in_progress; clippy + fmt checks already green; remaining matrix builds queued/running. Matches H₁ prediction.
 - No perturbation needed. Halt — pipeline is just waiting for CI to drain. Substrate should suppress reinvestigate fires on this PR until either a real check flips red on `10f0c97` or a new commit lands.
 
+## Cycle 2026-05-19 (no-op reinvestigate, CI drained)
+- Context pack still pinned at 1fd9e70 (stale by ≥2 cycles).
+- Live state: head=`10f0c97`, mergeable=MERGEABLE, all 18 checks SUCCESS (Winget=SKIPPED, expected). CI drain predicted by 2026-05-18 cycle — confirmed.
+- Frontier closed. Substrate is firing reinvestigate on cache, not on live state. Reframe: the load-bearing observation is the pack staleness, not anything PR-shaped. Worth a memory note if this recurs on other PRs.
+
 ## Pruning log
 - None — both hypotheses survived. No dead ends this cycle.
 

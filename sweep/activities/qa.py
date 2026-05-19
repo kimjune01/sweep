@@ -406,6 +406,16 @@ def _slice_around_error(stderr: str, *, budget: int = 800) -> str:
     and the error line. Scans for the LAST line beginning with `error:`,
     `error[`, `fatal:`, or `panicked at` and returns a window around it.
     Falls back to the tail if no such line is found.
+
+    Linker-failure augmentation: when the anchor's window contains
+    `extern functions couldn't be found` (cargo's generic linker-fail
+    message), additionally surface up to 4 sample `undefined reference`
+    lines AND any `cannot find -l<lib>` lines from earlier in stderr.
+    Without this, the autofix detector + operator both see a generic
+    "some native libraries may need to be installed" with no clue
+    which library — exactly the polars-utils → libpython case where
+    the symbol names (PyErr_*, PyTuple_Type, ...) are the diagnostic
+    but get truncated out of the window.
     """
     if not stderr:
         return ""
@@ -419,8 +429,26 @@ def _slice_around_error(stderr: str, *, budget: int = 800) -> str:
             anchor_idx = i
     if anchor_idx < 0:
         return f"...{stderr[-budget:]}"
-    # Half budget before the anchor for context, rest after.
     window = "\n".join(lines[max(0, anchor_idx - 5):anchor_idx + 8])
+
+    # Linker-fail augmentation.
+    if ("extern functions couldn't be found" in window
+            or "cannot find -l" in window):
+        undef_refs: list[str] = []
+        cannot_find: list[str] = []
+        for ln in lines[:anchor_idx]:
+            s = ln.strip()
+            if "undefined reference to" in s and len(undef_refs) < 4:
+                undef_refs.append(s)
+            elif "cannot find -l" in s and s not in cannot_find:
+                cannot_find.append(s)
+        diag = ""
+        if undef_refs:
+            diag += "\n--- sample undefined references ---\n" + "\n".join(undef_refs)
+        if cannot_find:
+            diag += "\n--- cannot find linker libs ---\n" + "\n".join(cannot_find)
+        window = window + diag
+
     if len(window) > budget:
         window = window[:budget // 2] + "..." + window[-budget // 2:]
     return window

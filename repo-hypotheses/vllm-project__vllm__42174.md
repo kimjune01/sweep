@@ -115,3 +115,13 @@ Apply H₁ + H₂ fixes locally, sign off the commit, push to the head branch. R
 
 **Trajectory shape vs prior investigation:** identical. Three consecutive observations of the same diagnosis ≈ fixed point per the halt rules.
 
+---
+
+## Reinvestigation 2026-05-19
+
+**Trigger:** PR went red again, /pr-state routed to reinvestigate.
+
+**Failing checks in this pack:** `pre-run-check` only (run 26056316332). Same gate, same message: *"found 0 merged PRs."*
+
+**Classification:** fourth observation of H₄. Fixed point reaffirmed. No new edges, no code-side perturbation available. Halt — maintainer label is the only unblock path.
+

@@ -127,3 +127,132 @@ Halt reason: frontier reduces to "ask the reporter," which is human-attendable. 
 - H1 (prior pass) — killed by E2 (library source review).
 - H2 (prior pass) — killed by E1 (Read trajectory parity).
 - H3 (prior pass) — killed by E2/E3 (code-path equivalence; harness cannot validate but the deduction is independent).
+
+---
+
+## Round 3 (2026-05-19) — bug reproduced and fixed
+
+Round 2's "tissue-class, environment-specific" verdict was wrong. The Python
+PTY harness in that round failed at OSC 10/11 / DSR queries, so it never
+reached the input loop and could not distinguish a working fx from a broken
+one. Round 3 builds a PTY harness that answers those queries.
+
+### E5 — Better PTY harness
+
+`/tmp/fx-ptytest.py`: `pty.fork()` runs the child command, parent loop reads
+output and replies to `\x1b]11;?…`, `\x1b[6n`, primary DA, and DECRQM queries
+so bubbletea proceeds. After ~1.5 s the parent sends `j` (down) then `q`
+(quit) and waits for child exit.
+
+```
+file: 'j' produces 35 bytes of status-bar update, 'q' exits status=0
+cat:  'j' produces 26 bytes of status-bar update, 'q' exits status=0
+node: 'j' produces 1 byte (literal 'j' echo), 'q' is not consumed, child hangs
+```
+
+Bug deterministically reproduces. Round 2's "harness can't drive the loop"
+was a harness limitation, not a real environmental constraint.
+
+### E6 — Termios poll during program lifetime
+
+Added a 50 ms termios poller to fx (logged to `/tmp/fx-debug.log`) and re-ran
+each mode:
+
+```
+cat case (working):
+  tick=0  Iflag=0x2800   Lflag=0x20000043  ICANON=false ECHO=false  ← raw
+  tick=1  Iflag=0x2800   Lflag=0x43        ICANON=false ECHO=false  ← raw, EXTPROC dropped
+  (stays raw thereafter)
+
+node case (broken):
+  tick=0  Iflag=0x2800   Lflag=0x20000043  ICANON=false ECHO=false  ← raw, as expected
+  tick=1  Iflag=0x2b02   Lflag=0x200005cb  ICANON=true  ECHO=true   ← cooked, FLIP
+  (stays cooked thereafter)
+```
+
+Trajectory: divergent. fx enters raw mode in both cases, but in the node
+case **the tty is reverted to cooked mode within ~50 ms after fx initialized**.
+
+### Diagnosis (H₅)
+
+Node opens `process.stdin` via libuv's `uv_tty_init`. When fd 0 is a TTY (it
+is — node inherited the shell's tty), libuv saves the current termios so it
+can restore it on shutdown (this is the "tty-aware program" pattern: clean
+up after yourself when you exit). When `node -e '…'` exits, libuv's tty
+close path runs and `tcsetattr`s the tty back to its saved (cooked) state.
+
+`cat` never opens a tty wrap, so cat's exit is termios-neutral.
+
+The process tree:
+
+1. shell holds tty in cooked mode
+2. shell forks node and fx into the same job pgrp
+3. fx starts, bubbletea opens `/dev/tty` and calls `term.MakeRaw` (tty → raw)
+4. node finishes writing its JSON, libuv shutdown runs `tcsetattr` (tty →
+   cooked)
+5. node closes its end of the pipe; fx parser sees EOF
+6. fx is now running with the tty in cooked mode; bubbletea's cancelreader
+   is select-waiting on `/dev/tty` but the kernel line-buffers input until
+   Enter and echoes it — exactly matches the reporter's "key presses are
+   rendered at the bottom of the screen"
+
+Order of events at process exit is well-defined: libuv's handle cleanup
+(including tty restore) happens during `_exit()` cleanup before the kernel
+closes file descriptors. So pipe EOF on the reader side arrives **after**
+the termios restore. fx can therefore detect the right moment to re-init
+the terminal by listening for stdin EOF.
+
+### Fix
+
+`main.go` parser goroutine, EOF branch:
+
+```go
+if err == io.EOF {
+    // If the upstream pipe writer (e.g. node, which uses libuv) had
+    // the controlling tty open, its exit cleanup will tcsetattr the
+    // tty back to its saved (cooked) state, undoing the raw mode
+    // bubbletea installed at startup. Pipe EOF arrives after that
+    // restore, so re-init the terminal here to put raw mode back.
+    _ = p.RestoreTerminal()
+    p.Send(eofMsg{})
+    break
+}
+```
+
+`p.RestoreTerminal()` is bubbletea's documented re-init hook (used by SIGCONT
+after suspend). It calls `initTerminal` → `MakeRaw` and re-creates the
+cancelreader. Idempotent in the cat/file cases where termios was not
+disturbed; corrective in the node case.
+
+### Verification
+
+| Mode | Before fix | After fix |
+|------|-----------|-----------|
+| `fx file.json` | works | works |
+| `cat file.json \| fx` | works | works |
+| `node -e '…' \| fx` | broken | works |
+
+`go test ./...` — all green.
+
+### Provenance update
+
+- The race exists for any bubbletea program that reads piped input from a
+  tty-aware writer. Not a recent regression — present since bubbletea v1's
+  default-tty-fallback was wired in.
+- Searched charmbracelet/bubbletea issues: no existing fix or option to
+  re-init on EOF. The fix has to be in fx.
+- Maintainer's "works for me" likely reflects a terminal emulator + shell
+  combo that masks the late-arriving cooked-mode flip (some emulators
+  re-flush pending input on a focus event or window resize). The PTY harness
+  reproduces deterministically.
+
+### Updated graph state
+
+| Node | Status | Shape | Notes |
+|---|---|---|---|
+| H4 (env-specific, Round 2) | killed | — | Superseded by H5; reproducible without env quirks |
+| H5 (libuv tty restoration race) | confirmed | divergent | Termios poll caught the flip in node case only |
+
+### Outcome (revised)
+
+**Fix-class.** PR-ready. One-line addition to the EOF branch.

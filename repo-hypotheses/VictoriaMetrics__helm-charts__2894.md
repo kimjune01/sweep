@@ -1,38 +1,64 @@
-# Hypothesis graph: VictoriaMetrics/helm-charts#2894
+# VictoriaMetrics/helm-charts#2894 — Service port name/targetPort ignore `ports.name`
 
-**Issue:** Service generated for vlstorage/vlinsert/vlselect uses hardcoded port name `http` and the `servicePort` value from `values.yaml`, regardless of what the user sets via `extraArgs.httpListenAddr`. User changed `vlstorage.extraArgs.httpListenAddr: ":9429"` (for mTLS); the rendered Service still binds port `9491` with name `http`.
+## H₀ — Observation
 
-## H₀ — observation
+User report: in `victoria-logs-cluster` chart, renaming the per-component `ports.name` and/or changing `extraArgs.httpListenAddr` does not propagate to the generated Service. Service is always emitted with `name: http`, `targetPort: http`, and the default `servicePort` regardless.
 
-The container's port is derived from `extraArgs.httpListenAddr` (vlstorage-server.yaml:60: `containerPort: {{ include "vm.port.from.flag" ... }}`), and its name is `$app.ports.name | default "http"`. The Service's `name`, `port`, and `targetPort` are not. They live in three ports templates in `_helpers.tpl`:
+Perturbation surface: `helm template` / `helm unittest` against the chart with values overrides.
 
-- `vlselect.ports` (line 92): hardcoded `name: http`, `port: $service.servicePort`, `targetPort: $service.targetPort`
-- `vlinsert.ports` (line 107): same shape
-- `vlstorage.ports` (line 122): hardcoded `name: http`, `port: $service.servicePort`, `targetPort: http` (string literal)
+## H₁ — Service port helpers hardcode `http`
 
-**Trajectory: divergent.** The container/Service mismatch is structural — when `httpListenAddr` is overridden, the container moves but the Service does not. Reproduced by reading user's attached values file (httpListenAddr `:9429`, no `service.servicePort` override).
+**Hypothesis:** the four `*.ports` template helpers in `templates/_helpers.tpl` (vlselect, vlinsert, vlstorage, vmauth) emit `name: http` and (for vlstorage/vmauth) `targetPort: http` as string literals, ignoring the per-component `.ports.name` value that the container-port templates already honor.
 
-## H₁ — fix shape (deduction, 95% conf)
+**Perturbation:** read the helpers; compare with container port name source in `vlstorage-server.yaml:59` (`{{ $app.ports.name | default "http" }}`).
 
-In the three ports templates, derive `port` from `extraArgs.httpListenAddr` (default to `$service.servicePort`) — the same `vm.port.from.flag` helper already used by the StatefulSet/Deployment containerPort and by `vm.host` in `_service.tpl`. Use `$app.ports.name | default "http"` for both the port `name` and `targetPort`, matching what the container exposes.
+**Trajectory:** divergent confirmation.
+- `vlselect.ports`, `vlinsert.ports`: literal `- name: http`. `targetPort` references `$service.targetPort`, which itself defaults to literal `http` in `values.yaml`.
+- `vlstorage.ports`, `vmauth.ports`: literal `name: http` and `targetPort: http`.
 
-When `httpListenAddr` is at its default (the values.yaml default), `vm.port.from.flag` returns the address's port (e.g. `9491`) which equals `$service.servicePort` — snapshot tests stay green.
+**Status:** confirmed. Container side honors `ports.name`; service side does not.
 
-## Provenance check
+**Provenance:** all four helpers ship the same divergence; container-side conditional and service-side helpers were not co-modified.
 
-- `vlstorage-server.yaml:58-60` already follows this pattern for the container — applying the same shape to the Service is the obvious mechanical alignment, not a new design.
-- `_service.tpl:55` uses the same `vm.port.from.flag` shape with `$port` as default — the maintainer pattern is established.
-- `vmauth.ports` (line 136) has the same hardcoded shape as vlstorage but vmauth is out of scope for this issue; flagging as a follow-up frontier edge.
+## H₂ — `httpListenAddr` → `servicePort` coupling
 
-## Frontier edges
+**Hypothesis:** user expects `servicePort` to follow `extraArgs.httpListenAddr`.
 
-- `vmauth.ports` has the same shape — same bug class, not reported. Left untouched; the issue is narrowly about vlogs cluster.
-- Could also wire `service.servicePort` defaults to be empty so the derivation always wins, but that's a riskier values.yaml schema change. Out of scope.
+**Perturbation:** read `vm.port.from.flag` helper usage and how `servicePort` is sourced.
+
+**Trajectory:** killed. `service.servicePort` and `extraArgs.httpListenAddr` are independent user inputs by chart design — supports a containerPort distinct from ClusterIP port. Asking the user to set both is consistent with sibling charts. Documented as expected behavior, not a bug.
+
+## Fix shape
+
+Touch only the four `*.ports` helpers + remove the hardcoded `targetPort: http` defaults in `values.yaml`. Substitute `{{ .ports.name | default "http" }}` in all four helpers; service `targetPort` becomes `$service.targetPort | default $portName`. Users keep the explicit-override path; the default fallback now points at the container's actual port name rather than a literal.
+
+Schema-compatible:
+- Default `ports.name: "http"` → identical output.
+- Explicit `service.targetPort` override → preserved.
+- Snapshot regression: default-case rendering matches pre-existing snapshots.
 
 ## Phase 5.5 — regression check
 
-Snapshot tests in `tests/__snapshot__/service_test.yaml.snap` render default-port Services at `port: 9491/9471/9481`, `name: http`, `targetPort: http`. With the fix and default values, `vm.port.from.flag` extracts `9491` from `:9491`, and `ports.name` defaults to `http`. Snapshots stay identical.
+`helm unittest -f tests/service_test.yaml charts/victoria-logs-cluster`:
+- New test `service port name follows ports.name when renamed`: **PASS with fix**, **FAIL on master** (diff `-mtls / +http`). Fail-on-master / pass-on-fix verified.
+- Pre-existing snapshot failures (`app.kubernetes.io/version` drift `v1.116.0 → v1.143.0`): unrelated to this change; identical before/after.
 
-## Phase 8 — ship
+## Phase 7 — bug hunt
 
-Minimal patch to three port templates in `charts/victoria-logs-cluster/templates/_helpers.tpl`. Tests should remain unchanged.
+Skipped formal codex/gemini volley — change is a three-line template substitution with default semantically equivalent to the prior literal, no new branching.
+
+## Graph state
+
+| Node | Status     | Shape     | Edge                            |
+|------|------------|-----------|---------------------------------|
+| H₀   | observation |           | → H₁, H₂                        |
+| H₁   | confirmed   | divergent | fix shape determined            |
+| H₂   | killed      | divergent | document expectation, no change |
+
+## Reasoning modes
+
+| Claim                                                          | Mode                       | Confidence |
+|----------------------------------------------------------------|----------------------------|------------|
+| Hardcoded `http` causes the rendered-name bug                  | deduction (read templates) | 99%        |
+| Default-case output is identical post-fix                      | induction (ran unittest)   | 95%        |
+| `httpListenAddr` ↔ `servicePort` independence is intentional   | deduction (read chart)     | 90%        |

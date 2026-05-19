@@ -54,12 +54,40 @@ ALLOWLIST: dict[str, tuple[str, str]] = {
     "jq":      ("apt", "jq"),
     "yq":      ("apt", "yq"),
     "protoc":  ("apt", "protobuf-compiler"),
+    "valgrind": ("apt", "valgrind"),
 
     # Rust tooling
     "sccache":       ("cargo", "sccache"),
     "cargo-make":    ("cargo", "cargo-make"),
     "cargo-nextest": ("cargo", "cargo-nextest"),
+
+    # Rust -sys crate → apt -dev package mappings. Cargo emits
+    # "failed to run custom build command for `X-sys`" when the
+    # underlying C dev headers aren't installed; we surface those
+    # under the crate name so the regex can use the same allowlist.
+    # New entries: only confirmed-needed ones (i.e., we've seen the
+    # andon at least once) — preemptive bulk additions bloat the
+    # image without payoff.
+    "glib-sys":      ("apt", "libglib2.0-dev"),
+    "dbus-sys":      ("apt", "libdbus-1-dev"),
+    "libudev-sys":   ("apt", "libudev-dev"),
+    "libsqlite3-sys": ("apt", "libsqlite3-dev"),
+
+    # Undefined-reference symbol → apt -dev mappings. Cargo's "extern
+    # functions couldn't be found" doesn't name the library, but the
+    # ld errors that precede it name the symbols. _slice_around_error
+    # now surfaces those into the failure reason; the autofix detector
+    # uses a separate regex (`undefined_symbol`) to map well-known
+    # symbol families to packages.
+    "_cpython": ("apt", "python3-dev"),
 }
+
+# Symbol-family → tool name (key in ALLOWLIST above). Matched against
+# `undefined reference to \`<symbol>\`` lines surfaced by
+# _slice_around_error. First match wins.
+SYMBOL_MAP: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"undefined reference to [`'\"](Py[A-Z_]|_Py_)"), "_cpython"),
+]
 
 
 DETECT_PATTERNS = [
@@ -69,6 +97,11 @@ DETECT_PATTERNS = [
     re.compile(r"-fuse-ld=([\w][\w-]*)"),
     re.compile(r"Could not find\s+[`'\"]([\w][\w.-]*?)[`'\"]"),
     re.compile(r"\b([\w][\w.-]*?): not found"),
+    # Rust -sys crate build failure. Captures the crate name (e.g.
+    # "glib-sys"); the allowlist maps it to libglib2.0-dev. Only the
+    # crates we've explicitly mapped get auto-installed; unknown -sys
+    # crate failures fall through to operator.
+    re.compile(r"failed to run custom build command for\s+[`'\"]([\w-]+-sys)[\s@v\d.][^`'\"]*[`'\"]"),
 ]
 _SKIP_WORDS = {"the", "no", "or", "a", "an", "it", "is", "be"}
 
@@ -83,6 +116,13 @@ def detect_missing_tools(text: str) -> list[str]:
                 continue
             if len(tool) < 2 or tool.isdigit():
                 continue
+            seen.append(tool)
+    # Symbol-family pass: linker `undefined reference to \`PyErr_*\``
+    # and similar map to a pseudo-tool key (`_cpython`) that the
+    # allowlist resolves to the right apt package. Keeps the detector
+    # surface a single pass without bolting on a parallel pipeline.
+    for pat, tool in SYMBOL_MAP:
+        if pat.search(text) and tool not in seen:
             seen.append(tool)
     return seen
 

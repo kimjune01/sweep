@@ -43,3 +43,11 @@ Reinvestigate cycle. PR `fix/discrete-float-observed-warning` at SHA `10fcb80356
 ## Action
 
 Rerun the failed CI jobs on this PR. No code changes.
+
+---
+
+## Cycle 2 (2026-05-19)
+
+Re-fetched the failed-log on the same head SHA `10fcb80356d2`. Same single failure: `TestGARCH11::test_batched_size[False-alpha_1]` with `assert not np.True_` — exactly one coincidence in a (5,100) `isclose` matrix. PR-added tests still PASSED in the same job. Diagnosis from cycle 1 stands: pre-existing flake driven by the unseeded `np.random.randn` at `tests/distributions/test_timeseries.py:769`.
+
+PR state is REVIEW_REQUIRED + MERGEABLE — the gate is reviewer attention, not CI. **Fixed-point reached** (three consecutive iterations would produce this same diagnosis). Halt; no readiness record written, no patch to push.

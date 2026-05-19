@@ -54,3 +54,17 @@
 ### Decision
 
 **No code change.** Halt — would only churn a clean PR. The env gap belongs in the substrate (install dev requirements before running aider's pytest, or mark this repo as needing a `test_setup_cmd`), not in the PR. Logged the failure mode here so a future retro can fold it into the attest preflight.
+
+---
+
+## Reinvestigate #2: PR #5124 (2026-05-19)
+
+**Trigger:** attest re-routed PR to reinvestigate. Context pack shows 0 failing checks.
+
+**Perturbation:** `gh pr view 5124` — `mergeable: MERGEABLE`, `reviewDecision: ""`, statusCheckRollup unchanged (`license/cla SUCCESS` only). Head SHA `a57c268f` unchanged since prior reinvestigate.
+
+**Classification:** convergent with prior diagnosis. Same trigger, same upstream state, no new evidence. The attest env gap (sweep-tester lacks pytest for aider) keeps re-firing reinvestigate cycles on a healthy PR — this is the pattern, not a new symptom.
+
+**Frontier edge (substrate, not PR):** attest should detect "test_cmd produces `command not found`" and route to substrate maintenance, not to reinvestigate. Two consecutive reinvestigates with no new info is the signal.
+
+**Decision:** halt. No PR change.

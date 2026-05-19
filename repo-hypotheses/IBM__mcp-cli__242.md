@@ -94,3 +94,14 @@ Re-entered after CI red. Same fingerprint as prior pass:
 Diagnosis unchanged. Two consecutive iterations produced the same conclusion → **fixed point per halt condition.** No code change to push. The PR is mergeable as-is; the 16 reds are advisory per maintainer precedent (#234 merged through identical failures).
 
 Action: none. Halt.
+
+## Reinvestigation tick — 2026-05-19 (head SHA 2aebb9cf, unchanged)
+
+Third pass. Same fingerprint:
+
+- Failing-job log for `test (tests/adapters)` confirms `133 passed in 2.54s` followed by `Coverage failure: total of 12 is less than fail-under=60`.
+- `gh run list --branch main --workflow ci.yml` shows main itself failing on every push event (Mar–May 2026); the "success" runs in the default `gh run list` view are Dependabot metadata PRs that never trigger the test matrix.
+- `pyproject.toml` on main still carries `[tool.coverage.report] fail_under = 60`; the workflow's per-shard step invokes pytest-cov without overriding it, so the gate fires on each shard.
+- PR's only diffs remain `src/mcp_cli/commands/servers/ping.py` (+20/-7) and `tests/commands/definitions/test_ping_command.py` (+139/-22). Neither file is in the failing shards' path; neither could plausibly cause the failures.
+
+Three consecutive iterations, same diagnosis → **fixed point per halt condition**. No patch to push to `fix-203-sse-ping`. Operator: PR is mergeable on its substance; the 16 reds will not clear without a workflow change that is out-of-scope for this PR.

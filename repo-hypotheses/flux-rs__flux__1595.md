@@ -120,3 +120,77 @@ So `impl_id` (= `item_at(0)`, the last block stmt) is the trait impl on the *wra
 ## Pruning log
 
 - H₀ killed by H₂: the local self type from `tcx.type_of` is the wrapper, not the user's intent. Replaced by reading `trait_ref.self_ty()` from the dummy_impl's predicate.
+
+## H₃ — Test author error (CONFIRMED, 2026-05-19 reinvestigate)
+
+**Observation:** After H₂ push, CI shows only one failing job (`tests`), and only one failing test (`neg/extern_specs/mismatched_impl_self_ty.rs`). The flux-core regression is fully gone — H₂ confirmed at scale.
+
+**Hypothesis:** The test file uses `#[flux::extern_spec(std::ops)]` — the raw post-macro-expansion attribute — instead of the proc-macro form `#[extern_spec(std::ops)]` from `flux_attrs`. Without the macro expansion, the const-block / dummy-struct / `__flux_extern_extract_impl_id` fn that `extract_extern_id_from_impl` requires never gets generated, so the new code path silently falls back to a different error.
+
+**Perturbation (local docker):** Ran the single test against the latest driver.
+
+**Result:**
+```
+not found errors (from test file): "invalid extern spec for trait impl"
+actual errors emitted:            "invalid extern spec for implementation [E0999]"
+```
+
+The actual error is `driver_mismatched_generics` (def_descr=implementation), not the new `MismatchedImplSelfTy`. So with no generic params declared, `check_generics` rejects the impl first because the external `impl<A: Step> Iterator for Range<A>` has one generic param and the test impl has zero.
+
+**Mode:** Induction (local repro).
+**Confidence:** 99%.
+
+## H₄ — Test rewrite mirrors issue example (CONFIRMED)
+
+**Perturbation:** Rewrote `mismatched_impl_self_ty.rs` to use the proc-macro form and declare `<A: Step>` so generic counts match. This is exactly the example from issue #833.
+
+```rust
+#![feature(step_trait)]
+use std::iter::Step;
+use flux_attrs::extern_spec;
+
+#[extern_spec(std::ops)]
+impl<A: Step> Iterator for Range<usize> {} //~ ERROR invalid extern spec for trait impl
+```
+
+**Result (docker, sweep-tester:latest):**
+```
+test [compile-fail] neg/extern_specs/mismatched_impl_self_ty.rs ... ok
+test result: ok. 1 passed; 0 failed
+```
+
+**Trajectory:** Divergent confirming. The `MismatchedImplSelfTy` diagnostic fires exactly as designed.
+
+**Mode:** Induction.
+**Confidence:** 95% (local container lacks the fixpoint binary so other extern_specs tests can't be cross-checked; CI will).
+
+## Updated graph state
+
+| Node | Status | Trajectory | Mode |
+|------|--------|------------|------|
+| H₀ | killed | divergent-against | induction |
+| H₁ | confirmed | divergent-confirming | deduction |
+| H₂ | confirmed-by-CI | divergent-confirming | induction |
+| H₃ | confirmed | divergent | induction |
+| H₄ | confirmed | divergent-confirming | induction |
+
+## Frontier edges
+
+- E4: CI on the new commit — predicted: all jobs green (the only failing test is now the rewritten one, and it asserts a `//~ ERROR` annotation that the driver now emits).
+
+---
+
+## H₅ — Reinvestigate (2026-05-19): error span is macro-generated, compiletest annotation can't match
+
+**Context:** After commits 0a91dac (read self_ty from trait_ref) and 3afe048 (test in proc-macro form), only one test fails on CI: `neg/extern_specs/mismatched_impl_self_ty.rs`. 432 pass, 1 fails. The check fires (no over-rejection), but compiletest reports the test failed.
+
+**Hypothesis:** The diagnostic's primary span is `local_impl.self_ty.span`, where `local_impl` is the macro-generated `__FluxExternImplStruct` wrapper. That self_ty span is synthesized by the `extern_spec` proc-macro and doesn't correspond to the user's source line. compiletest's `//~ ERROR ...` annotation must match the primary span's line; a macro-internal span never matches.
+
+**Perturbation:** Change the span source from `local_impl.self_ty.span` (dummy wrapper) to `tcx.def_span(local_impl_id)` (user's actual impl block). Drop the now-unused `dummy_impl` plumbing through `check_extern_impl_self_ty`.
+
+**Trajectory:** Divergent (predicted). Only failure mode the symptom is consistent with — error is emitted (check fires) but compiletest doesn't recognize it as matching the annotation.
+
+**Mode:** Deduction (read the code: dummy wrapper's self_ty is `__FluxExternImplStruct...`, span is macro-generated).
+**Confidence:** 90%. Local CI run not possible (sweep-tester missing `fixpoint` binary); compile verified, CI is the remaining check.
+
+**Kill condition:** if CI still fails on this test after the span change, the actual emitted error has a different message OR no error fires at all → re-investigate.

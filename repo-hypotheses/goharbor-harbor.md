@@ -67,3 +67,15 @@
 **Edge**: no code change available. Both failures are maintainer-side gates (label assignment, codecov project threshold). Status quo: @chlins already pinged @bupd for review on 2026-05-11. Halt -- nothing to push.
 
 **Reasoning mode**: deduction (CI log read directly) + induction (gh edit attempt refuted by API).
+
+## Reinvestigate 2026-05-19 — PR #23223 CI
+
+**Failing checks:**
+- `Check release-note label set` — PR has no `release-note/*` label. Required by mheap/github-action-required-labels@v5 with regex `release-note/.*`.
+- `codecov/project` — coverage delta; not a hard merge gate, all modified lines are covered.
+
+**Diagnosis:** label gate, not a code defect. Head SHA `8b6b6dac5cd0` is fine.
+
+**Action:** kimjune01 lacks `addLabelsToLabelable` (external contributor). Ask maintainer @chlins (who already requested @bupd review) to apply `release-note/update` (matches the "Update or Fix" semantics of this bugfix).
+
+**Reasoning mode:** deduction (read CI log, mapped check name to label policy) — 95% confidence.

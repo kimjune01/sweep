@@ -28,7 +28,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         git \
         jq \
+        libdbus-1-dev \
+        libglib2.0-dev \
+        libsqlite3-dev \
         libssl-dev \
+        libudev-dev \
         lld \
         mold \
         ninja-build \
@@ -39,6 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bash \
         make \
         unzip \
+        valgrind \
         zip \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -69,7 +74,7 @@ RUN ARCH=$(dpkg --print-architecture) \
 
 # Python 3.12 + uv (operator's preferred package manager).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-venv \
+        python3 python3-pip python3-venv python3-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 

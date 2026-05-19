@@ -38,25 +38,67 @@ _SIGNAL_FILES = (
 
 def _collect_signals(worktree: Path) -> str:
     """Read up to ~6KB total across the signal files; concatenate with
-    `=== path ===` separators. Keeps the prompt budget tight."""
+    `=== path ===` separators. Keeps the prompt budget tight.
+
+    Also scans immediate subdirs (depth=1) for the same signal files.
+    Repos that put their build manifest under `src/` (Go-style — see
+    KaijuEngine/kaiju), `crates/<name>/` (Rust workspaces), or
+    `packages/<name>/` (JS monorepos) need the subdir hint so the LLM
+    can prefix the test command with `cd <subdir>`. Without this, the
+    root-only scan returned empty signals and the LLM guessed a
+    plain `go test ./...` that fails with "directory prefix . does
+    not contain main module."
+    """
     chunks: list[str] = []
     budget = 6000
-    for rel in _SIGNAL_FILES:
-        path = worktree / rel
-        if not path.exists() or not path.is_file():
-            continue
+
+    def _try_add(rel_path: Path, display: str) -> bool:
+        """Add the file at rel_path to chunks under `=== display ===`
+        if it exists, is non-empty, and fits in the remaining budget.
+        Returns True if added (caller updates budget)."""
+        nonlocal budget
+        if not rel_path.exists() or not rel_path.is_file():
+            return False
         try:
-            text = path.read_text(errors="replace")
+            text = rel_path.read_text(errors="replace")
         except OSError:
-            continue
+            return False
         if not text.strip():
-            continue
+            return False
         slice_ = text[:1500]
-        chunk = f"=== {rel} ===\n{slice_}\n"
+        chunk = f"=== {display} ===\n{slice_}\n"
         if len(chunk) > budget:
-            break
+            return False
         chunks.append(chunk)
         budget -= len(chunk)
+        return True
+
+    # Root pass.
+    for rel in _SIGNAL_FILES:
+        _try_add(worktree / rel, rel)
+
+    # Subdir pass (depth=1). Skip hidden/build/vendor dirs that almost
+    # never carry the canonical manifest.
+    _SKIP_SUBDIRS = {"node_modules", "vendor", "target", "dist", "build",
+                     ".git", ".github", ".idea", ".vscode", "docs"}
+    if budget > 500:
+        try:
+            subdirs = sorted(
+                p for p in worktree.iterdir()
+                if p.is_dir()
+                and not p.name.startswith(".")
+                and p.name not in _SKIP_SUBDIRS
+            )
+        except OSError:
+            subdirs = []
+        for sub in subdirs:
+            if budget <= 500:
+                break
+            for rel in _SIGNAL_FILES:
+                if budget <= 500:
+                    break
+                _try_add(sub / rel, f"{sub.name}/{rel}")
+
     return "".join(chunks)
 
 
@@ -81,6 +123,28 @@ async def infer_test_cmd(worktree: str, repo: str) -> str:
             non_retryable=True,
         )
     signals = _collect_signals(tree)
+    # Lockfile presence — tells the model to prefix install step when
+    # the test runner needs deps installed first. Test runs in a clean
+    # container with the worktree mounted read-only-ish; deps from the
+    # manifest aren't pre-installed.
+    lockfiles: list[str] = []
+    for lock_rel in ("package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+                      "Cargo.lock", "go.sum", "poetry.lock", "uv.lock"):
+        # Check root + immediate subdirs (same depth as _collect_signals).
+        if (tree / lock_rel).exists():
+            lockfiles.append(lock_rel)
+            continue
+        try:
+            for sub in tree.iterdir():
+                if sub.is_dir() and not sub.name.startswith(".") and (sub / lock_rel).exists():
+                    lockfiles.append(f"{sub.name}/{lock_rel}")
+                    break
+        except OSError:
+            pass
+    lockfile_hint = (
+        f"Lockfiles present: {', '.join(lockfiles)}\n\n"
+        if lockfiles else ""
+    )
     system = (
         "You read a repository's manifest and CI files and answer with "
         "the single shell command a maintainer would run locally to "
@@ -88,10 +152,24 @@ async def infer_test_cmd(worktree: str, repo: str) -> str:
         "explanation, no leading $. If the repo doesn't have tests, "
         "the convention is unclear, or the inputs are unreadable, "
         "output nothing. Empty is a legal answer; do not guess at a "
-        "command you don't have evidence for."
+        "command you don't have evidence for.\n\n"
+        "Tests run in a CLEAN container — no deps pre-installed. If a "
+        "lockfile is present and the test runner needs deps (vitest, "
+        "jest, mocha, pytest with editable installs, etc.), PREFIX with "
+        "the install step:\n"
+        "  package-lock.json → `npm ci && ...`\n"
+        "  pnpm-lock.yaml    → `pnpm install --frozen-lockfile && ...`\n"
+        "  yarn.lock         → `yarn install --frozen-lockfile && ...`\n"
+        "  poetry.lock       → `poetry install --no-interaction && ...`\n"
+        "  uv.lock           → `uv sync && uv run ...`\n"
+        "Cargo and go test resolve deps as part of the test run itself, "
+        "so no install prefix needed for those. If the manifest is in a "
+        "subdir (e.g. `src/go.mod`, `crates/foo/Cargo.toml`), wrap with "
+        "`cd <subdir> && ...`."
     )
     user = (
         f"Repository: {repo}\n\n"
+        f"{lockfile_hint}"
         f"Selected files (truncated):\n\n{signals or '(no recognizable manifest files)'}\n\n"
         "Canonical local test command:"
     )

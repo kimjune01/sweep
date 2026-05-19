@@ -63,3 +63,7 @@ Our cherry-pickable test slice (`source_tree_size_in_stats`) passes on the fix b
 **Verdict**: no fix to make on the PR. This is a human-gated decision: the operator needs to choose between (a) overriding the attest verdict for #300 and letting `/drip → /ship` proceed, (b) patching the sweep-tester image to run cargo tests as a non-root user, or (c) patching the attest activity to capture the failure tail rather than the cargo-download head so the master-comparison gate has the data it needs.
 
 awaiting human go/no-go on which remediation to apply — no code change ships from this skill run.
+
+## Re-entry 2026-05-19
+
+Same trigger msg_id (`attest-20260518T065115`), same head SHA (`053fe296`), no new commits, no new comments, no failing checks on the PR. Re-running perturbations would reproduce identical results — the graph is converged. Frontier remains substrate-side (attest log truncation + docker-root/chmod skew); see [[feedback_docker_root_invalidates_chmod_tests]] and [[feedback_attest_failure_reason_truncates_head]]. No-op pass; still awaiting operator decision.

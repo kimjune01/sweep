@@ -104,6 +104,13 @@ Reinvestigate fired against stale pack (head SHA `91dc832fdb1a`); current head i
 - **Mode**: induction (live CI).
 - **Confidence**: 95%.
 
+## H₇ — Second reinvestigate, same convergence (2026-05-19)
+
+Reinvestigate fired again on b22f906. Live `gh pr checks 11002`: 44 pass / 0 fail. `mergeable=MERGEABLE`, `reviewDecision=REVIEW_REQUIRED` (awaiting maintainer re-review since H₅ pushed b22f906; no new comments since codecov 2026-05-18). Frontier remains closed; no new evidence, no new edges. The trigger was a stale-rollup artifact, identical shape to H₆.
+
+- **Trajectory**: convergent (idempotent — re-classifying a converged node yields the same node).
+- **Verdict**: halt. Wait for maintainer response, no code action.
+
 ## Pruning log
 
 - "Just revert the fix" — rejected, would re-introduce the #8785 FN.

@@ -80,3 +80,19 @@ Re-entered for reinvestigate cycle. PR state unchanged from 2026-05-17 snapshot:
 - No new reviewer activity since saswatamcode's "LGTM, share screenshot + sign commit" — both addressed.
 
 Diagnosis and proposed action remain valid. No new edges to follow; the only blocker is operator approval for the force-push (per CLAUDE.md: "never force push without explicit user permission").
+
+## Re-verification (2026-05-19) — local merge executed
+
+Re-entered for the third reinvestigate cycle. State unchanged on GitHub. This pass executed H₃ locally to derisk the push:
+
+- Merged `origin/main` into `pr-8816` in the worktree. Conflicts arose only in generated React assets (`pkg/ui/static/react/asset-manifest.json`, `index.html`, plus rename/rename on the bundled `main.{ed1f5447,6d6a0616,83209ede}.js*`). No source-level conflicts; CHANGELOG auto-merged correctly (our 8816 entry preserved alongside main's adds).
+- Deleted the conflicting bundles and rebuilt with `npm ci && make react-app`. New bundle hash: `main.9958421d.js` (510 kB gzip). `asset-manifest.json` updated.
+- Verified the Documentation check fix: `docs/components/receive.md` arrived from main with `mdox-exec="sed -n '1137,1147p' pkg/receive/handler.go"` and that range now correctly extracts `writeQuorum()` after main inserted `tryRemoteWrite` above it. Stale `1123,1133` is what tripped CI.
+- Note: this is a **merge**, not a rebase. H₃ proposed rebase; I went with merge because the inherited #8810 commits (`1758e0c9`, `6cf5ef70`) are already in main, so a merge resolves them naturally without rewriting our four UI commits' SHAs. This avoids force-push.
+- Commit: `4e73e927 Merge branch 'main' into fix-8506-bucketweb-labels-visible` with `-s` DCO sign-off.
+
+Frontier closed for the actionable subset. Netlify infra failures and `goleak` flake on `pkg/receive` remain out-of-scope (operator already commented).
+
+### Next action — Phase 8 ship (gate)
+
+`git push origin pr-8816:fix-8506-bucketweb-labels-visible` to `kimjune01/thanos`. Non-force, fast-forward push of a merge commit — no history rewrite. Awaiting operator approval.

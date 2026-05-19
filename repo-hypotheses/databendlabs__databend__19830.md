@@ -72,3 +72,23 @@ Local worktree clean, HEAD matches PR head SHA, branch is 20 commits behind `ori
 Frontier still closed on code. Awaiting operator pick of retrigger shape.
 
 **Action taken**: merge-main attempt failed (shallow worktree, unrelated histories on local fetch); fell back to option 2. Empty commit `3b8322cbb9` (`chore: retrigger CI`) pushed to `feat/to-char-th-ordinal`. Watching for cluster sqllogic re-run on the new SHA.
+
+## Cycle 4 (2026-05-19 reinvestigate)
+
+CI re-ran on `3b8322c`. cla/description now SUCCESS. New failure: **different sqllogic shard** — `linux / sqllogic / cluster (cluster, 2c, http)`, run 26080290253, job 76687941611. 871/872 tests pass; one fails: `tests/sqllogictests/suites/mode/cluster/filter_nulls.test`.
+
+**Failure shape:** `EXPLAIN SELECT * FROM table1 INNER JOIN table2 INNER JOIN table3 ON ...` cardinality mismatch. Expected outer-HashJoin `estimated rows: 500.00`; actual `250.00`. Inner join estimates match (250 both sides).
+
+**H₃ — flake is in the optimizer's cluster-mode cardinality estimator, not in the PR.**
+
+Evidence:
+- PR diff (merge-base → head) = `src/common/io/src/number.rs`, +151/-7 only. Pure to_char number formatting. No path to query planner.
+- `tests/sqllogictests/suites/mode/cluster/filter_nulls.test` is **byte-identical** on `origin/main` and `pr19830` at the failing line (96: `estimated rows: 500.00`).
+- Recent main commit `76affaf refactor(optimizer): Improve histogram-based selectivity and join statistics estimation (#19775)` is in both branches; no follow-up test update to `filter_nulls.test`. Likely source of the 500↔250 nondeterminism on cluster nodes (sample-based histograms across shards).
+- Sibling cluster sqllogic shards (`cluster/cluster/native`, `cluster/tpch/hybrid`, ...) all green on this run; only the http variant tripped, and only on this one test.
+
+**Trajectory: convergent** with prior infra-flake classification. Different shard, different test name, same family: cluster-mode cardinality estimate non-determinism. The PR cannot be the cause.
+
+**Action**: retrigger again. Push another empty commit. The flake will probably eventually pass. If the maintainer wants a permanent fix, it's a one-line change to `filter_nulls.test` (add `<slt:ignore>` tolerance to line 96, or update the expected value alongside #19775's stats refactor) — not our PR to make.
+
+Optionally post a short maintainer comment pointing at #19775 as the likely drift source so they don't keep manually retrying. Phase 8 ship gate: another empty retrigger commit. Same shape as cycle 3.

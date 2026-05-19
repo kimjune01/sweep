@@ -1,64 +1,84 @@
-# kubescape/kubescape#2276 Hypothesis Graph
+# kubescape/kubescape#2276 — `--hide` flag leaks `ResourceSource` (paths, Helm chart names, git committer identity)
 
-Investigation date: 2026-05-18
+**Status: halted at Phase 1 (contributor gate). Earlier blocked-on-access record superseded — worktree is now available.**
 
-## Access Check
+## H₀ — Issue claim matches code
 
-Perturbation access is currently unavailable.
+**Hypothesis:** `anonymizeSession()` rebuilds the `ResourceSource` map keyed by remapped IDs but copies each `reporthandling.Source` value byte-for-byte; sensitive fields on `Source` (paths, Helm chart name, committer name/email) are never anonymized.
 
-- `sweep project-info kubescape/kubescape` returned canonical worktree `/Users/junekim/.sweep/worktrees/kubescape__kubescape`, `worktree_exists: false`, and `test_env: docker:sweep-tester:latest`.
-- The canonical worktree is outside this session's writable roots, so it cannot be created here.
-- `gh issue view 2276 --repo kubescape/kubescape --comments` failed with `error connecting to api.github.com`.
-- `git clone --depth=1 https://github.com/kubescape/kubescape.git /Users/junekim/Documents/sweep/worktrees/kubescape__kubescape` failed because shell DNS could not resolve `github.com`.
-- Web search did not surface the exact issue content for `kubescape/kubescape#2276`.
+**Perturbation:** Read `core/pkg/anonymizer/session.go` and the upstream `reporthandling.Source` / `LastCommit` definitions.
 
-Per the investigation rule, perturbation access is required. Without a readable worktree and issue statement, the graph cannot enter Phase 1 without fabricating observations.
+**Result — confirmed (deduction, 99%).** session.go:78-83:
+```go
+newResourceSource := make(map[string]reporthandling.Source, len(session.ResourceSource))
+for oldID, source := range session.ResourceSource {
+    newID := resolveMappedID(mapping, idMapping, oldID, "ref")
+    newResourceSource[newID] = source  // value copied unchanged
+}
+```
+`Source` struct (`opa-utils@v0.0.295/reporthandling/datastructuresv1.go:116-127`) contains: `Path`, `RelativePath`, `HelmPath`, `HelmChartName`, `HelmTemplateFile`, `HelmValuesPaths`, `KustomizeDirectoryName`, `LastCommit{CommitterName, CommitterEmail, Hash, Date, Message}`. None are touched anywhere under `core/pkg/anonymizer/`.
 
-## Graph State
+**Trajectory:** divergent — issue's root-cause claim matches the source 1:1.
 
-| Node | Status | Trajectory Shape | Summary |
-|---|---|---|---|
-| H0 | blocked | divergent against investigation precondition | The target system cannot be poked locally in this session. |
+## Sibling fields the issue under-specifies
 
-## Nodes
+The issue enumerates Path/RelativePath/HelmPath/HelmChartName/LastCommit{CommitterName,CommitterEmail,Hash}. The struct also has:
 
-### H0: The investigation has a valid perturbation surface
+- `HelmTemplateFile` — chart-relative template path (reveals internal layout).
+- `HelmValuesPaths []string` — dotted `.Values.*` keys (low-PII but shape-revealing).
+- `KustomizeDirectoryName` — same PII class as `HelmChartName`.
+- `LastCommit.Message` — free-form commit message body, can contain anything (arguably the worst leak).
 
-- Hypothesis: The target repo and issue context are locally accessible, so baseline observations can be run.
-- Null: The repo or issue context is unavailable, so any diagnosis would be speculative.
-- Perturbation: Resolve project info, fetch issue context, and materialize/read the target worktree.
-- Trajectory: Project routing resolved, but the canonical worktree does not exist; shell GitHub access failed; cloning to the writable workspace failed; issue context was not retrievable through `gh`.
-- Shape: Divergent against the investigation precondition.
-- Kill condition: No local readable target system exists and network access from shell is unavailable.
-- Edge: Resume Phase 1 after a worktree is available under a writable path or network access allows cloning/fetching issue context.
+`Hash` should be preserved per issue (not PII — agreed). `Date` is fine.
 
-## Frontier Edges
+## Provenance — contributor gate (halt reason)
 
-| Edge | Pending Experiment | Predicted Classification | Confidence |
-|---|---|---|---|
-| E0 | Provide or create a readable `kubescape/kubescape` worktree, then rerun `sweep project-info kubescape/kubescape` and inspect issue #2276. | Divergent if access succeeds; blocked if not. | 95% deduction |
+**Issue author:** `Shreya2005-2005`, filed 2026-05-18 06:12Z (~10h before investigate-start).
 
-## Reasoning Modes
+**Same-author prior work on the anonymizer package:**
+- `#2114` (merged) — `test: add unit tests for anonymizer package`. She authored the test scaffolding any new tests would extend.
+- `#2273` (open, by her) — `fix: anonymize sensitive env var values and annotations with --hide flag`, addressing sister issue `#2272`. Same module, same style.
+- `#2276` (this issue, by her) — fully-formed: code-quoted root cause, named the proposed function (`anonymizeSource()`), itemized fields, estimated LOC, even cross-linked #2148/#2272.
+
+**Pattern:** Shreya is running a sweep on the anonymizer package — wrote the tests (#2114), now ships one PR per missed-anonymization class (#2273 → #2272, #2276 → her next). The issue body reads like a PR-to-be; she's queueing her own work in public.
+
+**Rule applied:** `feedback_maintainer_self_pr.md` — halt when reporter is also the WIP-PR author for the issue. Strictly, no WIP PR for #2276 *yet*, but #2273 is mid-review on the sibling issue in the same module by the same contributor, with a near-identical fix shape queued. Opening a competing PR steps on a contributor mid-sweep — exactly what the rule generalizes from.
+
+**Decision:** halt before Phase 5. No PR drafted. Operator decides: skip / defer-N-days / override.
+
+## Frontier (if operator overrides halt)
+
+Fix shape (~40 LOC + tests):
+
+1. Add `anonymizeSource(src reporthandling.Source, mapping *Mapping) reporthandling.Source` in `core/pkg/anonymizer/session.go`.
+2. For each non-empty string field on `Source`, map with a dedicated prefix:
+   - `Path`, `RelativePath`, `HelmPath`, `HelmTemplateFile` → `mapping.GetOrCreate("path", v)`
+   - `HelmChartName` → `("helm", v)`
+   - `KustomizeDirectoryName` → `("kustomize", v)`
+   - `HelmValuesPaths[i]` → `("helmval", v)`
+3. For `LastCommit`: map `CommitterName` → `("committer", v)`, `CommitterEmail` → `("email", v)`, `Message` → `("commitmsg", v)`. Preserve `Hash`, `Date`.
+4. Call site (session.go:81): `newResourceSource[newID] = anonymizeSource(source, mapping)`.
+5. Tests in `session_test.go`:
+   - `TestAnonymizeSession_SourceFieldsAnonymized` — populate a `reporthandling.Source` with each field, assert post-call values are remapped tokens with the expected prefix, `Hash`/`Date` preserved.
+   - `TestAnonymizeSource_EmptyFieldsPreserved` — omitempty contract: empty strings remain empty (don't synthesize `path-1` for blank paths).
+
+Bench risk: zero. Additive within existing remap loop. No downstream consumers expect raw paths from anonymized output. Test surface follows the `TestAnonymizeSession_*` conventions already in `session_test.go`.
+
+## Reasoning mode table
 
 | Claim | Mode | Confidence | Provenance |
-|---|---|---:|---|
-| The canonical worktree is absent. | Deduction | 99% | `sweep project-info` output |
-| The expected QA environment is Docker image `sweep-tester:latest`. | Deduction | 99% | `sweep project-info` output |
-| Shell network access to GitHub is unavailable in this session. | Induction | 95% | `gh issue view` and `git clone` failures |
-| Continuing without a repo would fabricate evidence. | Deduction | 99% | Investigation rule: perturbation access required |
+|-------|------|-----------|------------|
+| `Source` value copied unchanged in session.go:78-83 | deduction | 99% | direct read |
+| Listed fields are PII | deduction | 95% | struct doc comments + field semantics |
+| `KustomizeDirectoryName`, `LastCommit.Message`, `HelmTemplateFile` missing from issue's enumeration | deduction | 99% | struct vs issue text |
+| Reporter will self-author the PR | abduction | 80% | #2114 prior, #2273 mid-flight sibling, issue is PR-shaped |
 
-## Pruning Log
+## Pruning log
 
 | Hypothesis | Result | Reason |
-|---|---|---|
-| H0 | killed | No readable target system or issue context was available for perturbation. |
+|-----------|--------|--------|
+| Earlier "blocked on access" H₀ (prior session) | superseded | worktree now exists under `/Users/junekim/.sweep/worktrees/kubescape__kubescape`; access restored |
 
-## Resume Notes
+## Result
 
-To resume, make the repository readable in one of these ways:
-
-- Place a checkout at `/Users/junekim/Documents/sweep/worktrees/kubescape__kubescape` and rerun from Phase 1.
-- Make `/Users/junekim/.sweep/worktrees/kubescape__kubescape` available to the session.
-- Restore shell network/DNS access so the repo and issue can be fetched.
-
-Before running any build or test command, re-run `sweep project-info kubescape/kubescape` and mirror the returned `test_env`.
+Halt-and-surface card. No PR drafted. Operator decides whether to override the contributor-gate halt.

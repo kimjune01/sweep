@@ -30,3 +30,7 @@ None — clippy was the only red gate, mergeable=MERGEABLE, review_decision=REVI
 ## Reinvestigate revisit 2026-05-18
 
 Context pack was stale (referenced pre-fix SHA `e018f1c`). Live PR state at head `96f2a1d`: 33 SUCCESS, 2 still running, 0 FAILURE; mergeable=MERGEABLE. Clippy fix from prior cycle already shipped and green. No-op — close cycle.
+
+## Reinvestigate revisit 2026-05-19
+
+Pack still pinned to pre-fix SHA `e018f1c`. Live head `96f2a1d` shows all 36 checks SUCCESS (both Clippy stable and beta green); mergeable=MERGEABLE; review_decision=REVIEW_REQUIRED. Nothing to push — waiting on maintainer review, not on substrate. No-op.

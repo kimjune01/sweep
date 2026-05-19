@@ -60,3 +60,26 @@
 | Original fit operates on combinations including bias | deduction | 99% |
 | Maintainer wants identity at default, drop (0,0,…0) at False | abduction | 90% |
 | `regressor_space` must mirror the drop | deduction | 90% |
+
+## H₄: 2026-05-18 attest verdict `test_fails_on_fix` was env mis-attribution, not a real fix failure
+
+- **Trigger:** reinvestigate inbox msg (2026-05-18T06:51) carrying `attest_failure_reason: "test_fails_on_fix — fix is broken: bash: line 1: pytest: command not found"`.
+- **Perturbation 1:** `docker run --rm sweep-tester:latest bash -c "pytest --version"` → `pytest 9.0.3`, exit 0. pytest IS on PATH in the current image.
+- **Perturbation 2:** Run the project's tests against the fix worktree in the same image:
+  ```
+  docker run --rm -v <worktree>:/work -w /work sweep-tester:latest \
+    bash -c "pytest sysidentpy/basis_function/tests/test_polynomial.py -o addopts="
+  ```
+  Result: collection ERROR — `ModuleNotFoundError: No module named 'numpy'`. sweep-tester:latest hosts pytest but not numpy/scipy.
+- **Perturbation 3:** `pip install --break-system-packages -e .[dev]` inside the container, then re-run. pip reports success but `/root/.local/bin/pytest` (uv-isolated) still can't import the freshly-installed numpy — wrong python interpreter for the bin.
+- **Classification:** divergent against the attest verdict's framing. The fix is not broken — sweep-tester:latest simply cannot host sysidentpy's runtime. Two distinct env failures got bucketed into one `test_fails_on_fix` verdict:
+  1. Earlier run (06:51): a transient `pytest: command not found` (PATH propagation under `bash -c` was broken in the image variant in use that day; subsequent rebuild fixed it).
+  2. Current run: scientific-Python stack absent; `pip install` doesn't reach the pytest entrypoint's interpreter.
+- **Mode:** induction (reproduced both env failure modes). ~98% confidence.
+- **Implication:** the qa front-load env precondition (`assert_test_env_available`) only verifies docker is reachable, not that the project's test toolchain can resolve imports. This repo is a candidate for either a per-repo `test_setup_cmd` (`pip install --break-system-packages -e .[dev] && pip install --break-system-packages numpy scipy matplotlib` AND a switch off the uv-isolated pytest) or eviction. Cf. `feedback_repo_too_big_is_legit`: env friction can be a legitimate eviction class even when the repo is small.
+- **Action:** no code change. The fix on HEAD (9241e25) is the one previous investigation hand-verified at 566 tests pass. Maintainer CI shows MERGEABLE with only Codacy red (non-blocker for this repo per prior merged PRs). Reinvestigation closes; PR stands as-is.
+
+## Frontier (post-H₄)
+
+- **Substrate edge (not this PR):** qa env precondition needs depth. Either probe `python -c "import <top-level-package>"` after `pip install -e .` inside the image, OR add a per-repo `test_setup_cmd` knob that names a setup recipe distinct from the test command. Today's behavior conflates "docker works" with "this repo's tests can run".
+- **Per-repo action:** mark wilsonrljr/sysidentpy with `test_setup_cmd=pip install --break-system-packages -e .[dev]` AND switch test_cmd to `python -m pytest ...` so pytest discovery shares the install's interpreter. Without that, every future attest cycle on this repo will mis-attribute again.

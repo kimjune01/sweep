@@ -79,9 +79,25 @@ This is a substrate/env mismatch, not a fix defect. Three operator-side options:
 2. **Pin Catch2 in the worktree's submodules** so local build uses the project's intended version, not homebrew. The project's `test_setup_cmd` runs `git submodule update --init --recursive --depth 1`. Verify whether Catch2 is meant to be vendored vs system-supplied.
 3. **Evict this repo from attest** (`retro_param test_env=evict` or similar) — accept that this repo's local build is incompatible with current substrate host until Catch2 alignment is fixed. PR can proceed without behavioral attestation, relying on remote CI as the gate.
 
-Frontier edge (not pursued, requires gh): does the project's CMakeLists.txt fetch a
-pinned Catch2 in the bundled-deps path, or `find_package(Catch2)` against system? That
-determines whether option (2) is even feasible.
+Frontier edge (closed 2026-05-19): `CMakeLists.txt:242-248` calls
+`FetchContent_Declare(Catch2 ... GIT_TAG v3.10.0 ... FIND_PACKAGE_ARGS "${catch2_min_version}")`.
+On CMake ≥3.24, `FIND_PACKAGE_ARGS` makes FetchContent prefer a system package
+matching `catch2_min_version` (3.9, set in `external/CMakeLists.txt:10`) over the
+vendored v3.10.0. Homebrew supplies Catch2 (likely newer than 3.10.0 with the
+tightened header boundary), so the local build picks the system one and fails;
+CI containers have no system Catch2 and fall through to vendored v3.10.0, which
+predates the boundary change. Option (2) is feasible by configuring with
+`-DCMAKE_DISABLE_FIND_PACKAGE_Catch2=ON` (forces FetchContent vendored path).
+Substrate fix lives in `sweep project-info`'s `test_setup_cmd`, not in the PR.
+
+## Reinvestigate cycle 2026-05-19 — no-op halt
+
+Reinvestigate card replayed (`reinvestigate-from-attest-20260518T065111`). Identity
+check: PR head SHA still `911e11fc`, all 9 remote CI checks still SUCCESS, no new
+maintainer comments. Graph already converged on the substrate-env diagnosis. Per the
+monoidal contract ("re-interrogating a converged graph produces the same graph"),
+no new perturbations run, no PR change emitted. Frontier edge above closed in this
+pass; still routes back as `human-gated` for the operator to pick options 1–3.
 
 ## Halt
 

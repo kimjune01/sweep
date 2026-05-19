@@ -116,3 +116,17 @@ Substrate routed this PR back through investigate after attest verdict. Re-pulle
 3. **Open a separate one-line CI PR** patching `wasm32-wasi` → `wasm32-wasip1` in `.github/workflows/aicirt.yml`. Independently useful for the repo (every PR is red on this), but a second concurrent PR in a dormant repo, and not in scope of #122.
 
 No code change recommended on the existing branch.
+
+---
+
+## Reinvestigate 2026-05-19 — fixed point
+
+Substrate re-entered one day after the 2026-05-18 round. Nothing has changed:
+
+- Branch `fix-backtrack-determinism` head still `93eaed05`, last branch activity 2026-05-11 (CLA-bot ack).
+- Failing build job log re-pulled directly (context pack was head-clipped to git-clone noise per `feedback_attest_failure_reason_truncates_head`): same `rustup target add wasm32-wasi` → `does not support target 'wasm32-wasi'; did you mean 'wasm32-wasip1'?`. Workflow blob at head SHA unchanged.
+- No maintainer activity. Repo still dormant.
+
+Two consecutive reinvestigates have produced the same diagnosis with no new evidence. Per skill halt condition (fixed point), stopping the re-entry loop. Operator-facing options in the 2026-05-18 stamp still stand; nothing the substrate can do unilaterally is informative.
+
+**Halt: `human-gated`, fixed-point.**

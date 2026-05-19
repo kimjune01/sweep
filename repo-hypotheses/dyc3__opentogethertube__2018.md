@@ -113,3 +113,76 @@ Plan: fresh clone of `kimjune01/opentogethertube` at `fix/hide-unconfigured-disc
 - Very active codebase - multiple merges per week
 - Test suite exists (vitest) but requires full `yarn install` 
 - Good candidate for building long-term standing - active, welcoming, clear bug reports
+
+---
+
+# Reinvestigate cycle — 2026-05-19
+
+PR: #2018 fix: hide Discord login when not configured
+Head SHA at reinvestigation: `5a2488e7` (branch `fix/hide-unconfigured-discord`)
+Trigger: pr-state flagged failing CI (pack named CodeQL, but pack referred to a superseded SHA `8d73c918`).
+
+## H₀ — failing check is CodeQL (per stale pack)
+
+- **Perturbation:** `gh run list --branch fix/hide-unconfigured-discord --json conclusion,workflowName,headSha`.
+- **Result:** at the live HEAD `5a2488e7`, CodeQL = success. The failing workflow on this SHA is **Cypress Tests** (run 26051503498).
+- **Trajectory:** divergent — pack disagreed with live state.
+- **Kill:** H₀ killed. Replaced by H₀′: Cypress Tests fails on the latest commit.
+- **Mode:** induction (live API check).
+
+## H₀′ — Cypress Tests fails on `5a2488e7`
+
+- **Perturbation:** read failing-job logs for all three Electron Node matrix jobs (22.x / 24.x / 26.x).
+- **Result:** all three jobs fail identically in `playback.spec.ts`, after the hls-video test passes. The next assertion never runs; Cypress prints:
+
+  > We detected that the Electron Renderer process just crashed.
+  > … If you're running lots of tests on a memory intense application …
+
+  Spec totals: 6 tests, 4 passing, **1 failing, 1 skipped**.
+- **Trajectory:** convergent across the 3 jobs.
+- **Edge:** is the crash caused by something in the diff, or is it an Electron renderer memory flake?
+
+## H₁ — this PR's diff caused the renderer crash
+
+- **Perturbation:** diff the last green Cypress run on this branch (`8d73c918`, Cypress success — see H₁ verification line above this section) against the red one (`5a2488e7`).
+- **Result:** the only intervening commit is `5a2488e7` itself: `fix(security): add rate limiting to handlers flagged by CodeQL`. It touches only server-side handlers (`getOwnedRooms`, `GET /api/user`, `/discord`, `/discord/callback`) — adds `consumeRateLimitPoints` calls. **No client code, no renderer code, no playback path, no hls/store touched.** All client-side edits (`App.vue`, `LogInForm.vue`, `NavUser.vue`, `store.ts`, `Account.vue`) were already in `8d73c918`, which passed Cypress on this same `playback.spec.ts`.
+- **Trajectory:** divergent against H₁.
+- **Kill:** H₁ killed. The diff is not on the renderer-crash path.
+- **Mode:** deduction (causal trace between two CI runs on the same branch).
+
+## H₂ — Electron renderer OOM flake under Cypress
+
+- **Perturbations:**
+  1. Recent Cypress runs on `master` (last 8, through 2026-05-13) all green. Same Cypress 15.12.0 / Electron 37.6.0.
+  2. Prior commit `8d73c918` on this branch passed Cypress on identical `playback.spec.ts`.
+  3. Crash banner: Cypress' own diagnostic suggests `experimentalMemoryManagement` / `numTestsKeptInMemory` — first-line hypothesis is renderer memory pressure, not a test-level assertion failure.
+- **Trajectory:** convergent. Crash at the hls→next-test boundary in all 3 matrix jobs is consistent with a memory-budget tip-over in Electron 37 under Cypress, with the surrounding env (master, prior commit) both green.
+- **Confidence:** ~85% (abduction + two inductive baselines).
+- **Edge:** rerun Cypress; expect green.
+
+## Provenance
+
+- `5a2488e7` is the response to CodeQL alerts opened by the prior commit; author kimjune01.
+- The repo does not currently set `experimentalMemoryManagement`. Tuning that is out of scope for this PR.
+- No prior PR on this repo addresses Cypress Electron memory tuning.
+
+## Graph state (reinvestigate cycle)
+
+| Node | Status | Shape | Mode | Confidence |
+|------|--------|-------|------|-----------|
+| H₀  (CodeQL — from pack) | killed | divergent | induction | 99% |
+| H₀′ (Cypress red on latest SHA) | confirmed | convergent | induction | 99% |
+| H₁  (this PR's diff caused it) | killed | divergent | deduction | 95% |
+| H₂  (Electron renderer OOM flake) | confirmed | convergent | abduction + induction | 85% |
+
+## Diagnosis
+
+The failing CI on PR #2018 at `5a2488e7` is an **Electron renderer memory crash inside Cypress on `playback.spec.ts`**, not a regression introduced by this PR. The only commit added since the last green Cypress run on this branch is a server-side rate-limit patch on routes unreachable from the failing spec. Master runs the same Cypress + Electron env and is green.
+
+## Action
+
+**No code change from our side.** This is a CI flake; the diff does not regress the failing path.
+
+Recommended operator move: post a one-line comment asking the maintainer to rerun the failed Cypress jobs. If a clean rerun stays red on `playback.spec.ts`, that becomes a new H₀ owned by the project (Cypress/Electron memory budget on the hls test) and is not this PR's responsibility.
+
+No branch push, no PR edit. Surface the diagnosis to the operator for the rerun-ask. Frontier closed.

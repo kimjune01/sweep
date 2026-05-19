@@ -99,3 +99,38 @@ Re-entered from attest a second time. New evidence in the context pack:
 **Trajectory:** divergent confirmation of H₂ and H₃ — the `recheck` keyword flipped cla-assistant, and either the push/CLA-flip cascaded into a buildkite re-run that passed (2-line docstring change is trivially green), or the rollup now shows no FAILUREs because the failing contexts were retried and succeeded. Either way, the CI gate is clear.
 
 PR state: still `REVIEW_REQUIRED`, `MERGEABLE`, no failing checks. Frontier is now closed on the CI-policy side; the only remaining edge is **maintainer review attention**, which is not a perturbation surface from this side. Halting — no further investigate action possible until reviewer engages.
+
+## Reinvestigate cycle — 2026-05-19
+
+Re-entered from attest. Context pack reports "no failing checks at the moment" but live `gh pr view` at head SHA `117d9f065e` shows:
+
+| Check | State | startedAt |
+|-------|-------|-----------|
+| `cla-assistant` | SUCCESS | 2026-05-19T02:57:36Z |
+| `buildkite/test` | FAILURE | 2026-05-19T02:57:35Z |
+| `buildkite/test/pipeline` | FAILURE | 2026-05-19T02:57:35Z |
+
+The new head SHA is a **merge commit from origin/main** authored by the operator — no new code from this PR, just main caught up. CLA bot now reports SUCCESS (H₂/H₃ from prior cycles confirmed by post-`recheck` re-run). Buildkite re-ran on the new SHA and went red again.
+
+**Trajectory classification:** *divergent* against "trivial fix → green CI". The 2-line error-string diff cannot plausibly fail a real test (grep confirms no test golden references the old string; only `error.rs` and `doc/user/content/faqs.md` mention it, and faqs is unchanged).
+
+**H₄ — Buildkite failure on the merge SHA is not from this PR's diff.** Either:
+  - (a) pipeline-config / guard failure (~1s exit fingerprint matching the earlier CLA-gate pattern; the merge commit may have tripped a new external-contributor gate or repo-rule that fires on merge commits), or
+  - (b) flake / pre-existing failure on origin/main itself at SHA 4984ac8d29.
+
+**Perturbation surface:** buildkite logs are auth-gated (curl to build 123260 returns the HTML shell only, no log content). The fingerprint can't be classified without an authenticated read.
+
+**Frontier edges:**
+1. Wait for maintainer review/rebuild — green CI on the same trivial diff is still possible.
+2. Operator-side check: `gh run view` on the buildkite-linked workflow if it surfaces via the GitHub API (it doesn't here — buildkite is external).
+3. Empty-commit force-push to re-kick buildkite — but if (a) is true that won't change anything, and if (b) is true the next main merge will fix itself.
+
+**Halting.** No local code change is indicated — the diff is correct and minimal. CI failure is on the unreadable side of a Buildkite gate, and the prior CLA-gate precedent suggests it may resolve itself on the next reviewer action. This matches the `reference_no_llm_repos` / `feedback_repo_too_big_is_legit` shape — when the CI surface is unreadable, "wait for maintainer" is a legitimate terminal state, not an investigation failure.
+
+## Reinvestigate cycle — 2026-05-19 (later)
+
+Re-entered from attest. Live `gh pr view` is **identical** to the prior cycle: head SHA `117d9f06` unchanged, cla-assistant SUCCESS, both buildkite contexts FAILURE (build 123260), no new commits, no new comments since `recheck` on 2026-05-18T19:17:03Z.
+
+**Trajectory:** fixed-point — three consecutive reinvestigate cycles produce the same diagnosis (H₄: buildkite failure on the merge SHA is not from this PR's diff, perturbation surface unreadable). Per the outer-loop halt rule, fixed-point is a terminal state.
+
+**Halting permanently on this PR until a state change** (new commit, new comment, maintainer review, or CI re-run flipping a context).

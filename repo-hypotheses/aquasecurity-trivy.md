@@ -78,3 +78,23 @@ None found via `gh search prs --repo aquasecurity/trivy --state open "8087"`
 **Edge:** none. No frontier opens from a green PR. Halt — no patch to ship, no investigation to extend.
 
 **Action:** none. The PR is in the maintainer's court.
+
+## Reinvestigate cycle 2026-05-19
+
+**Trigger:** reinvestigate-from-attest, PR #10643. Re-fire of the 2026-05-18 cycle.
+
+**State (gh pr view):** OPEN, MERGEABLE, REVIEW_REQUIRED; statusCheckRollup = `license/cla` SUCCESS only. No failing checks.
+
+**Classification:** identity — running reinvestigate on a converged green PR produces the same node. No new signal.
+
+**Edge:** none. Halt. Suggests an upstream filter: reinvestigate-from-attest should skip PRs whose only check is `license/cla=SUCCESS` and reviewDecision=REVIEW_REQUIRED (purely human-gated waiting state) so the same node isn't re-emitted on a cadence.
+
+## Reinvestigate cycle 2026-05-19 (2nd fire)
+
+**Trigger:** reinvestigate-from-attest, PR #10643. Third consecutive identity fire — meets the outer-loop fixed-point halt condition ("Three consecutive iterations produce the same diagnosis").
+
+**State (gh pr view):** OPEN, statusCheckRollup = `license/cla=SUCCESS` only, REVIEW_REQUIRED, no failing checks. Identical to prior two cycles.
+
+**Classification:** fixed point. Halt.
+
+**Edge:** none in-repo. The repeated re-fire is itself the signal — the actionable artifact is upstream of this graph: suppress reinvestigate-from-attest when the sole check is `license/cla=SUCCESS` and reviewDecision is REVIEW_REQUIRED. Flagged for retro.

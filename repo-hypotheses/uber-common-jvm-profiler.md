@@ -96,3 +96,15 @@ Competing PRs: 0
 **Edge:** None. The reinvestigate trigger is stale w.r.t. the current SHA. Most likely the prior commit (145de0f) failed CI on JDK 17+; the follow-up commit `ae5a194` (`startsWith("sleep")`) resolved it, and the rollup hadn't updated when attest classified.
 
 **Action:** Halt. No code change. PR is awaiting human review (`REVIEW_REQUIRED`), which is the maintainer's gate, not ours.
+
+## Reinvestigate cycle: 2026-05-19
+
+**Trigger:** attest re-routed PR #119 to reinvestigate (second cycle in two days).
+
+**Observation:** Live `gh pr view` — identical state to 2026-05-18 cycle. Head SHA still `ae5a194`, all 3 checks SUCCESS, `mergeable: MERGEABLE`, `reviewDecision: REVIEW_REQUIRED`, `updatedAt: 2026-05-12T02:57:26Z` (unchanged since the JDK-17 sleep* commit).
+
+**Classification:** Convergent — fixed point. Two consecutive reinvestigates produce the same diagnosis on the same SHA with no external state change.
+
+**Edge:** None on the PR. Real frontier edge is one level up: why is attest re-routing a green PR with no new commits and no maintainer activity? Likely an attest classifier looping on the stale-rollup signal or on PR age. Not investigatable from inside this skill — flag for operator.
+
+**Action:** Halt. No code change. If a third reinvestigate fires on this same SHA, the operator should inspect attest's re-routing logic rather than this PR.
