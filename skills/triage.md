@@ -60,6 +60,16 @@ One of:
 - **drop** — kill signal matched, OR score < 5 with no fixable shape.
 - **surface** — needs human attention before automation can decide (ambiguous policy question, sensitive area, possible duplicate).
 - **defer** — cooldown active per `sweep retro params --repo <repo>`, OR repo recently auto-evicted.
+- **env-blocked** — the issue describes a perturbation surface the
+  substrate doesn't carry: Tumbleweed/NixOS-only repro, mobile or
+  desktop GUI (Safari, Chrome, native app), specific GPU/embedded
+  hardware, runtime+heavydep combo not in the fat image (Julia 1.12 +
+  Enzyme, CUDA, ROS), or any "no perturbation surface" verdict you'd
+  reach during investigation anyway. Use this when the env-block is
+  visible from the issue body alone — emitting it at triage time
+  evicts the whole repo, sparing every future card from the same
+  repo. If unclear, prefer `investigate`; switch will catch real
+  env-block downstream via `env-blocked` signal too.
 
 ## Write the attestation
 
@@ -124,7 +134,7 @@ After all narration, the **last printed line** must be a single JSON object matc
 
 ```json
 {
-  "decision":      "drop | surface | investigate | defer",
+  "decision":      "drop | surface | investigate | defer | env-blocked",
   "score":         0,
   "reason":        "short string, ≤200 chars",
   "rejected":      false,

@@ -367,10 +367,40 @@ async def triage_cycle(msg: Message) -> dict:
         from sweep import skill_result
         fresh = _read_triage_attestation(msg.repo, msg.pr)
         if fresh is not None:
+            decision = fresh.get("decision", "unknown")
+            reason = str(fresh.get("reason", ""))[:200]
             observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
-                          decision=fresh.get("decision", "unknown"),
-                          reason=str(fresh.get("reason", ""))[:200],
+                          decision=decision, reason=reason,
                           score=fresh.get("score", 0))
+            # env-blocked: substrate can't repro on this host. Append
+            # the repo to sift_evicted.txt so future cards bounce at
+            # sift/pokayoke. Mirrors switch's env_blocked path —
+            # triage catches what's visible from the issue body alone,
+            # switch catches what only surfaces post-investigation.
+            if decision == "env-blocked":
+                try:
+                    from pathlib import Path
+                    import datetime as _dt
+                    evicted_path = Path.home() / ".sweep" / "control" / "sift_evicted.txt"
+                    evicted_path.parent.mkdir(parents=True, exist_ok=True)
+                    existing = evicted_path.read_text() if evicted_path.exists() else ""
+                    already = any(
+                        ln.split("#")[0].strip() == msg.repo
+                        for ln in existing.splitlines() if ln.strip()
+                    )
+                    if not already:
+                        ts = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+                        with open(evicted_path, "a") as f:
+                            f.write(f"{msg.repo}  # auto-evicted {ts} "
+                                    f"(triage env-blocked: {reason[:120]})\n")
+                        observe.event("triage_env_evict",
+                                      repo=msg.repo, issue=msg.pr,
+                                      reason=reason[:120])
+                except Exception as e:
+                    observe.event("triage_env_evict_failed",
+                                  repo=msg.repo, issue=msg.pr,
+                                  error_type=type(e).__name__,
+                                  error=str(e)[:200])
             return result
         # Attestation missing — degraded mode. Try the shim on stdout
         # to salvage the decision, then routing the rejection if the

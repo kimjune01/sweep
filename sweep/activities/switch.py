@@ -101,6 +101,23 @@ Signals:
   diagnosis that points the fix at a repo whose name is not the
   artifact's subject repo.
 
+- "env-blocked": the substrate cannot reproduce or verify the fix
+  because the perturbation surface requires a toolchain or environment
+  the substrate doesn't carry. The fix may be obvious, the diagnosis
+  may be complete — but without the env, attestation can't be
+  produced. This is a per-REPO judgment: the whole repo gets evicted
+  from rotation, not just this card. Cues:
+    - "no perturbation surface" / "no checkout" / "no network access"
+    - "VM required" (Tumbleweed, NixOS, Windows-specific repro)
+    - "browser required" (Safari, Chrome, Firefox-specific paths)
+    - "<runtime-vX.Y> + <bigdep> build required" (Julia 1.12 + Enzyme,
+       CUDA, ROS, etc.) — anything heavier than the fat image carries
+    - "platform-specific" with no Linux equivalent
+    - "host-incompatible"
+  Route to silent-env-blocked AND append the subject repo to
+  sift_evicted.txt with a one-line reason. Future cards from this
+  repo never reach you.
+
 When you see a competing PR mentioned (phrases like "competing PR",
 "existing PR", "another contributor's PR", "open PR #N from @user"),
 choose "ship-vs-competing" or "defer-competing" — never plain "shipped"
@@ -138,7 +155,7 @@ should_comment guidance:
 
 Output ONLY a JSON object matching this shape:
 {
-  "signal": "shipped" | "ship-vs-competing" | "defer-competing" | "no-fix" | "human-gated" | "cross-repo-skip",
+  "signal": "shipped" | "ship-vs-competing" | "defer-competing" | "no-fix" | "human-gated" | "cross-repo-skip" | "env-blocked",
   "summary": "<one short sentence; <=150 chars>",
   "competing_pr": "<owner/repo#N if mentioned, else empty string>",
   "should_comment": true | false
@@ -192,14 +209,16 @@ def _parse_json(stdout: str) -> dict | None:
 
 
 def _materialize(parsed: dict) -> dict:
-    """Expand the verdict JSON into the full shape. Six signals collapse
-    into four routing targets:
+    """Expand the verdict JSON into the full shape. Seven signals
+    collapse into five routing targets:
       shipped + ship-vs-competing → qa
       defer-competing             → silent (or comment-issue if should_comment)
       no-fix                      → comment-issue (if should_comment)
       human-gated                 → human inbox
       cross-repo-skip             → silent ack (substrate doesn't do
                                     cross-repo coordination right now)
+      env-blocked                 → silent ack + repo eviction (substrate
+                                    can't repro on this host)
     The ship-vs-competing and defer-competing variants stay distinct in
     the event log so we can measure the vibes-judgment hypothesis."""
     signal = parsed.get("signal", "human-gated")
@@ -210,6 +229,7 @@ def _materialize(parsed: dict) -> dict:
         "human_gated":    signal == "human-gated",
         "defer_competing": signal == "defer-competing",
         "cross_repo_skip": signal == "cross-repo-skip",
+        "env_blocked":    signal == "env-blocked",
         "competing_pr":   parsed.get("competing_pr", ""),
         "should_comment": bool(parsed.get("should_comment", False)),
         "summary":        parsed.get("summary", "")[:200],
@@ -417,6 +437,34 @@ async def _route(repo: str, issue: int, verdict: dict,
         observe.event("switch_cross_repo_skip", repo=repo, issue=issue,
                       summary=verdict.get("summary", "")[:200])
         return "silent-cross-repo"
+
+    # env-blocked: substrate can't reproduce on this host. Per-REPO
+    # judgment, not per-issue — append to sift_evicted.txt so future
+    # cards from this repo never reach sift. Ack the current card
+    # silently.
+    if verdict.get("env_blocked"):
+        try:
+            from pathlib import Path
+            import datetime as _dt
+            evicted_path = Path.home() / ".sweep" / "control" / "sift_evicted.txt"
+            evicted_path.parent.mkdir(parents=True, exist_ok=True)
+            # Idempotent: only append if repo isn't already listed.
+            existing = evicted_path.read_text() if evicted_path.exists() else ""
+            already = any(
+                ln.split("#")[0].strip() == repo
+                for ln in existing.splitlines() if ln.strip()
+            )
+            if not already:
+                ts = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+                summary = verdict.get("summary", "host-incompat")[:120]
+                with open(evicted_path, "a") as f:
+                    f.write(f"{repo}  # auto-evicted {ts} (env-blocked: {summary})\n")
+        except Exception as e:
+            observe.event("switch_env_evict_failed", repo=repo,
+                          error_type=type(e).__name__, error=str(e)[:200])
+        observe.event("switch_env_blocked", repo=repo, issue=issue,
+                      summary=verdict.get("summary", "")[:200])
+        return "silent-env-blocked"
 
     if verdict.get("produced_pr"):
         # Need a branch to feed qa. Mirror the lookup investigate did
