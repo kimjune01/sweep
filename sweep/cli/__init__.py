@@ -39,6 +39,7 @@ from sweep.cli import pr as _pr
 from sweep.cli import project_info as _project_info
 from sweep.cli.andon import andon_app
 from sweep.cli.attest import attest_app
+from sweep.cli.autofix import autofix_app
 from sweep.cli.broom import broom_app
 from sweep.cli.cache import cache_app
 from sweep.cli.compose import compose_app
@@ -69,6 +70,7 @@ app.add_typer(qa_app, name="qa")
 app.add_typer(sift_app, name="sift")
 app.add_typer(inbox_app, name="inbox")
 app.add_typer(attest_app, name="attest")
+app.add_typer(autofix_app, name="autofix")
 app.add_typer(broom_app, name="broom")
 app.add_typer(cache_app, name="cache")
 app.add_typer(compose_app, name="compose")

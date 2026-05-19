@@ -345,21 +345,43 @@ class QaActor:
                         "skip: msg_id=%s reason=%s", msg.msg_id, msg_text
                     )
                 else:
-                    # Anything else is a contract violation or systemic
-                    # surprise — pull the andon cord. Silent retry was
-                    # the pre-andon failure mode that hid the missing-
-                    # worktree problem across machines.
-                    self.halted = True
-                    workflow.logger.error(
-                        "andon: msg_id=%s type=%s reason=%s",
-                        msg.msg_id, type(e).__name__, str(e)[:300],
-                    )
-                    await workflow.execute_activity(
-                        record_andon,
-                        args=["qa", msg.msg_id,
-                              f"{type(e).__name__}: {str(e)[:400]}"],
-                        start_to_close_timeout=timedelta(seconds=5),
-                    )
+                    # Try autofix before declaring an andon. If the
+                    # failure text contains a known missing-tool shape
+                    # (mold, ruff, tox, protoc, ...), the autofix
+                    # activity edits the Dockerfile + dispatches a
+                    # rebuild and returns. We then ack the failed card
+                    # without halting; the next worker restart picks up
+                    # the new image and downstream cards succeed.
+                    err_text = f"{type(e).__name__}: {str(e)[:600]}"
+                    try:
+                        fix = await workflow.execute_activity(
+                            "autofix_from_text", args=[err_text],
+                            start_to_close_timeout=timedelta(seconds=30),
+                        )
+                    except Exception:
+                        fix = {"handled": False}
+                    if fix.get("handled"):
+                        workflow.logger.warning(
+                            "autofix-self-healed: msg_id=%s tools=%s",
+                            msg.msg_id,
+                            [r.get("tool") for r in fix.get("results", [])],
+                        )
+                    else:
+                        # Anything else is a contract violation or systemic
+                        # surprise — pull the andon cord. Silent retry was
+                        # the pre-andon failure mode that hid the missing-
+                        # worktree problem across machines.
+                        self.halted = True
+                        workflow.logger.error(
+                            "andon: msg_id=%s type=%s reason=%s",
+                            msg.msg_id, type(e).__name__, str(e)[:300],
+                        )
+                        await workflow.execute_activity(
+                            record_andon,
+                            args=["qa", msg.msg_id,
+                                  f"{type(e).__name__}: {str(e)[:400]}"],
+                            start_to_close_timeout=timedelta(seconds=5),
+                        )
             # Ack at the view layer whether or not the run passed —
             # the message has been processed; staying "in flight"
             # forever would mask the andon. Operator sees halted=True

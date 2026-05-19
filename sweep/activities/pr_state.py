@@ -183,14 +183,16 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
 
     # Inline code-review comments live on a separate REST endpoint
     # (not exposed via `gh pr view --json`). Lazy-fetch: only when the
-    # PR plausibly needs human attention — CHANGES_REQUESTED or maintainer
-    # has commented. For wait/done/qa-mechanical PRs (~90% of the queue),
-    # the inline comments don't influence the classification, so we
-    # skip the call entirely. Halves the per-PR fetch cost in steady
-    # state.
+    # PR plausibly needs human attention — CHANGES_REQUESTED, maintainer
+    # commented, OR ANY review submitted (even a COMMENTED review can
+    # carry inline concerns; witnessed on EnzymeAD/Enzyme#2819 where
+    # wsmoses left only a COMMENTED review with one inline). For
+    # wait/done/qa-mechanical PRs the inline comments don't influence
+    # the classification.
     needs_inline = (
         data.get("reviewDecision") == "CHANGES_REQUESTED"
         or bool(data.get("comments"))
+        or bool(data.get("reviews"))
     )
     if needs_inline:
         try:
@@ -257,8 +259,18 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     # as non-author concerns; the LLM judges substance, not source.
     comments = data.get("comments") or []
     author_login = (data.get("author") or {}).get("login", "")
+    # Inline review comments are often the substantive review surface
+    # (maintainers leave "consider X" / "this is the wrong location"
+    # anchored to specific lines rather than top-level). Without these
+    # in the thread, remit reads only the conversation comments and
+    # misses unaddressed inline concerns — witnessed today on
+    # EnzymeAD/Enzyme#2819 where wsmoses's "you shouldn't modify
+    # typeanalysis itself" inline was invisible and remit classified
+    # bucket=wait instead of routing to reinvestigate.
+    inline_comments = data.get("_inline_comments") or []
     thread_verdict = await _classify_pr_thread(
-        comments, author_login=author_login, repo=repo, pr=pr,
+        comments, inline_comments=inline_comments,
+        author_login=author_login, repo=repo, pr=pr,
     )
     maintainer_question = thread_verdict["question_unaddressed"]
     maintainer_raised_concern = thread_verdict["concern_unaddressed"]
@@ -322,12 +334,20 @@ _THREAD_CLASSIFIER_SYSTEM = (
     "(maintainer, collaborator, or a code-review bot like CodeRabbit — "
     "bot findings count exactly like human ones; judge the substance, "
     "not the source).\n\n"
+    "Each line is prefixed with either COMMENT (top-level conversation) "
+    "or INLINE-COMMENT @ <path>:<line> (anchored to a specific code "
+    "line). INLINE-COMMENT items often carry the substantive review — "
+    "'you shouldn't modify X', 'consider Y here', 'this is the wrong "
+    "location' — and are exactly the concerns the author owes a reply "
+    "on. Weight them at least as heavily as top-level COMMENTs.\n\n"
     "Output ONLY this JSON, no prose, no markdown fences:\n"
     '  {\"concern_unaddressed\": <bool>, \"question_unaddressed\": <bool>}\n\n'
     "concern_unaddressed=true iff a non-author raised a NEW bug, missing "
     "case, broken scenario, or technical gap that the author has NOT "
     "substantively addressed in a later reply. Approvals, style nits, "
-    "off-topic chatter, and 'lgtm' are not concerns.\n\n"
+    "off-topic chatter, and 'lgtm' are not concerns. An INLINE-COMMENT "
+    "from a non-author that proposes a different approach or location "
+    "for the fix IS a concern.\n\n"
     "question_unaddressed=true iff a non-author asked a direct question "
     "and the author has NOT substantively answered. Short acks ('thanks', "
     "'will do', 'looking into it') do NOT count as answers; a direct "
@@ -347,31 +367,86 @@ async def _classify_pr_thread(
     author_login: str,
     repo: str,
     pr: int,
+    inline_comments: list[dict] | None = None,
 ) -> dict:
     """One sonnet call. Returns {concern_unaddressed, question_unaddressed}.
 
     Replaces three older Opus-bound judges (_open_maintainer_question,
     _open_maintainer_concern, _author_addressed). Cheap pre-filter:
-    if no non-author comments exist, skip the LLM entirely.
+    if no non-author comments exist (top-level OR inline), skip the LLM.
+
+    Inline comments live on a separate REST endpoint and follow a
+    different schema (user/login + created_at + body + line + path).
+    Normalized into the same chronology as top-level comments so the
+    LLM sees the full thread and can tell which non-author comments
+    the author has and hasn't addressed.
     """
+    inline_comments = inline_comments or []
+
+    # Normalize inline-comment shape to match the top-level shape so
+    # the merge loop below treats them uniformly. The REST endpoint
+    # uses snake_case (user.login, created_at) where gh's GraphQL uses
+    # camelCase (author.login, createdAt).
+    inline_normalized: list[dict] = []
+    for ic in inline_comments:
+        login = (ic.get("user") or {}).get("login", "?")
+        body = (ic.get("body") or "").strip()
+        if not body:
+            continue
+        path = ic.get("path") or ""
+        line = ic.get("line") or ic.get("original_line") or ""
+        anchor = f" @ {path}:{line}" if path else ""
+        inline_normalized.append({
+            "_inline": True,
+            "_anchor": anchor,
+            "author": {"login": login},
+            "authorAssociation": ic.get("author_association", ""),
+            "body": body,
+            "createdAt": ic.get("created_at", ""),
+        })
+
+    merged = list(comments) + inline_normalized
     candidates = [
-        c for c in comments
+        c for c in merged
         if (c.get("author") or {}).get("login") != author_login
         and (c.get("body") or "").strip()
     ]
     if not candidates:
         return {"concern_unaddressed": False, "question_unaddressed": False}
 
+    # Sort chronologically so the LLM sees comments in real-thread order
+    # — un-addressed-ness is a temporal claim ("did author reply AFTER
+    # the maintainer's last concern"), so the order matters.
+    merged.sort(key=lambda c: c.get("createdAt") or "")
+
+    # Pre-classify policy: only short-circuit on 99%+ certainty. The
+    # no-non-author-candidates short circuit above is the one rule
+    # that meets that bar (zero non-author comments → trivially both
+    # flags false). Other heuristics considered and rejected:
+    #
+    # - "Newer non-author inline with no author reply since" — fails
+    #   when the inline is a style nit (not a concern) or was
+    #   addressed by a code push instead of a comment reply.
+    # - "Author's message is the latest" — fails when the author's
+    #   message is a reflex ack ("will do") not a substantive reply.
+    #
+    # Sonnet handles these reliably; the LLM cost is cheap enough
+    # that being wrong half the time on a fast path is worse than
+    # being right via the slow path.
+
     lines: list[str] = []
-    for c in comments:
+    for c in merged:
         body = (c.get("body") or "").strip()
         if not body:
             continue
         login = (c.get("author") or {}).get("login", "?")
         assoc = c.get("authorAssociation") or ""
         ts = c.get("createdAt", "")
+        is_inline = c.get("_inline", False)
+        anchor = c.get("_anchor", "")
+        kind = "INLINE-COMMENT" + anchor if is_inline else "COMMENT"
         role = "AUTHOR" if login == author_login else f"NON-AUTHOR[{login},{assoc}]"
-        lines.append(f"[{ts}] {role}:\n{body[:1500]}")
+        lines.append(f"[{ts}] {kind} {role}:\n{body[:1500]}")
     thread = "\n\n".join(lines)[:8000]
 
     user = f"Author login: {author_login}\n\nThread:\n{thread}"

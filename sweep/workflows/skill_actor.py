@@ -156,32 +156,66 @@ class SkillActor:
                 )
                 self.last_outcome = outcome
             except ApplicationError as e:
-                self.halted = True
-                workflow.logger.error(
-                    "andon: actor=%s msg_id=%s reason=%s",
-                    activity_name, msg.msg_id, e.message,
-                )
-                await workflow.execute_activity(
-                    record_andon,
-                    args=[activity_name, msg.msg_id, str(e.message or "")],
-                    start_to_close_timeout=timedelta(seconds=5),
-                )
+                err_text = str(e.message or "")
+                # Try autofix before declaring an andon. If the failure
+                # text matches a known missing-tool shape (allowlisted
+                # in sweep.activities.autofix), edit the Dockerfile +
+                # dispatch a rebuild + ack the card; line stays unpaused.
+                try:
+                    fix = await workflow.execute_activity(
+                        "autofix_from_text", args=[err_text],
+                        start_to_close_timeout=timedelta(seconds=30),
+                    )
+                except Exception:
+                    fix = {"handled": False}
+                if fix.get("handled"):
+                    workflow.logger.warning(
+                        "autofix-self-healed: actor=%s msg_id=%s tools=%s",
+                        activity_name, msg.msg_id,
+                        [r.get("tool") for r in fix.get("results", [])],
+                    )
+                else:
+                    self.halted = True
+                    workflow.logger.error(
+                        "andon: actor=%s msg_id=%s reason=%s",
+                        activity_name, msg.msg_id, e.message,
+                    )
+                    await workflow.execute_activity(
+                        record_andon,
+                        args=[activity_name, msg.msg_id, err_text],
+                        start_to_close_timeout=timedelta(seconds=5),
+                    )
             except Exception as e:
-                self.halted = True
                 # Temporal wraps an activity-raised ApplicationError in
                 # ActivityError before re-throwing here; str(e) is the
                 # uninformative "Activity task failed". Walk .cause to
                 # find the original message so the andon marker says why.
                 reason = _unwrap_reason(e)
-                workflow.logger.error(
-                    "andon (unexpected): actor=%s msg_id=%s type=%s reason=%s",
-                    activity_name, msg.msg_id, type(e).__name__, reason[:300],
-                )
-                await workflow.execute_activity(
-                    record_andon,
-                    args=[activity_name, msg.msg_id, reason[:500]],
-                    start_to_close_timeout=timedelta(seconds=5),
-                )
+                try:
+                    fix = await workflow.execute_activity(
+                        "autofix_from_text", args=[reason],
+                        start_to_close_timeout=timedelta(seconds=30),
+                    )
+                except Exception:
+                    fix = {"handled": False}
+                if fix.get("handled"):
+                    workflow.logger.warning(
+                        "autofix-self-healed (unexpected): "
+                        "actor=%s msg_id=%s tools=%s",
+                        activity_name, msg.msg_id,
+                        [r.get("tool") for r in fix.get("results", [])],
+                    )
+                else:
+                    self.halted = True
+                    workflow.logger.error(
+                        "andon (unexpected): actor=%s msg_id=%s type=%s reason=%s",
+                        activity_name, msg.msg_id, type(e).__name__, reason[:300],
+                    )
+                    await workflow.execute_activity(
+                        record_andon,
+                        args=[activity_name, msg.msg_id, reason[:500]],
+                        start_to_close_timeout=timedelta(seconds=5),
+                    )
             await workflow.execute_activity(
                 mark_acked, args=[msg.msg_id],
                 start_to_close_timeout=timedelta(seconds=5),

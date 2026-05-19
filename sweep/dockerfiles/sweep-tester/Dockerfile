@@ -19,8 +19,8 @@ ENV LC_ALL=C.UTF-8
 
 # System libs that show up in most build setup_cmds. Grouped so the
 # layer caches well and apt's cache gets cleaned in the same step.
-# mold added 2026-05-19 (databend andon, used by many Rust crates).
-# jq added 2026-05-19 (test scripts inline-munge JSON).
+# mold + jq + protobuf-compiler added 2026-05-19 (rolling andon fixes
+# while operator was afk; databend build needs all three).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         clang \
@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         mold \
         ninja-build \
         pkg-config \
+        protobuf-compiler \
         ca-certificates \
         gnupg \
         bash \
@@ -81,7 +82,8 @@ ENV PATH=/root/.local/bin:$PATH
 RUN uv tool install ruff \
     && uv tool install black \
     && uv tool install mypy \
-    && uv tool install pytest
+    && uv tool install pytest \
+    && uv tool install tox
 
 # Node 20 + pnpm. Skipping corepack because `corepack prepare pnpm@latest
 # --activate` is fragile (signature-verification flakes against pnpm's

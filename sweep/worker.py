@@ -53,6 +53,7 @@ from sweep.activities.respond import kick_respond_card
 from sweep.activities.rope import kick_rope_card, rope_cycle
 from sweep.activities.bless import bless_cycle
 from sweep.activities.bug_reporter import bug_reporter_cycle
+from sweep.activities.autofix import autofix_install, autofix_from_text
 from sweep.activities.immunize import immunize_cycle
 from sweep.activities.comment_issue import comment_issue_cycle, post_cycle
 from sweep.activities.file_issue import file_issue_cycle
@@ -206,6 +207,11 @@ async def _amain() -> None:
             # sees real classifications and the failure shapes (andon /
             # operator overrides) inform the right adapter contract.
             bug_reporter_cycle,
+            # autofix — install missing toolchain deps into sweep-tester
+            # by editing the Dockerfile + dispatching `sweep cache
+            # rebuild-image`. Callable from any actor that hits a
+            # missing-tool failure in its except handler.
+            autofix_install, autofix_from_text,
             # usage probe
             probe_claude_usage,
             # roll (one search per card) + sift (one issue per card).
