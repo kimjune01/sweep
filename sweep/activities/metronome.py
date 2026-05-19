@@ -36,12 +36,13 @@ SCHEDULE: list[tuple[str, timedelta]] = [
     # self-close for test_passes_on_master / other authoritative). Same
     # cadence as usage so the post_disabled latch is honored uniformly.
     ("evict", timedelta(minutes=10)),
-    # ping — hourly eligibility re-check on parked drafts. Maintainer
-    # ping timing matters at hour-scale (9am-vs-2am their TZ); finer
-    # cadence is over-precision. The hourly tick wakes the eligibility
-    # scan; held drafts whose scheduled_for has passed get processed,
-    # the rest stay parked another hour.
-    ("ping", timedelta(hours=1)),
+    # ping — 5-min wakeup to drain queued drafts. Outbound timing
+    # matters at hour-scale (don't ping a maintainer at 2am their TZ),
+    # but the eligibility logic gates that internally; the metronome's
+    # job is just to ensure the actor pulls its queue. Witnessed parked
+    # 24h on the old hourly cadence — drafts sat because the actor was
+    # never woken to even check.
+    ("ping", timedelta(minutes=5)),
     # broom — daily 5S sweep of ~/.sweep/ files. Drops acked inbox
     # messages, dangling ack/started tombstones, age-old events / sink /
     # budget entries, rotates oversized logs. Per-file policies live in

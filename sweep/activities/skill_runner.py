@@ -107,14 +107,8 @@ async def _run_skill(slash_argv: list[str], label: str,
     # Inject gh shim onto PATH + tag the caller so every gh call inside
     # the subprocess gets attributed to this actor's budget. Without
     # this, the LLM's gh calls vanish from per-actor accounting.
-    env = os.environ.copy()
-    # Force OAuth → Max plan. When ANTHROPIC_API_KEY is present in
-    # the inherited env, claude CLI prefers it over OAuth and bills
-    # the API credit balance — that was the silent root of multi-
-    # $100/day auto-recharges (2026-05-18 gemba). Removing the key
-    # makes claude fall through to OAuth/Max. Codex unaffected; its
-    # auth is independent.
-    env.pop("ANTHROPIC_API_KEY", None)
+    from sweep.claude_subprocess import env_without_api_key
+    env = env_without_api_key()  # OAuth → Max plan; no API credit burn
     env["PATH"] = _SHIM_BIN + os.pathsep + env.get("PATH", "")
     env["SWEEP_BUDGET_CALLER"] = caller or label
     if extra_env:
@@ -327,6 +321,23 @@ async def triage_cycle(msg: Message) -> dict:
                                 fields="title,labels")
         reason = _host_incompat_signal(
             view.get("title", ""), view.get("labels", []))
+        if reason:
+            _evict_repo(msg.repo, reason)
+            observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
+                          decision="evicted",
+                          reason=reason,
+                          score=0)
+            return {"label": "triage", "rc": 0, "decision": "evicted",
+                    "reason": reason}
+    except Exception:
+        pass  # gate-failure must never mask the real triage path
+
+    # Outside-PR-hostility gate: small internal team + high fork-to-
+    # contributor ratio = product-shaped repo where outside PRs land in
+    # feature-request purgatory. One gh api call per repo lifetime
+    # (cached). Witnessed on pingcap/ossinsight.
+    try:
+        reason = _outside_pr_hostility_check(msg.repo)
         if reason:
             _evict_repo(msg.repo, reason)
             observe.event("triage_decision", repo=msg.repo, issue=msg.pr,
@@ -625,28 +636,43 @@ async def _investigate_cycle_inner(msg: Message) -> dict:
     artifact_fresh = after_mtime > before_mtime
     if artifact.exists():
         # Investigate's responsibility ends at producing the artifact.
-        # switch (the central decision actor) classifies + routes the
-        # card to qa / comment-issue / human. Decoupling here means
-        # investigate's takt isn't blocked on a ~4s LLM call.
+        # Production lane → switch classifies + routes (qa/comment-issue/
+        # human). Engagement lane (reinvestigate) bypasses switch: switch's
+        # vocabulary is shaped for new-PR decisions, and a proposed-fix on
+        # an existing PR has no signal that fits — it ends up "human-gated"
+        # by exclusion (witnessed: wiiznokes/fan-control#247). Reinvestigate
+        # kicks reqa itself after this returns; production-lane filtering
+        # is the trust anchor.
+        is_reinvestigate = _budget.current_caller() == "reinvestigate"
         observe.event(
             "investigate_done", repo=msg.repo, issue=msg.pr,
             rc=result.get("rc", 0),
             artifact_path=str(artifact),
             artifact_fresh=artifact_fresh,
-            summary="(handed to switch for classification + routing)",
+            summary=(
+                "(reinvestigate → reqa, switch bypassed)"
+                if is_reinvestigate
+                else "(handed to switch for classification + routing)"
+            ),
         )
-        try:
-            from sweep.activities.switch import kick_switch_card
-            await kick_switch_card(
-                msg.repo, int(msg.pr),
-                artifact_path=str(artifact),
-                source="investigate",
-                incoming=msg,
-            )
-        except Exception as e:
-            observe.event("kick_switch_failed",
-                          repo=msg.repo, issue=msg.pr,
-                          error_type=type(e).__name__, error=str(e)[:200])
+        if not is_reinvestigate:
+            try:
+                from sweep.activities.switch import kick_switch_card
+                await kick_switch_card(
+                    msg.repo, int(msg.pr),
+                    artifact_path=str(artifact),
+                    source="investigate",
+                    incoming=msg,
+                )
+            except Exception as e:
+                observe.event("kick_switch_failed",
+                              repo=msg.repo, issue=msg.pr,
+                              error_type=type(e).__name__, error=str(e)[:200])
+        # Surface artifact freshness on the result so reinvestigate_cycle
+        # can gate its own reqa kick. _run_skill's dict otherwise drops
+        # this signal.
+        result["artifact_fresh"] = artifact_fresh
+        result["artifact_path"] = str(artifact)
         # Parallel side-hatch: if the artifact mentions a *separate* bug
         # worth filing, kick file-issue too. Independent of switch's
         # primary verdict — a shipped fix can still surface a side-bug.
@@ -826,6 +852,88 @@ def _host_incompat_signal(title: str, labels: list) -> str | None:
 
 
 _EVICTED_PATH = Path.home() / ".sweep" / "control" / "sift_evicted.txt"
+_COLLAB_SHAPE_CACHE = Path.home() / ".sweep" / "control" / "repo_collab_shape.json"
+
+
+def _outside_pr_hostility_check(repo: str) -> str | None:
+    """Cheap per-repo signal for 'product-shaped, outside-PR hostile'.
+
+    Two combined cues, both witnessed on pingcap/ossinsight:
+      1) Top-4 contributor concentration ≥ 80% AND ≤ 15 real (>10-commit,
+         non-bot) contributors — a small internal team, not a community.
+      2) Forks-per-real-contributor ≥ 30 — GitHub used as distribution
+         (people clone to self-host) rather than collaboration.
+    Either alone is enough; both together is the textbook shape.
+
+    Returns a reason string if hostile, else None. Cached per repo —
+    one gh api round-trip per repo lifetime, not per issue.
+    """
+    import json as _json
+    try:
+        cache: dict = (
+            _json.loads(_COLLAB_SHAPE_CACHE.read_text())
+            if _COLLAB_SHAPE_CACHE.exists() else {}
+        )
+    except (OSError, _json.JSONDecodeError):
+        cache = {}
+    if repo in cache:
+        entry = cache[repo]
+        return entry.get("reason") or None  # None means "checked, fine"
+
+    try:
+        from sweep import gh_io
+        meta = gh_io.api(f"repos/{repo}", ttl=24 * 3600)
+        forks = int(meta.get("forks_count") or 0) if isinstance(meta, dict) else 0
+        contribs = gh_io.api(
+            f"repos/{repo}/contributors?per_page=100", ttl=24 * 3600,
+        )
+        if not isinstance(contribs, list):
+            contribs = []
+    except Exception:
+        return None  # fail-soft; never block triage on this gate
+    # If we hit the page cap, real contributor count is unknown — can't
+    # trust the forks-per-contrib ratio. Top-4-share is still valid
+    # because saturated lists have small top-4 fractions anyway.
+    contrib_count_saturated = len(contribs) >= 100
+    real = [
+        c for c in contribs
+        if isinstance(c, dict)
+        and not (c.get("login") or "").endswith("[bot]")
+        and int(c.get("contributions", 0)) >= 10
+    ]
+    if not real:
+        return None
+    top4 = sum(int(c.get("contributions", 0)) for c in real[:4])
+    total = sum(int(c.get("contributions", 0)) for c in real)
+    top4_share = (top4 / total) if total else 0.0
+    forks_per_contrib = (forks / len(real)) if real else 0.0
+
+    reason: str | None = None
+    if top4_share >= 0.80 and len(real) <= 15:
+        reason = (
+            f"product-shaped: top-4 {top4_share:.0%} of commits, "
+            f"{len(real)} real contributors — small internal team"
+        )
+    elif forks_per_contrib >= 30 and not contrib_count_saturated:
+        reason = (
+            f"distribution-shaped: {forks} forks / {len(real)} contributors "
+            f"= {forks_per_contrib:.0f}:1 — clone-to-self-host, not collab"
+        )
+
+    cache[repo] = {
+        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "forks": forks,
+        "real_contributors": len(real),
+        "top4_share": round(top4_share, 3),
+        "forks_per_contrib": round(forks_per_contrib, 1),
+        "reason": reason,
+    }
+    try:
+        _COLLAB_SHAPE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _COLLAB_SHAPE_CACHE.write_text(_json.dumps(cache, indent=2))
+    except OSError:
+        pass
+    return reason
 
 
 def _evict_repo(repo: str, reason: str) -> None:

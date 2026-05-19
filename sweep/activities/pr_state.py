@@ -58,6 +58,7 @@ _ACTOR_WORKFLOW_IDS = {
     "check":       "check-actor",
     "heart":       "heart-actor",
     "ping":        "ping-actor",
+    "bug-reporter": "bug-reporter-actor",
 }
 
 # View-only sinks: their inbox jsonl IS the consumer; no Temporal
@@ -201,17 +202,45 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     else:
         data["_inline_comments"] = []
 
-    # CI derivation
+    # CI derivation. Rollup entries come in two shapes:
+    #   CheckRun       — has `conclusion` (SUCCESS/FAILURE/...) and `name`
+    #   StatusContext  — has `state` (SUCCESS/FAILURE/PENDING/ERROR) and
+    #                    `context` (no `name`, no `conclusion`)
+    # Buildkite, CircleCI, etc. emit StatusContext — the old picker
+    # missed them entirely. Treat both shapes uniformly. When multiple
+    # checks fail, prefer a non-CLA-class failure: a real CI break is
+    # higher-priority than a CLA bot the sign-actor can mechanically
+    # retry. Picking the first FAILURE in rollup order silently routed
+    # PRs with both kinds to `sign` (CLA-class bucket wins below) and
+    # the real build failure was lost.
+    def _entry_failed(c: dict) -> bool:
+        return (c.get("conclusion") == "FAILURE"
+                or c.get("state") in ("FAILURE", "ERROR"))
+
+    def _entry_name(c: dict) -> str:
+        return c.get("name") or c.get("context") or ""
+
     rollup = data.get("statusCheckRollup") or []
-    failing = next(
-        (c.get("name", "") for c in rollup if c.get("conclusion") == "FAILURE"),
-        "",
-    )
+    failures = [_entry_name(c) for c in rollup if _entry_failed(c)]
+    failing = next((n for n in failures if not _is_cla_class_check(n)),
+                   failures[0] if failures else "")
+    def _entry_terminal(c: dict) -> bool:
+        # CheckRun is terminal once status == "COMPLETED"; StatusContext
+        # is terminal once state is SUCCESS/FAILURE/ERROR (PENDING is
+        # the only non-terminal state).
+        if "conclusion" in c or "status" in c:
+            return c.get("status") == "COMPLETED"
+        return c.get("state") in ("SUCCESS", "FAILURE", "ERROR")
+
+    def _entry_succeeded(c: dict) -> bool:
+        return (c.get("conclusion") == "SUCCESS"
+                or c.get("state") == "SUCCESS")
+
     if failing:
         ci = "failing"
-    elif rollup and any(c.get("status") != "COMPLETED" for c in rollup):
+    elif rollup and any(not _entry_terminal(c) for c in rollup):
         ci = "pending"
-    elif rollup and all(c.get("conclusion") == "SUCCESS" for c in rollup):
+    elif rollup and all(_entry_succeeded(c) for c in rollup):
         ci = "green"
     else:
         ci = "unknown"
@@ -221,30 +250,26 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
     now = dt.datetime.now(dt.timezone.utc)
     activity_h = (now - updated).total_seconds() / 3600.0
 
-    # maintainer_question — a maintainer asked something AND the PR author
-    # hasn't substantively answered yet. "Substantively" is judged by an
-    # LLM, with the cautious bias: ambiguous replies (acks, "looking into
-    # it", short OKs) stay flagged as still-open. The structural check
-    # alone (latest comment is from a maintainer with "?") was generating
-    # false positives — flagging PRs as human-bucket even after the author
-    # had replied at length.
+    # Unified PR-thread classification — one sonnet call covers both
+    # "maintainer asked unanswered question" and "maintainer raised
+    # unaddressed concern", instead of two Opus calls (and a nested
+    # third for the substantive-reply judge). CodeRabbit findings count
+    # as non-author concerns; the LLM judges substance, not source.
     comments = data.get("comments") or []
     author_login = (data.get("author") or {}).get("login", "")
-    maintainer_question = await _open_maintainer_question(
-        comments,
-        author_login=author_login,
-        repo=repo,
-        pr=pr,
+    thread_verdict = await _classify_pr_thread(
+        comments, author_login=author_login, repo=repo, pr=pr,
     )
-    maintainer_raised_concern = await _open_maintainer_concern(
-        comments,
-        author_login=author_login,
-        repo=repo,
-        pr=pr,
-    )
+    maintainer_question = thread_verdict["question_unaddressed"]
+    maintainer_raised_concern = thread_verdict["concern_unaddressed"]
 
     member_approved_over_cr = _member_approved_over_cr(
         data.get("reviews") or [], author_login=author_login,
+    )
+    has_non_author_lgtm = any(
+        (r.get("state") or "").upper() == "APPROVED"
+        and (r.get("author") or {}).get("login", "") != author_login
+        for r in (data.get("reviews") or [])
     )
 
     return PrLiveState(
@@ -263,6 +288,7 @@ async def gh_pr_view(repo: str, pr: int) -> PrLiveState:
         failing_check=failing,
         maintainer_raised_concern=maintainer_raised_concern,
         member_approved_over_cr=member_approved_over_cr,
+        has_non_author_lgtm=has_non_author_lgtm,
     )
 
 
@@ -290,145 +316,83 @@ def _member_approved_over_cr(reviews: list[dict], *, author_login: str) -> bool:
     return bool(approve_ts) and (not cr_ts or approve_ts > cr_ts)
 
 
-async def _open_maintainer_question(
+_THREAD_CLASSIFIER_SYSTEM = (
+    "You read a GitHub PR comment thread and emit a JSON verdict on two "
+    "conditions. The PR has one author; everyone else is a non-author "
+    "(maintainer, collaborator, or a code-review bot like CodeRabbit — "
+    "bot findings count exactly like human ones; judge the substance, "
+    "not the source).\n\n"
+    "Output ONLY this JSON, no prose, no markdown fences:\n"
+    '  {\"concern_unaddressed\": <bool>, \"question_unaddressed\": <bool>}\n\n'
+    "concern_unaddressed=true iff a non-author raised a NEW bug, missing "
+    "case, broken scenario, or technical gap that the author has NOT "
+    "substantively addressed in a later reply. Approvals, style nits, "
+    "off-topic chatter, and 'lgtm' are not concerns.\n\n"
+    "question_unaddressed=true iff a non-author asked a direct question "
+    "and the author has NOT substantively answered. Short acks ('thanks', "
+    "'will do', 'looking into it') do NOT count as answers; a direct "
+    "explanation or fix DOES count.\n\n"
+    "If the author's most recent message is after the non-author's "
+    "concern/question AND directly addresses it, both flags should be "
+    "false. If the thread is empty or unparseable, return both false. "
+    "On a true ambiguity, prefer true on question_unaddressed (cheap to "
+    "land in human bucket) and false on concern_unaddressed (re-investigate "
+    "is expensive)."
+)
+
+
+async def _classify_pr_thread(
     comments: list[dict],
     *,
     author_login: str,
     repo: str,
     pr: int,
-) -> bool:
-    """True iff a maintainer has asked something that the PR author
-    hasn't substantively answered yet.
+) -> dict:
+    """One sonnet call. Returns {concern_unaddressed, question_unaddressed}.
 
-    Cautious bias: ambiguous author replies (short acks, "looking into it")
-    don't close the question. LLM-judged with a default of True on any
-    parse failure — better to keep a human-bucket item one cycle too long
-    than to silently drop it.
+    Replaces three older Opus-bound judges (_open_maintainer_question,
+    _open_maintainer_concern, _author_addressed). Cheap pre-filter:
+    if no non-author comments exist, skip the LLM entirely.
     """
-    questions = [
+    candidates = [
         c for c in comments
-        if c.get("authorAssociation") in ("MEMBER", "OWNER", "COLLABORATOR")
-        and "?" in (c.get("body") or "")
-    ]
-    if not questions:
-        return False
-    # Latest question; comments come back chronologically from gh.
-    last_q = questions[-1]
-    last_q_ts = last_q.get("createdAt", "")
-    # Author replies after that timestamp.
-    author_replies = [
-        c for c in comments
-        if (c.get("author") or {}).get("login") == author_login
-        and (c.get("createdAt", "") > last_q_ts)
-    ]
-    if not author_replies:
-        return True
-    latest_reply = author_replies[-1].get("body") or ""
-    if not latest_reply.strip():
-        return True
-    return not await _author_addressed(last_q.get("body") or "", latest_reply,
-                                       repo=repo, pr=pr)
-
-
-async def _open_maintainer_concern(comments: list[dict], *,
-                                   author_login: str,
-                                   repo: str, pr: int) -> bool:
-    """True iff a maintainer raised a NEW bug/issue in an in-PR comment
-    that the author hasn't addressed. Distinct from maintainer_question:
-    question = "you owe an answer" (→ human-bucket); concern = "we owe
-    another investigation pass" (→ investigate).
-
-    Default False on parse error or empty input — the cautious side
-    here is the opposite of maintainer_question. False positive routes
-    you into a re-investigate cycle (costly, LLM time); missing one
-    means the operator sees the comment as human-bucket instead, which
-    is still a real signal — they can re-route manually.
-    """
-    # Look at the latest maintainer comment after the author's latest
-    # reply. If the author has the last word, no open concern.
-    maint_comments = [
-        c for c in comments
-        if c.get("authorAssociation") in ("MEMBER", "OWNER", "COLLABORATOR")
+        if (c.get("author") or {}).get("login") != author_login
         and (c.get("body") or "").strip()
     ]
-    if not maint_comments:
-        return False
-    last_maint = maint_comments[-1]
-    last_maint_ts = last_maint.get("createdAt", "")
-    author_replies_after = [
-        c for c in comments
-        if (c.get("author") or {}).get("login") == author_login
-        and (c.get("createdAt", "") > last_maint_ts)
-    ]
-    if author_replies_after:
-        return False  # author had the last word; no open concern
-    body = (last_maint.get("body") or "").strip()
-    if len(body) < 20:
-        return False  # too short to be a substantive new concern
+    if not candidates:
+        return {"concern_unaddressed": False, "question_unaddressed": False}
 
-    system = (
-        "You judge whether a maintainer's comment on a GitHub pull "
-        "request raises a NEW bug, missing case, or technical concern "
-        "that requires the contributor to re-investigate or do more "
-        "diagnostic work. "
-        "Answer with one word: YES or NO. "
-        "YES only when the comment names a specific problem, missing "
-        "case, broken scenario, or technical gap that goes beyond what "
-        "the PR addressed. "
-        "NO covers: approvals, style nits, simple questions, requests "
-        "for clarification, requests for tests/docs without naming a "
-        "specific failure, off-topic discussion, and any case where you "
-        "are unsure. "
-        "If the input is malformed or you cannot evaluate, output "
-        "nothing. Empty is a legal answer; do not guess."
-    )
-    user = (
-        f"Maintainer comment:\n{body[:2000]}\n\n"
-        "Does this raise a new bug or technical concern requiring "
-        "more investigation? YES or NO."
-    )
+    lines: list[str] = []
+    for c in comments:
+        body = (c.get("body") or "").strip()
+        if not body:
+            continue
+        login = (c.get("author") or {}).get("login", "?")
+        assoc = c.get("authorAssociation") or ""
+        ts = c.get("createdAt", "")
+        role = "AUTHOR" if login == author_login else f"NON-AUTHOR[{login},{assoc}]"
+        lines.append(f"[{ts}] {role}:\n{body[:1500]}")
+    thread = "\n\n".join(lines)[:8000]
+
+    user = f"Author login: {author_login}\n\nThread:\n{thread}"
     try:
-        out = await asyncio.to_thread(llm_cli.call, system, user, timeout_s=60)
-        return out.strip().upper().startswith("YES")
+        out = await asyncio.to_thread(
+            llm_cli.call, _THREAD_CLASSIFIER_SYSTEM, user,
+            timeout_s=60, model="sonnet",
+        )
+        parsed = json.loads((out or "").strip())
+        return {
+            "concern_unaddressed": bool(parsed.get("concern_unaddressed")),
+            "question_unaddressed": bool(parsed.get("question_unaddressed")),
+        }
     except Exception as e:
-        observe.event("llm_judge_failed", site="open_maintainer_concern",
+        observe.event("llm_judge_failed", site="classify_pr_thread",
                       repo=repo, pr=pr,
                       error_type=type(e).__name__, error=str(e)[:300])
-        return False  # cautious: don't over-route to investigate
-
-
-async def _author_addressed(question: str, reply: str, *,
-                            repo: str, pr: int) -> bool:
-    """Ask the orchestrate model whether the reply substantively addresses
-    the question. Returns False on any ambiguity, error, or unparseable
-    response — that keeps the maintainer_question flag set, which is the
-    cautious side (operator sees the item once more rather than missing it).
-    """
-    system = (
-        "You judge whether a PR author's reply substantively addresses a "
-        "maintainer's question on a GitHub pull request. "
-        "Answer with one word: YES or NO. "
-        "NO covers: short acks ('thanks', 'will do', 'looking into it'), "
-        "promises without action, off-topic replies, and any case where "
-        "you are unsure. YES only when the reply directly answers the "
-        "question, fixes what was asked, or provides the requested "
-        "information. "
-        "If the inputs are malformed or you cannot evaluate, output "
-        "nothing. Empty is a legal answer; do not guess."
-    )
-    user = (
-        f"Maintainer question:\n{question.strip()[:2000]}\n\n"
-        f"Author reply:\n{reply.strip()[:2000]}\n\n"
-        "Did the author substantively address the question? YES or NO."
-    )
-    try:
-        out = await asyncio.to_thread(llm_cli.call, system, user, timeout_s=60)
-        return out.strip().upper().startswith("YES")
-    except Exception as e:
-        observe.event("llm_judge_failed", site="author_addressed",
-                      repo=repo, pr=pr,
-                      error_type=type(e).__name__, error=str(e)[:300])
-        return False  # cautious: treat as not addressed
+        # Asymmetric fallback matches the prior defaults: question
+        # defaults true (cheap human-bucket landing), concern defaults
+        # false (re-investigate is costly to fire spuriously).
+        return {"concern_unaddressed": False, "question_unaddressed": True}
 
 
 # ------------------------------------------------------------ classifier
@@ -589,9 +553,25 @@ async def classify_one_pr(state: PrLiveState) -> PrStateResult:
     # 5. done — PR is in the maintainer's court. We don't merge; that's
     # their job. No actor, no audit — out of our rotation until the
     # maintainer's action fires a notification.
-    elif rd == "APPROVED" and merge == "MERGEABLE" and ci == "green":
+    #
+    # Two shapes count as done:
+    #   (a) formal rd=APPROVED — gh aggregate says someone with merge
+    #       rights approved.
+    #   (b) any non-author LGTM + green + mergeable — covers the case
+    #       where NONE/CONTRIBUTOR reviewers approved but the maintainer
+    #       hasn't formally reviewed yet. Operator has nothing to do
+    #       except wait. Witness: feldera/feldera#6219 (2 NONE-assoc
+    #       APPROVEDs, MEMBER silent for 4 days, was landing in human).
+    elif merge == "MERGEABLE" and ci == "green" and (
+        rd == "APPROVED" or state.has_non_author_lgtm
+    ):
         bucket = "done"
-        reasons.append("approved + mergeable + green CI — maintainer's court")
+        if rd == "APPROVED":
+            reasons.append("approved + mergeable + green CI — maintainer's court")
+        else:
+            reasons.append(
+                "non-author LGTM + mergeable + green CI — waiting on maintainer review"
+            )
     # 6. wait (default) — no action signal yet, but keep watching.
     # Wait is an action: routes to retro for periodic audit.
     else:

@@ -96,19 +96,21 @@ def operator_inbox_lines() -> list[str]:
 _ARCHITECTURE_DIAGRAM = """\
 ```
  production
-   rope ▸ scout ▸ sift ▸ triage ▸ investigate ▸ qa ▸ attest ▸ compose ▸ submit ▸ push
-    ▲              └──┬──┘                       │
-    │                 ▼                          ▼
-    │              immunize ▸ comment-issue ▸ post
-    │
-    └── idle signals from investigate / qa (rope regulates scout depth)
+   rope ▸ scout ▸ sift ▸ triage
+
+   triage ┬▸ investigate ▸ switch
+          └▸ immunize ▸ comment-issue ▸ post
+
+   switch ┬▸ qa ▸ attest ▸ compose ▸ submit ▸ push
+          ├▸ comment-issue ▸ post
+          └▸ human
 
  engagement (post-submit)
-   notifs ▸ remit ┬▸ respond         auto: rebase / close / clarify
-                  ├▸ reqa ▸ attest   re-attest on CI flip
-                  ├▸ reinvestigate   maintainer raised a new in-PR concern
-                  ├▸ amend           splice attestation footer into PR body
-                  └▸ human           you — the manual peer to respond
+   notifs ▸ remit ┬▸ respond
+                  ├▸ reqa ▸ attest
+                  ├▸ reinvestigate ▸ reqa
+                  ├▸ amend
+                  └▸ human
 
  side-channels
    leakdog ▸ bless ┬▸ comment-issue-drafts ▸ post
@@ -293,6 +295,18 @@ def inbox_done(
     print(f"  acked {len(to_ack)} card(s) for {repo}#{pr}")
 
     # Re-remit so remit-actor re-observes PR state and re-classifies.
+    # Skip when the number is an issue, not a PR — remit would crash
+    # on the gh pr view. Investigate-decision cards often carry the
+    # source issue number, not a PR.
+    import subprocess as _sp
+    pr_check = _sp.run(
+        ["gh", "pr", "view", str(pr), "-R", repo, "--json", "number"],
+        capture_output=True, text=True, timeout=15,
+    )
+    if pr_check.returncode != 0:
+        print(f"  skipped re-remit: {repo}#{pr} is not a PR "
+              f"(likely an issue number)")
+        return
     async def _kick():
         from sweep.activities.remit import kick_remit_card
         return await kick_remit_card(repo, pr, sender="operator-done")

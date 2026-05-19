@@ -165,9 +165,9 @@ def _route_retry(msg: Message, reason: str) -> Message:
     """
     if msg.pr:
         return _emit(REINVESTIGATE_INBOX, msg, kind="reinvestigate",
-                     extra_payload={"attest_failure_reason": reason[:500]})
+                     extra_payload={"attest_failure_reason": reason[-2000:]})
     return _emit(INVESTIGATE_INBOX, msg, kind="investigate",
-                 extra_payload={"attest_failure_reason": reason[:500]})
+                 extra_payload={"attest_failure_reason": reason[-2000:]})
 
 
 def _publish_attestation(*, req: QaOneEntryRequest, msg_id: str) -> str | None:
@@ -308,6 +308,40 @@ async def attest_cycle(msg: Message) -> dict:
             # repo-level issues.
             pass
 
+    # Front-load: if real CI is already green, skip attest. The
+    # maintainer's CI is the authority — they trust it more than our
+    # sweep-tester:latest model anyway. Local attest is for the case
+    # where CI is red/missing AND we want to prove the fix works
+    # without waiting on their pipeline. Real-green-then-local-attest
+    # is wasted work; emit a routed=skip event so the trail shows we
+    # noticed and chose not to re-verify.
+    if msg.pr:
+        from sweep import gh_io
+        try:
+            checks = gh_io.pr_failing_checks(msg.repo, int(msg.pr), ttl=60)
+            # pr_failing_checks returns {} or a dict with failing counts.
+            # Empty (no failing) + at least one check having run is the
+            # "CI green" signal. If checks haven't been fetched / no
+            # workflows exist, fall through to local attest.
+            if isinstance(checks, dict):
+                failing = checks.get("failing") or []
+                total = int(checks.get("total", 0))
+                if not failing and total > 0:
+                    from sweep import observe
+                    observe.event(
+                        "attest_routed", repo=msg.repo, branch=msg.branch,
+                        verdict="skip", target="ci-green",
+                        reason=f"ci_green:{total}_checks_passed",
+                        msg_id=msg.msg_id,
+                    )
+                    return {"verdict": "skip", "target": "ci-green",
+                            "reason": "ci_green",
+                            "checks_passed": total}
+        except Exception:
+            # Best-effort: if gh fetch fails, fall through to local
+            # attest. Same posture as the draft check above.
+            pass
+
     # Front-load the env precondition: if the test env this repo
     # requires isn't possible on this host (docker missing, image
     # un-pullable, image arch ≠ host arch under qemu), bail BEFORE
@@ -331,6 +365,20 @@ async def attest_cycle(msg: Message) -> dict:
         worktree = await ensure_worktree(msg.repo, msg.branch,
                                          int(msg.pr) if msg.pr else None)
     test_cmd = await infer_test_cmd(worktree, msg.repo)
+    if not test_cmd:
+        # infer_test_cmd returned empty — no test convention detected
+        # for this repo. Skip the attestation cycle cleanly; no andon,
+        # no wasted test_attestation call. Operator can override via
+        # `sweep retro set --repo X --key test_cmd --value '...'` if
+        # the model missed something.
+        from sweep import observe
+        observe.event(
+            "attest_routed", repo=msg.repo, branch=msg.branch,
+            verdict="skip", target="no-test-cmd",
+            reason="infer_test_cmd_returned_empty", msg_id=msg.msg_id,
+        )
+        return {"verdict": "skip", "target": "no-test-cmd",
+                "reason": "no_test_cmd_detected"}
     req = QaOneEntryRequest(
         msg_id=msg.msg_id,
         repo=msg.repo,

@@ -398,6 +398,34 @@ async def kick_qa_card(repo: str, branch: str,
     return await _signal_actor("qa", msg)
 
 
+def _slice_around_error(stderr: str, *, budget: int = 800) -> str:
+    """Surface the actual failure reason from a cargo/build stderr.
+
+    Plain head- or tail-clipping misses the real error: cargo dumps the
+    full linker command (5-10KB of `-Wl,...` flags) between the noise
+    and the error line. Scans for the LAST line beginning with `error:`,
+    `error[`, `fatal:`, or `panicked at` and returns a window around it.
+    Falls back to the tail if no such line is found.
+    """
+    if not stderr:
+        return ""
+    lines = stderr.splitlines()
+    anchor_idx = -1
+    for i, ln in enumerate(lines):
+        s = ln.lstrip()
+        if (s.startswith("error:") or s.startswith("error[")
+                or s.startswith("fatal:") or s.startswith("panicked at")
+                or s.startswith("FAILED") or s.startswith("FAIL")):
+            anchor_idx = i
+    if anchor_idx < 0:
+        return f"...{stderr[-budget:]}"
+    # Half budget before the anchor for context, rest after.
+    window = "\n".join(lines[max(0, anchor_idx - 5):anchor_idx + 8])
+    if len(window) > budget:
+        window = window[:budget // 2] + "..." + window[-budget // 2:]
+    return window
+
+
 def _heartbeat(details: dict) -> None:
     """Heartbeat from inside an activity context, no-op outside.
 
@@ -633,8 +661,13 @@ async def test_attestation(req: QaOneEntryRequest) -> GateAttestation:
     )
     log.append(f"fix ({req.branch}) exit={fix_run.returncode} env={test_env}")
     if fix_run.returncode != 0:
+        # Slice around the last `error:` or `error[Exxx]:` line. Plain
+        # tail-clipping lands inside rustc's link-command dump (kilobytes
+        # of `-Wl,...` flags) before the actual error. Finding the last
+        # error line + grabbing a window around it surfaces the cause
+        # regardless of how big the preamble is.
         raise ApplicationError(
-            f"test_fails_on_fix — fix is broken: {fix_run.stderr[:500]}",
+            f"test_fails_on_fix — fix is broken: {_slice_around_error(fix_run.stderr)}",
             non_retryable=True,
         )
 
@@ -752,6 +785,20 @@ _SHIM_SYSTEM = (
     "one short sentence each. key_issues are concrete concerns named "
     "in the prose; empty list if the reviewer was clean."
 )
+
+
+@activity.defn
+async def read_artifact_texts(codex_path: str,
+                               claude_path: str) -> dict:
+    """Read both reviewer attestation files. Lives as an activity so
+    the workflow body never touches the filesystem directly (Temporal's
+    deterministic sandbox blocks `Path.read_text` from inside workflows).
+    """
+    from pathlib import Path as _Path
+    return {
+        "codex": _Path(codex_path).read_text(),
+        "claude": _Path(claude_path).read_text(),
+    }
 
 
 @activity.defn

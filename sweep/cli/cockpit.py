@@ -61,7 +61,7 @@ FLOW_NAMES: dict[str, str] = {
 FLOW_ORDER = ("scout", "sift", "triaged", "immunize",
               "investigate", "reinvestigate",
               "comment-issue", "bless", "post",
-              "qa", "reqa",
+              "qa", "reqa", "compose", "ping",
               "respond", "retro_audit", "human")
 
 def register(app: typer.Typer) -> None:
@@ -470,6 +470,17 @@ def _render_markdown(rows, flow_states, spark_minutes, spark_buckets) -> None:
         chips.append(f"👀   {in_review} in review")
     if drafts:
         chips.append(f"📝   {drafts} in drafts")
+    # Outbound inventory — items sitting in the post-qa staging actors.
+    # Each chip silent when empty, so a healthy line still reads clean.
+    for actor, glyph, label in (
+        ("compose", "📦", "in submit"),
+        ("ping",    "📣", "in ping"),
+        ("post",    "📤", "in post"),
+    ):
+        s = flow_states.get(actor) or {}
+        n = len(s.get("queued") or []) + len(s.get("in_flight") or [])
+        if n:
+            chips.append(f"{glyph}   {n} {label}")
     if chips:
         print()
         print(" | ".join(chips))

@@ -104,11 +104,18 @@ def _color_verdict(decision: str, use_color: bool) -> str:
 
 
 def _issue_anchor(repo: str, issue: int | str) -> str:
-    return f"`{repo}#{issue}`"
+    # Bare URL form so the terminal recognizes it as cmd-clickable.
+    # GitHub redirects /issues/N to /pull/N when N is a PR, so this
+    # works for either shape.
+    if issue == "-" or not repo or repo == "?":
+        return f"`{repo}#{issue}`"
+    return f"github.com/{repo}/issues/{issue}"
 
 
 def _pr_anchor(repo: str, pr: int | str, url: str | None = None) -> str:
-    return f"`{repo}#{pr}`"
+    if pr == "-" or not repo or repo == "?":
+        return f"`{repo}#{pr}`"
+    return f"github.com/{repo}/pull/{pr}"
 
 
 def _infeed_line(ev: dict, now: dt.datetime, use_color: bool) -> str:

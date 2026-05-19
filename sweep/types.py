@@ -175,6 +175,13 @@ class PrLiveState:
     # so the classifier needs this side-channel to recognize that the
     # PR is effectively approved by someone with merge rights.
     member_approved_over_cr: bool = False
+    # At least one non-author APPROVED review exists, regardless of
+    # association. GH leaves reviewDecision=REVIEW_REQUIRED when only
+    # NONE/CONTRIBUTOR reviewers have approved — but for our purposes
+    # "someone gave LGTM, CI is green, we wait on the maintainer" is
+    # the same shape as APPROVED. Routes to `done` (→ sink) so the
+    # PR drops out of rotation. Witness: feldera/feldera#6219.
+    has_non_author_lgtm: bool = False
 
 
 @dataclass
