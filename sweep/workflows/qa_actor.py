@@ -132,7 +132,7 @@ class QaActor:
                 await workflow.sleep(timedelta(seconds=10))
             # Pull-shaped backpressure on the qa→attest interface.
             # Don't dispatch when attest is saturated; let the
-            # bottleneck regulate. Same kanban primitive as rope→scout.
+            # bottleneck regulate. Same kanban primitive as rope→roll.
             while await workflow.execute_activity(
                 attest_pending_depth,
                 start_to_close_timeout=timedelta(seconds=10),
@@ -369,7 +369,7 @@ class QaActor:
                 start_to_close_timeout=timedelta(seconds=5),
             )
             # Pull signal: qa just freed a slot. Tug rope; rope decides
-            # whether scout's inbox needs filling. Best-effort — a
+            # whether roll's inbox needs filling. Best-effort — a
             # missed signal is a missed pull, not a correctness bug.
             try:
                 await workflow.execute_activity(

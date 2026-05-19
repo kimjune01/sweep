@@ -96,7 +96,7 @@ def operator_inbox_lines() -> list[str]:
 _ARCHITECTURE_DIAGRAM = """\
 ```
  production
-   rope ▸ scout ▸ sift ▸ triage
+   rope ▸ roll ▸ sift ▸ triage
 
    triage ┬▸ investigate ▸ switch
           └▸ immunize ▸ comment-issue ▸ post

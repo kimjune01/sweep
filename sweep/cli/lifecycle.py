@@ -75,9 +75,21 @@ def _reap_orphans(pattern: str, keep: int | None = None) -> None:
 
 def _spawn(argv: list[str], log_file: Path) -> int:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    # `with open(...)` closes the parent's fd after Popen inherits it —
-    # the child holds its own dup. Leaving the parent fd open leaks one
-    # fd per spawn across the lifetime of the `sweep up` invocation.
+    # Worker subprocesses shell out to `cargo`, `npm`, `pnpm`, etc.
+    # for per-repo builds. .zshrc isn't sourced for non-interactive
+    # spawns, so we explicitly prepend the common toolchain bin dirs.
+    # Otherwise rustup-installed `cargo` (29% of merge surface) is
+    # invisible to qa/reqa cycles. Idempotent: missing dirs are
+    # filtered before joining.
+    env = os.environ.copy()
+    toolchain_bins = [
+        str(Path.home() / ".cargo" / "bin"),
+        str(Path.home() / ".rustup" / "toolchains" / "stable-aarch64-apple-darwin" / "bin"),
+        "/opt/homebrew/bin",
+    ]
+    extras = [p for p in toolchain_bins if Path(p).is_dir()]
+    if extras:
+        env["PATH"] = os.pathsep.join(extras + [env.get("PATH", "")])
     with open(log_file, "ab") as fh:
         proc = subprocess.Popen(
             argv,
@@ -85,6 +97,7 @@ def _spawn(argv: list[str], log_file: Path) -> int:
             stderr=fh,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
+            env=env,
         )
     return proc.pid
 
@@ -108,7 +121,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     from sweep.cli._common import (
         RESPOND_ACTOR_ID, INVESTIGATE_ACTOR_ID, LEAKDOG_DAEMON_ID,
         NOTIFICATION_POLLER_ID, SIFT_ACTOR_ID, QA_ACTOR_ID,
-        BLESS_ACTOR_ID, BUG_REPORTER_ACTOR_ID, IMMUNIZE_ACTOR_ID, SCOUT_ACTOR_ID, SWEEP_TASK_QUEUE,
+        BLESS_ACTOR_ID, BUG_REPORTER_ACTOR_ID, IMMUNIZE_ACTOR_ID, ROLL_ACTOR_ID, SWEEP_TASK_QUEUE,
         COMMENT_ISSUE_ACTOR_ID, TRIAGE_ACTOR_ID, USAGE_POLLER_ID, POST_ACTOR_ID,
         FILE_ISSUE_ACTOR_ID, SWITCH_ACTOR_ID,
         REMIT_ACTOR_ID, SUBMIT_ACTOR_ID, COMPOSE_ACTOR_ID, ROPE_ACTOR_ID,
@@ -161,7 +174,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (METRONOME_ACTOR_ID,    MetronomeActor.run, ()),
         (RETRO_ACTOR_ID,        SkillActor.run,     ("retro_cycle",)),
         (SIFT_ACTOR_ID,        SkillActor.run,     ("sift_cycle",)),
-        (SCOUT_ACTOR_ID,        SkillActor.run,     ("scout_cycle",)),
+        (ROLL_ACTOR_ID,        SkillActor.run,     ("roll_cycle",)),
         (COMMENT_ISSUE_ACTOR_ID,       SkillActor.run,     ("comment_issue_cycle",)),
         (POST_ACTOR_ID,         SkillActor.run,     ("post_cycle",)),
         (FILE_ISSUE_ACTOR_ID,   SkillActor.run,     ("file_issue_cycle",)),
@@ -241,9 +254,9 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "sift", SkillActor.deliver, SIFT_ACTOR_ID)
     if drained:
         anomalies.append(f"{SIFT_ACTOR_ID}: drained {drained} pending")
-    drained = await _drain_inbox(client, "scout", SkillActor.deliver, SCOUT_ACTOR_ID)
+    drained = await _drain_inbox(client, "roll", SkillActor.deliver, ROLL_ACTOR_ID)
     if drained:
-        anomalies.append(f"{SCOUT_ACTOR_ID}: drained {drained} pending")
+        anomalies.append(f"{ROLL_ACTOR_ID}: drained {drained} pending")
     drained = await _drain_inbox(client, "comment-issue", SkillActor.deliver, COMMENT_ISSUE_ACTOR_ID)
     if drained:
         anomalies.append(f"{COMMENT_ISSUE_ACTOR_ID}: drained {drained} pending")

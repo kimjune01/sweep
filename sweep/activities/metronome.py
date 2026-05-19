@@ -61,6 +61,13 @@ SCHEDULE: list[tuple[str, timedelta]] = [
     # sonnet shim + at most two gh comment posts) so 5-min cadence is
     # generous.
     ("sign", timedelta(minutes=5)),
+    # roll — search cadence. Rope is the demand-side tug (fires when
+    # roll's queue is idle); metronome is the supply-side wake-up that
+    # guarantees roll keeps probing even when no downstream demand
+    # signal arrives (cold start, paused-then-resumed line, etc.).
+    # 10-min cadence pairs with the budget self-throttle: roll's share
+    # caps actual fires regardless of how often metronome wakes it.
+    ("roll", timedelta(minutes=10)),
 ]
 
 
@@ -218,6 +225,9 @@ async def _kick(target: str) -> None:
         except Exception as e:
             observe.event("metronome_ping_failed",
                           error_type=type(e).__name__, error=str(e)[:200])
+    elif target == "roll":
+        from sweep.activities.roll import kick_roll_card
+        await kick_roll_card(sender="metronome")
     else:
         observe.event("metronome_unknown_target", target=target)
 

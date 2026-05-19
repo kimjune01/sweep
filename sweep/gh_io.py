@@ -266,8 +266,14 @@ def search_issues(*, labels: list[str] | None = None,
     qualifiers without a gh CLI flag equivalent. They go after `--` so
     gh stops parsing them as flags and passes them through to the API."""
     args = ["search", "issues"]
+    # `--label A,B` (comma-joined) means AND in gh — both labels
+    # required. For our roll query (labels=["bug","help-wanted"])
+    # almost nothing has both, so it returned ~empty for weeks.
+    # Repeated `--label` flags give OR semantics: --label bug --label
+    # help-wanted matches issues with EITHER label.
     if labels:
-        args += ["--label", ",".join(labels)]
+        for l in labels:
+            args += ["--label", l]
     if state:
         args += ["--state", state]
     if no_assignee:

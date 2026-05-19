@@ -29,7 +29,7 @@ from sweep.activities.sift import (
     sift_one_pass,
     should_triage_issue,
 )
-from sweep.activities.scout import scout_cycle
+from sweep.activities.roll import roll_cycle
 from sweep.activities.notifications import (
     mark_thread_read,
     poll_github_notifications,
@@ -120,8 +120,8 @@ async def _amain() -> None:
             # separately. First-class actor so the responsibility for
             # PR text is visible instead of buried in /drip --push.
             compose_cycle, kick_compose_card,
-            # rope — pull-signal controller. Reads scout.jsonl depth,
-            # fires scout if below target. Idle signals from downstream
+            # rope — pull-signal controller. Reads roll.jsonl depth,
+            # fires roll if below target. Idle signals from downstream
             # actors trigger the tick; depth is the regulator. Kanban-
             # shaped: target is operator-tunable via
             # ~/.sweep/control/rope_target.
@@ -206,11 +206,11 @@ async def _amain() -> None:
             bug_reporter_cycle,
             # usage probe
             probe_claude_usage,
-            # scout (one search per card) + sift (one issue per card).
+            # roll (one search per card) + sift (one issue per card).
             # Per-card pacing replaces the old burst-per-pass model:
-            # scout writes one sift card per raw issue; sift
+            # roll writes one sift card per raw issue; sift
             # screens one issue per fire, with should_idle between cards.
-            scout_cycle,
+            roll_cycle,
             sift_cycle, should_triage_issue,
             loosen_floor, auto_evict_stale_repos,
             sift_one_pass,  # legacy star-cursor path, kept as escape hatch

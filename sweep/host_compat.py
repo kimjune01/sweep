@@ -204,7 +204,7 @@ _INCOMPATIBLE_TOPICS: dict[str, str] = {
 # from just the repo name / description / topics. Used by cheap_check
 # which makes zero API calls — pure string pattern. Conservative on
 # purpose: false positives drop viable candidates, so the list stays
-# tight. Extend as we see scout leaking obvious cases into sift.
+# tight. Extend as we see roll leaking obvious cases into sift.
 _CHEAP_INCOMPAT_PATTERNS = [
     "powershell",
     "windows-",
@@ -217,12 +217,12 @@ _CHEAP_INCOMPAT_PATTERNS = [
 def cheap_check(repo: str, *, description: str = "",
                  topics: list[str] | None = None) -> HostCompat:
     """Zero-API string match for the most obvious incompat repos.
-    Used at scout-time before any per-repo API call. Anything that
+    Used at roll-time before any per-repo API call. Anything that
     needs structured signal (workflows / readme) belongs in `check()`
     and runs at sift-time.
     """
     # Hand-curated denylist — same dict `check()` uses, just lifted
-    # earlier so scout drops these before spending any API budget.
+    # earlier so roll drops these before spending any API budget.
     repo_lc = repo.lower()
     if repo_lc in _INCOMPATIBLE_REPOS:
         return HostCompat(
@@ -230,7 +230,7 @@ def cheap_check(repo: str, *, description: str = "",
             reason=f"denylisted: {_INCOMPATIBLE_REPOS[repo_lc]}",
             runs_on=[], readme_hits=[],
         )
-    # Topic-based check is free here too if scout already had topics
+    # Topic-based check is free here too if roll already had topics
     # in hand (gh search payloads include them). Avoids a sift-time
     # API call when the signal is already present.
     for t in (topics or []):

@@ -57,7 +57,12 @@ SHARES: dict[str, float] = {
     # share, retired with the CLI in favor of the autonomous tick.
     "notifications": 0.25,
     "sift":          0.18,   # per-issue cycle: cached meta + sometimes issue_events
-    "scout":         0.02,   # one search per cycle, alternating sources
+    # roll: 3 rolls per cycle, each a gh search (+ up to 3 re-rolls per
+    # dud leg). Cost is 3-12 gh calls per fire vs scout's 1. Bumped
+    # 0.02 → 0.15 on 2026-05-19 after the scout retirement — old share
+    # was sized for a one-call alternating cursor, not a stochastic
+    # explorer.
+    "roll":          0.15,
     "qa":            0.15,
     # investigate + reinvestigate bumped +10pp each on 2026-05-18 after
     # the context pack landed. The old 15/10 caps were sized for the

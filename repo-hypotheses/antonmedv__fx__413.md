@@ -105,6 +105,16 @@ Halt reason: tissue-class. No PR readiness record written.
 | Maintainer wants documentation, not a code fix | induction (read thread) | 90% |
 | README is the wrong venue; docs live at fx.wtf | induction (README is 23 lines, points externally) | 95% |
 
+## Re-entry 2026-05-19
+
+Independent second pass reproduced the prior verdict end-to-end:
+- `main.go:647-657` discards `clipboard.WriteAll` error with `_ =` (confirmed).
+- `snap/snapcraft.yaml` is strict, plugs `[dot-fxrc-js, home, network]` only (confirmed).
+- `antonmedv/clipboard@v1.0.1/clipboard_unix.go:51-101` uses `exec.LookPath` against `$PATH`, which strict snap restricts to its own root (confirmed).
+- Maintainer thread accepts snap as cause; only ask is docs at fx.wtf, not in this repo (confirmed).
+
+Verdict unchanged: **tissue-class, no PR**. No readiness record written. Halt.
+
 ## Pruning Log
 
 - H1 — killed by external constraint (Snap Store classic-confinement review).

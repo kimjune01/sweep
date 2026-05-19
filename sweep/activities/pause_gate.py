@@ -32,7 +32,7 @@ async def should_idle(actor_name: str) -> bool:
     from SkillActor; map to the budget share key by stripping '_cycle'
     so per-actor budget gating works uniformly. Falls back to actor_name
     unchanged for actors whose name matches a budget key already
-    (qa, remit, notifications, sift, scout).
+    (qa, remit, notifications, sift, roll).
     """
     from sweep import budget, control_state
     if control_state.is_paused():

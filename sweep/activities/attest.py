@@ -58,7 +58,7 @@ async def attest_pending_depth() -> int:
 
     Used by qa-actor as a pull-shaped backpressure check: don't dispatch
     the next qa card when attest is already saturated. The pull-from-
-    downstream shape is the kanban primitive — same as rope→scout, just
+    downstream shape is the kanban primitive — same as rope→roll, just
     one interface downstream.
 
     Returns 0 on any error (query timeout, attest-actor missing,

@@ -273,7 +273,7 @@ async def triage_cycle(msg: Message) -> dict:
                                non_retryable=True)
     from sweep import observe, gh_io, pokayoke
     from sweep import budget as _budget
-    from sweep.activities.scout import kick_scout_card
+    from sweep.activities.roll import kick_roll_card
     _budget.record_subprocess_estimate("triage")
     # Front-of-cycle pokayoke gate. Sift filters at deposit time, but
     # in-flight cards from before eviction still land here; the intake
@@ -392,8 +392,8 @@ async def triage_cycle(msg: Message) -> dict:
         return result
     finally:
         # Pull signal: route through rope (the depth controller) instead
-        # of kicking scout directly. Rope reads scout.jsonl depth and
-        # decides whether to fire; one idle signal in, zero-or-one scout
+        # of kicking roll directly. Rope reads roll.jsonl depth and
+        # decides whether to fire; one idle signal in, zero-or-one roll
         # card out. This converges all pull signals on a single throttle
         # point so the line doesn't over-fire from multiple callers.
         try:
@@ -488,7 +488,7 @@ async def investigate_cycle(msg: Message) -> dict:
         return await _investigate_cycle_inner(msg)
     finally:
         # Pull signal: idle-style. Every investigate cycle ends with a
-        # rope tug; rope reads scout.jsonl depth and decides whether to
+        # rope tug; rope reads roll.jsonl depth and decides whether to
         # fire. Investigate is one of the actors most likely to drain
         # work (long cycles, fewer outputs per input), so its idle is a
         # high-value signal for the controller.

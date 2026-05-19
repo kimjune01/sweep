@@ -68,7 +68,7 @@ def read_all() -> list[dict]:
 
 def is_our_filing(repo: str, issue_num: int) -> bool:
     """True if (repo, issue_num) appears in the holding bin. Used by
-    scout/sift to dedup so the substrate doesn't re-investigate
+    roll/sift to dedup so the substrate doesn't re-investigate
     issues it filed itself."""
     for r in read_all():
         if r.get("repo") == repo and int(r.get("issue_num", -1)) == int(issue_num):

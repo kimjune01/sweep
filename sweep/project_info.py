@@ -48,7 +48,7 @@ class ProjectInfo:
 def info(repo: str) -> ProjectInfo:
     """Resolve a repo's project info. Always returns a ProjectInfo;
     fields are None / defaults when a value hasn't been set yet (a
-    repo that scout hasn't touched will have test_cmd=None and
+    repo that roll hasn't touched will have test_cmd=None and
     worktree_exists=False, which is the honest signal)."""
     params = retro_params.resolved(repo)
     worktree = WORKTREE_ROOT / repo.replace("/", "__")

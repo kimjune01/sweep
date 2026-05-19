@@ -1,6 +1,6 @@
 """`sweep sift …` — legacy star-cursor sweep escape hatch.
 
-The live pipeline is scout (search) → sift (per-issue screen). This
+The live pipeline is roll (search) → sift (per-issue screen). This
 CLI fires the legacy `sift_one_pass` star-cursor activity directly,
 useful for one-off backfills and debugging. The actor and the routine
 runbook do not use it."""

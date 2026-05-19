@@ -655,6 +655,22 @@ _NON_BUG_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Typo / wording / link-only issues. SAY-5's queue is full of these and
+# the operator classifies them as "garbage." More importantly, they may
+# be honeypots — a too-easy-to-fix issue is the canonical AI-detection
+# trap (the maintainer is watching to see who PRs it). Reject at title
+# level so the substrate never even sees the body.
+_TYPO_TITLE_RE = re.compile(
+    r"\b("
+    r"typo|typos|spelling|misspelling|misspelled|mispelled|"
+    r"grammar|wording|wordsmith|"
+    r"broken link|dead link|404 link|update.*link|"
+    r"fix.*url|update.*url|"
+    r"docs?\s*:\s*(fix|update)\s+(link|url|typo|spelling)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # Cheap leverage signals — presence of any of these in the body
 # raises the chance this is a machine-friendly bug. Absence of all
 # of them with a short body = probably vague, skip.
@@ -675,6 +691,8 @@ def _cheap_issue_skip(item: dict) -> str | None:
 
     if _NON_BUG_TITLE_RE.match(title):
         return "non_bug_title"
+    if _TYPO_TITLE_RE.search(title):
+        return "typo_honeypot"
     if len(body) < 100:
         return "thin_body"
     if comments > 20:
@@ -925,7 +943,7 @@ def _save_sift_state(state: dict) -> None:
 
 
 # How often the per-card cycle runs the eviction sweep. With per-issue
-# cards firing dozens of times per scout result, 100 keeps the cadence
+# cards firing dozens of times per roll result, 100 keeps the cadence
 # roughly in line with the old per-pass `every-10-fires` rhythm.
 SIFT_EVICT_EVERY_CARDS = 100
 
@@ -937,7 +955,7 @@ SIFT_LOOSEN_EMPTY_STREAK_CARDS = 50
 
 @activity.defn
 async def sift_cycle(msg: Message) -> dict:
-    """Process ONE issue card from scout. The card payload carries the
+    """Process ONE issue card from roll. The card payload carries the
     raw gh search result; this activity filters it inline, makes at
     most one fresh gh call (issue_events to detect related PRs, and
     only if cheaper checks pass), and deposits a triaged-inbox entry
@@ -948,7 +966,7 @@ async def sift_cycle(msg: Message) -> dict:
     Compare the old per-pass `sift_cycle`: that one ran an entire
     100-issue sweep inside a single activity invocation, bursting
     through the per-actor rate cap before the gate could see it. This
-    refactor moves the loop up to scout (one search per card) and the
+    refactor moves the loop up to roll (one search per card) and the
     per-issue work down to one sift cycle per issue.
     """
     from sweep import budget as _budget

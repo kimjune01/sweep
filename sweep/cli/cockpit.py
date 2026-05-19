@@ -20,8 +20,8 @@ from sweep.system import system_status
 # Two caps per station — queue (backpressure) vs in-flight (concurrency).
 # Humans have deeper queues; LLM actors stay shallow.
 CAPS: dict[str, dict[str, int | None]] = {
-    "scout":         {"queued": 3, "in_flight": 1},   # search cards from triage/heartbeat
-    "sift":          {"queued": 100, "in_flight": 1}, # issue cards from scout (fan-out of one search)
+    "roll":         {"queued": 3, "in_flight": 1},   # search cards from triage/heartbeat
+    "sift":          {"queued": 100, "in_flight": 1}, # issue cards from roll (fan-out of one search)
     "triaged":       {"queued": 10, "in_flight": 3},  # LLM, fan-out friendly
     "investigate":   {"queued": 5, "in_flight": 5},   # LLM, root-causing (production)
     "reinvestigate": {"queued": 5, "in_flight": 2},   # engagement-lane investigate
@@ -40,7 +40,7 @@ CAPS: dict[str, dict[str, int | None]] = {
 # the table's actor-key column to read closer to the natural pipeline names.
 # Engagement-lane actors get re- prefix to mark the sibling relationship.
 FLOW_NAMES: dict[str, str] = {
-    "scout":         "Scout",
+    "roll":         "Roll",
     "sift":          "Sift",
     "triaged":       "Triage",
     "investigate":   "Investigate",
@@ -58,7 +58,7 @@ FLOW_NAMES: dict[str, str] = {
 # Order interleaves the engagement-lane sibling next to its production
 # counterpart so the operator sees both lanes' state at the same glance
 # (investigate+reinvestigate, qa+reqa). Same skill, different application.
-FLOW_ORDER = ("scout", "sift", "triaged", "immunize",
+FLOW_ORDER = ("roll", "sift", "triaged", "immunize",
               "investigate", "reinvestigate",
               "comment-issue", "bless", "post",
               "qa", "reqa", "compose", "ping",
@@ -133,7 +133,7 @@ def _render_through_glow(include_wait, spark_minutes, spark_buckets, rich_mode) 
 
 
 def _once(include_wait, spark_minutes, spark_buckets, rich_mode) -> None:
-    actionable = ["scout", "sift", "triaged", "immunize",
+    actionable = ["roll", "sift", "triaged", "immunize",
                   "investigate", "reinvestigate",
                   "comment-issue", "bless", "post",
                   "qa", "reqa",

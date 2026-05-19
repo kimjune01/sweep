@@ -38,7 +38,7 @@ class Message:
     # answer "is this my Nth look?" — that's how attest decides
     # between "bounce back to investigate" (1st fail) and "escalate
     # to human" (2nd fail).
-    # Default [] for origin cards (pr-state from gh, scout, operator).
+    # Default [] for origin cards (pr-state from gh, roll, operator).
     # Always set via forward_ledger() — never compute by hand.
     ledger: list[str] = field(default_factory=list)
 
@@ -46,7 +46,7 @@ class Message:
 def forward_ledger(incoming: "Message | None") -> list[str]:
     """The ledger to stamp on a new card emitted from inside an
     activity that's processing `incoming`. Origin sites (pr-state from
-    gh, scout heartbeats, operator kicks) pass None → []. Every
+    gh, roll heartbeats, operator kicks) pass None → []. Every
     kick_*_card helper accepts an `incoming` param and routes it
     through here so there's exactly one way to extend the ledger.
 

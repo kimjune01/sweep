@@ -1,28 +1,28 @@
-"""Rope — pull-signal controller that regulates scout's inbox depth.
+"""Rope — pull-signal controller that regulates roll's inbox depth.
 
 Idle signals from downstream actors (investigate, qa, sift) land in
-rope.jsonl. Rope reads scout.jsonl depth and fires scout if it's below
+rope.jsonl. Rope reads roll.jsonl depth and fires roll if it's below
 the target. The signal is the trigger; the depth is the regulator.
 
-This is a proportional controller, kanban-shaped: scout's inbox is the
+This is a proportional controller, kanban-shaped: roll's inbox is the
 process variable, rope is the controller, target is the setpoint. Below
 target → fill; at-or-above target → drop the idle signal silently. The
 line has fuel; downstream's idle isn't a request for more.
 
-Why scout + triage depth (not just scout): triage is the LLM-cost
-choke point right downstream of scout/sift. If triage is already
-backed up, firing more scout cards just grows the queue without
+Why roll + triage depth (not just roll): triage is the LLM-cost
+choke point right downstream of roll/sift. If triage is already
+backed up, firing more roll cards just grows the queue without
 moving work. Reading triage's depth lets rope back off when the
-bottleneck is downstream, not at scout itself.
+bottleneck is downstream, not at roll itself.
 
-Both inboxes gated by the same target: rope fires only if scout AND
+Both inboxes gated by the same target: rope fires only if roll AND
 triage both have headroom. Either being at/above target means
 backpressure; rope drops the idle signal.
 
 Replaces:
-  - leakdog's scout heartbeat (still kept as a slow bootstrap safety
+  - leakdog's roll heartbeat (still kept as a slow bootstrap safety
     net — if rope itself gets stuck, leakdog's tick re-seeds the line)
-  - triage_cycle's per-ack kick_scout_card (now routed through rope so
+  - triage_cycle's per-ack kick_roll_card (now routed through rope so
     all pull signals converge on one throttle point)
 
 Tunable: ~/.sweep/control/rope_target (single integer, default 2).
@@ -69,7 +69,7 @@ def _read_target() -> int:
 
 def _read_cooldown_s() -> int:
     """Cooldown window between rope fires. Mitigates lag-induced
-    thrashing: triage depth lags scout fires by the scout→sift→triage
+    thrashing: triage depth lags roll fires by the roll→sift→triage
     cascade time, so without a cooldown, rope keeps tugging in the
     blind period and overshoots when the cascade lands. Default 60s
     matches the longest healthy propagation."""
@@ -109,7 +109,7 @@ async def kick_rope_card(sender: str = "idle",
     Called by any actor that finds its own inbox empty after processing
     (a soft "I could take more work" hint). Rope decides whether the
     line actually needs more — the caller doesn't have to know about
-    scout's depth or the target.
+    roll's depth or the target.
     """
     from sweep import observe
     from sweep.activities.pr_state import _signal_actor
@@ -170,8 +170,8 @@ def _update_smoothed_depths(samples: dict[str, int]) -> dict[str, float]:
 
 @activity.defn
 async def rope_cycle(msg: Message) -> dict:
-    """One controller tick. Read scout.jsonl depth, compare to target,
-    fire scout if below. Drop the signal silently if at-or-above.
+    """One controller tick. Read roll.jsonl depth, compare to target,
+    fire roll if below. Drop the signal silently if at-or-above.
 
     No raise, no andon. Rope is the line's tempo regulator — if it
     fails, the line just doesn't pull, which is the safer failure mode.
@@ -179,7 +179,7 @@ async def rope_cycle(msg: Message) -> dict:
     import time
     from sweep import observe
     from sweep.inbox_state import inbox_states
-    from sweep.activities.scout import kick_scout_card
+    from sweep.activities.roll import kick_roll_card
 
     target = _read_target()
     cooldown_s = _read_cooldown_s()
@@ -201,41 +201,45 @@ async def rope_cycle(msg: Message) -> dict:
         except Exception:
             return -1  # treat read failures as "unknown"; fall through to drop
 
-    scout_d = _depth("scout")
+    roll_d = _depth("roll")
     triage_d = _depth("triaged")
-    if scout_d < 0 or triage_d < 0:
+    if roll_d < 0 or triage_d < 0:
         observe.event("rope_depth_read_failed",
-                      scout=scout_d, triage=triage_d)
+                      roll=roll_d, triage=triage_d)
         return {"fired": False, "reason": "depth_read_failed"}
 
-    # EWMA-smoothed depth — dampens the bang-bang oscillation visible
-    # in the 4hr trend. Single-tick spikes (cards landing/draining in
-    # bursts) don't trigger a fire; sustained low depth across ~3
-    # ticks does. Cyclic causality: fire → depth rises → quiet →
-    # depth dips → fire. Smoothing flattens the cycle.
-    smoothed = _update_smoothed_depths({"scout": scout_d, "triaged": triage_d})
-    scout_d_s = smoothed["scout"]
-    triage_d_s = smoothed["triaged"]
-
-    if scout_d_s >= target or triage_d_s >= target:
+    # Tug iff roll is idle (queued + in_flight == 0). Smoothing was the
+    # wrong shape for this — an idle roll already coalesces tugs at
+    # `kick_roll_card`, so single-tick "spikes" the EWMA was dampening
+    # are now harmless. Operator framing: "rope should only tug when
+    # roll is idle, and idle means empty queue."
+    if roll_d > 0:
         observe.event("rope_drop",
-                      scout_depth=scout_d, triage_depth=triage_d,
-                      scout_smoothed=round(scout_d_s, 2),
-                      triage_smoothed=round(triage_d_s, 2),
-                      target=target, sender=msg.sender or "unknown")
-        return {"fired": False, "scout_depth": scout_d,
-                "triage_depth": triage_d, "target": target,
-                "reason": "above_target_smoothed"}
+                      roll_depth=roll_d, triage_depth=triage_d,
+                      reason="roll_not_idle",
+                      sender=msg.sender or "unknown")
+        return {"fired": False, "roll_depth": roll_d,
+                "triage_depth": triage_d,
+                "reason": "roll_not_idle"}
 
-    wf_id = await kick_scout_card(f"rope-{msg.sender or 'idle'}", incoming=msg)
+    # Triage backpressure stays: even if roll is idle, don't pour new
+    # candidates downstream when triage is already saturated.
+    if triage_d >= target:
+        observe.event("rope_drop",
+                      roll_depth=roll_d, triage_depth=triage_d,
+                      target=target, reason="triage_backpressure",
+                      sender=msg.sender or "unknown")
+        return {"fired": False, "roll_depth": roll_d,
+                "triage_depth": triage_d, "target": target,
+                "reason": "triage_backpressure"}
+
+    wf_id = await kick_roll_card(f"rope-{msg.sender or 'idle'}", incoming=msg)
     _record_fire(now)
     observe.event("rope_fired",
-                  scout_depth=scout_d, triage_depth=triage_d,
-                  scout_smoothed=round(scout_d_s, 2),
-                  triage_smoothed=round(triage_d_s, 2),
+                  roll_depth=roll_d, triage_depth=triage_d,
                   target=target, cooldown_s=cooldown_s,
                   sender=msg.sender or "unknown",
-                  scout_wf=wf_id or "(no-signal)")
-    return {"fired": True, "scout_depth": scout_d,
+                  roll_wf=wf_id or "(no-signal)")
+    return {"fired": True, "roll_depth": roll_d,
             "triage_depth": triage_d, "target": target,
-            "scout_wf": wf_id}
+            "roll_wf": wf_id}

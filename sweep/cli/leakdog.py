@@ -61,7 +61,7 @@ def _inbox_pending(actor: str) -> int:
 
 # Actors where the substrate's invariant is "one msg_id per (repo, pr)".
 # Routing-shaped actors fed from remit should satisfy this; the
-# scout→sift fan-out emits one card per RAW ISSUE so per-card uniqueness
+# roll→sift fan-out emits one card per RAW ISSUE so per-card uniqueness
 # is the expected shape there too. Drift here means a producer is
 # minting fresh msg_ids for the same logical item, wasting writes and
 # polluting downstream counts.

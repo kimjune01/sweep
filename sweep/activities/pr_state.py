@@ -53,7 +53,7 @@ _ACTOR_WORKFLOW_IDS = {
     "submit":      "submit-actor",
     "compose":     "compose-actor",
     "rope":        "rope-actor",
-    "scout":       "scout-actor",
+    "roll":       "roll-actor",
     "amend":       "amend-actor",
     "check":       "check-actor",
     "heart":       "heart-actor",
