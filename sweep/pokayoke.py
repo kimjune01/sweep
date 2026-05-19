@@ -223,9 +223,13 @@ def qa_intake(msg) -> SkipReason | None:
 def amend_intake(msg) -> SkipReason | None:
     """Checks at amend_cycle entry. amend writes to PR bodies, so
     closed/merged PRs are particularly important to skip — the body
-    edit on a closed PR is loud and useless."""
+    edit on a closed PR is loud and useless. Intentionally does NOT
+    guard on `is_pr_approved`: an approved PR with red CI still
+    benefits from an attest footer update, and bare approval doesn't
+    mean the body should freeze."""
     return first_skip([
         lambda: is_repo_evicted(msg.repo),
+        lambda: is_pr_in_sink(msg.repo, msg.pr),
         lambda: is_pr_closed_or_merged(msg.repo, msg.pr),
         lambda: is_pr_draft(msg.repo, msg.pr),
     ])
@@ -234,6 +238,8 @@ def amend_intake(msg) -> SkipReason | None:
 def reqa_intake(msg) -> SkipReason | None:
     return first_skip([
         lambda: is_repo_evicted(msg.repo),
+        lambda: is_pr_in_sink(msg.repo, msg.pr),
+        lambda: is_pr_draft(msg.repo, msg.pr),
         lambda: is_pr_closed_or_merged(msg.repo, msg.pr),
         lambda: is_pr_approved(msg.repo, msg.pr),
     ])
@@ -259,10 +265,23 @@ def investigate_intake(msg) -> SkipReason | None:
     ])
 
 
+def bug_reporter_intake(msg) -> SkipReason | None:
+    """Checks at bug_reporter_cycle entry. Classifying findings against
+    a closed/merged/draft PR is wasted LLM budget — the PR isn't
+    accepting changes."""
+    return first_skip([
+        lambda: is_repo_evicted(msg.repo),
+        lambda: is_pr_in_sink(msg.repo, msg.pr),
+        lambda: is_pr_closed_or_merged(msg.repo, msg.pr),
+        lambda: is_pr_draft(msg.repo, msg.pr),
+    ])
+
+
 def reinvestigate_intake(msg) -> SkipReason | None:
     return first_skip([
         lambda: is_repo_evicted(msg.repo),
         lambda: is_pr_in_sink(msg.repo, msg.pr),
+        lambda: is_pr_draft(msg.repo, msg.pr),
         lambda: is_pr_closed_or_merged(msg.repo, msg.pr),
         lambda: is_pr_approved(msg.repo, msg.pr),
     ])

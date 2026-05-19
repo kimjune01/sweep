@@ -1,223 +1,115 @@
 # Hypothesis Graph: antonmedv/fx#413
 
-Target: antonmedv/fx issue #413, "Yank doesn't work with snap"
-Date: 2026-05-18
-Mode: standalone investigate, halted at Phase 1 because perturbation access is missing.
+Target: antonmedv/fx issue #413, "Yank doesn't work with snap install"
+Date: 2026-05-18 (second pass, with worktree and source access)
+Mode: pipeline investigate. Supersedes the earlier perturbation-blocked pass.
 
-## Environment
+## Issue Recap
 
-`sweep project-info antonmedv/fx`:
+Reporter on Ubuntu 25.10 / zsh 5.9, Tilix or gnome-terminal, fx v39.2.0 installed via snap. The yank dialog flashes on the first `y`, the second `y` dismisses it, but xclip / wl-paste / Ctrl-V all come up empty. Uninstalling the snap and reinstalling via the upstream install script fixes yank.
 
-```json
-{
-  "repo": "antonmedv/fx",
-  "worktree": "/Users/junekim/.sweep/worktrees/antonmedv__fx",
-  "worktree_exists": false,
-  "test_env": "docker:sweep-tester:latest",
-  "test_cmd": null,
-  "test_setup_cmd": null,
-  "notes": [
-    "test_env defaulted to sweep-tester image"
-  ]
+Maintainer (antonmedv, 2026-05-08): "My suspicion: it is _snap_. Try to install by downloading the binary. Problem with snap is - it is a contained environment. So fx can't call vim from it."
+
+Reporter confirmed the non-snap install works and asked for **a warning in the docs / snap installation tab**, explicitly soft-pedalling a code fix.
+
+## H0 — snap strict confinement blocks fx's clipboard subprocess
+
+**Perturbation surface:** the yank handler in `main.go` and the snap packaging in `snap/snapcraft.yaml`.
+
+`main.go:645-660`:
+
+```go
+func (m *model) handleYankKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+    switch {
+    case key.Matches(msg, yankPath):
+        _ = clipboard.WriteAll(m.cursorPath())
+    case key.Matches(msg, yankKey):
+        _ = clipboard.WriteAll(m.cursorKey())
+    case key.Matches(msg, yankValueY, yankValueV):
+        _ = clipboard.WriteAll(m.cursorValue())
+    case key.Matches(msg, yankKeyValue):
+        k := m.cursorKey(); v := m.cursorValue()
+        _ = clipboard.WriteAll(k + ": " + v)
+    }
+    m.yank = false
+    return m, nil
 }
 ```
 
-Local constraints:
+`github.com/antonmedv/clipboard` on Linux shells out to `xsel` / `xclip` / `wl-copy`. `snap/snapcraft.yaml` declares:
 
-- Cannot create the canonical worktree under `/Users/junekim/.sweep/worktrees`: sandbox denies writes there.
-- Cannot clone into the workspace-local fallback path: shell DNS cannot resolve `github.com`.
-- `gh issue view 413 --repo antonmedv/fx` cannot reach `api.github.com`.
-- No local `fx` binary is installed.
-- No local snap runtime/Ubuntu snap confinement environment is available.
-
-Perturbation access status: blocked. The system cannot be poked locally, so the graph cannot progress beyond cached observation and provisional abduction.
-
-## Issue Evidence
-
-Cached triage record in `repo-hypotheses/antonmedv-fx.md`:
-
-| # | Title | State | Score | Effort | Signal | Status |
-|---|---|---|---|---|---|---|
-| 413 | Yank doesn't work with snap | OPEN | 3/10 | Docs only | Snap environment limitation | SKIP |
-
-No fresh issue body or comments were available from the local shell. GitHub web search did not surface the issue body.
-
-## Blind-Blind Merge
-
-### Hypothesis A
-
-Root cause: `fx` yank/copy depends on host clipboard access. The snap package runs under snap confinement, so either the clipboard interface is not declared/connected or the package cannot execute the host clipboard helper it expects.
-
-Fix shape: likely not a Go code fix in `fx` itself unless the snap manifest is missing a clipboard interface. First classify whether this is packaging metadata (`snapcraft.yaml` plugs) or an unavoidable confinement limitation. If unavoidable, document snap-specific limitations and recommend a non-snap install for yank.
-
-Evidence trajectory: abduction from the issue title plus cached triage. No direct measurement.
-
-Confidence: 60%, capped by missing issue body/source/snap env.
-
-### Hypothesis B
-
-Root cause: `fx` yank/copy likely shells out to host clipboard mechanisms such as `xclip`, `xsel`, `wl-copy`, or `pbcopy`, or opens clipboard-related sockets that a strictly confined snap cannot see. Snap may filter/remap GUI/session resources, `$PATH`, `$XDG_RUNTIME_DIR`, Wayland/X11 sockets, and host binaries.
-
-Fix shape: treat as a snap packaging limitation unless code evidence proves otherwise. Add install/troubleshooting documentation that snap clipboard yank may not work under confinement and recommend non-snap installs for clipboard support. If snap metadata is maintained in-repo, inspect/add relevant plugs such as `x11`, `wayland`, and desktop/session interfaces, plus any required `snap connect` instructions.
-
-Concrete perturbations:
-
-- Reproduce yank under snap and capture whether it silently fails, reports missing clipboard commands, or hits access denial.
-- Compare with a non-snap install on the same machine/session.
-- Inspect the yank implementation and clipboard backend lookup order.
-- Inspect snap metadata and test under X11 and Wayland.
-- From `snap run --shell fx`, test `which xclip xsel wl-copy` and direct clipboard writes if possible.
-
-Confidence: 60% abduction, capped by missing source, snap metadata, and issue body.
-
-### Where A and B Diverge
-
-No material divergence. Both passes point to snap confinement or snap packaging metadata as the likely cause. B emphasizes host clipboard command/socket visibility and X11/Wayland split testing; A emphasizes the branch between packaging fix and documentation-only.
-
-Downstream implication: do not implement a code change until the snap package behavior is reproduced and the snap manifest/source path is inspected.
-
-## Graph State
-
-| Node | Status | Shape | Summary |
-|---|---|---|---|
-| H0 | partial | unclassified | Cached observation says yank fails only under snap; no local reproduction possible. |
-| H1 | open | predicted divergent | Snap confinement blocks clipboard access or clipboard helper execution. |
-| H2 | open | predicted convergent or divergent | Snap packaging may be missing a clipboard-related interface that can be declared/connected. |
-| H3 | open | predicted convergent | If confinement is intentional/unavoidable, a docs/install note is the correct fix shape. |
-
-## Nodes
-
-### H0: Baseline observation
-
-Hypothesis: `fx` installed from snap should support yank/copy the same way as other install methods.
-
-Null: Snap installation has a known confinement limitation, so yank cannot be expected to behave like Homebrew/go-install/native packages without extra interface permissions.
-
-Perturbation:
-
-```sh
-snap install fx
-printf '{"a":1}\n' | fx
-# enter interactive mode and trigger the yank key path from the issue
+```yaml
+confinement: strict
+apps:
+  fx:
+    command: bin/fx
+    plugs: [ dot-fxrc-js, home, network ]
 ```
 
-Trajectory:
+No `desktop`, `wayland`, `x11`, `unity7`, or `desktop-legacy` plugs. Under strict confinement the snap cannot exec arbitrary host binaries on `$PATH` and cannot reach the user's X / Wayland clipboard sockets. The clipboard subprocess returns an error; the handler discards it (`_ =`); the UI flashes the dialog and dismisses.
 
-- Cached triage sample: issue #413 is open and titled "Yank doesn't work with snap".
-- Cached triage interpretation: "Snap environment limitation", "Docs only", "SKIP".
-- Local sample: not run; no checkout, no binary, no snap runtime, no network clone.
+**Trajectory:** divergent confirming. Code reading and maintainer's prior diagnosis converge on the same cause.
 
-Shape: unclassified/partial. The observation is plausible but not measured in this environment.
+**Reasoning mode:** deduction (read code + snapcraft + snap confinement model). Confidence 95%.
 
-Kill condition: a snap-installed `fx` can yank successfully under a clean Ubuntu snap environment, or the issue body shows a non-snap-specific failure mode.
+## Fix-shape options considered
 
-Edge: classify snap clipboard confinement versus packaging manifest omission.
-
-Reasoning mode: induction from cached triage, confidence 55%.
-
-### H1: Snap confinement blocks clipboard access
-
-Hypothesis: yank fails because the snap package cannot access the desktop clipboard or cannot spawn/access the clipboard helper used by `fx`.
-
-Null: Snap confinement permits clipboard access, and the failure is instead an `fx` keybinding/copy-path bug or a missing packaging interface.
-
-Perturbation:
-
-1. Inspect the yank implementation in the checkout.
-2. Inspect snap packaging metadata for declared plugs/interfaces.
-3. In an Ubuntu snap environment, run `snap connections fx` and reproduce yank.
-4. Compare with a native `go install github.com/antonmedv/fx@latest` binary on the same host.
-
-Predicted shape: divergent if native yank works and snap yank fails with confinement or helper-access errors.
-
-Kill condition: snap logs show the yank code path is not reached, or native install fails identically.
-
-Edge: if confirmed, split into H2 packaging fix versus H3 documentation-only.
-
-Reasoning mode: abduction, confidence 60%.
-
-### H2: Snap package is missing a connectable clipboard interface
-
-Hypothesis: the snap manifest can be changed to declare the needed desktop/clipboard interface, making yank work after install or after `snap connect`.
-
-Null: the needed access is unavailable to strict snaps or already declared, so packaging metadata is not the fix.
-
-Perturbation:
-
-```sh
-snap connections fx
-snap info fx
-snap run --shell fx
-```
-
-Then inspect and patch the repo's snap metadata if present.
-
-Predicted shape: convergent if the missing interface is obvious but requires manual connection; divergent improvement if adding the interface makes yank pass in a snap-built test package.
-
-Kill condition: interface is already declared/connected, or snap policy cannot grant the needed access for this CLI behavior.
-
-Reasoning mode: abduction, confidence 50%.
-
-### H3: Documentation/install note is the proper fix
-
-Hypothesis: snap confinement makes yank unreliable or unsupported, so the appropriate contribution is documentation: warn that snap builds do not support yank/clipboard and recommend Homebrew, package manager, or `go install` when clipboard support is required.
-
-Null: a small packaging metadata change can restore yank, making docs-only insufficient.
-
-Perturbation:
-
-Inspect existing install docs and README package sections, then compare maintainer conventions for documenting install-specific caveats.
-
-Predicted shape: convergent only if H1 is confirmed and H2 is killed.
-
-Kill condition: a working snap packaging fix is demonstrated.
-
-Reasoning mode: abduction, confidence 50%.
-
-## Frontier Edges
-
-| Edge | Experiment | Predicted classification | Priority |
-|---|---|---|---|
-| H0 -> H1 | Reproduce yank under snap and native install on the same Ubuntu host | divergent | high |
-| H1 -> H2 | Inspect `snapcraft.yaml`/snap metadata and `snap connections fx` | divergent or convergent | high |
-| H1 -> H3 | If snap access is not fixable, inspect docs/install conventions for a minimal caveat | convergent | medium |
-| H2 -> fix | Build/install patched snap package and retry yank | divergent improvement | medium |
-
-## Reasoning Modes
-
-| Claim | Mode | Confidence |
+| Option | Verdict | Why |
 |---|---|---|
-| Issue #413 is about yank failure in snap | induction from cached triage | 55% |
-| Snap confinement is the likely cause | abduction | 60% |
-| A packaging interface may fix it | abduction | 50% |
-| Docs-only may be the correct output | abduction from cached triage | 50% |
-| No PR-ready diagnosis exists in this environment | deduction from failed local access attempts | 95% |
-
-## Pruning Log
-
-No hypotheses pruned. Required perturbations are unavailable.
+| Switch snapcraft `confinement: strict` → `classic` | Not shippable in a PR alone | Classic confinement requires Snap Store manual review and re-approval. Cannot be a code-only change. |
+| Add `desktop`, `x11`, `wayland`, `unity7` plugs | Speculative + insufficient | Plugs grant socket/D-Bus access but `antonmedv/clipboard` still relies on host `xclip`/`wl-copy` binaries that aren't on the snap's `$PATH`. Granting plugs without bundling the binaries does not fix the symptom. Untested locally and not asked for. |
+| Bundle `xclip` / `wl-clipboard` inside the snap | Out of scope | Real engineering work (stage-packages, plug grants, runtime detection). Maintainer did not ask for it and the reporter is satisfied with documentation. |
+| Replace `antonmedv/clipboard` with a native Go clipboard backend that talks X11/Wayland directly | Out of scope | Library swap touches every platform, not snap-specific. Maintainer didn't request it. |
+| Add warning to in-repo `README.md` | Wrong venue | README is 23 lines and is a pointer to `fx.wtf`. It has no install section to warn under. |
+| Update docs at `fx.wtf` (the canonical documentation) | Correct venue, wrong repo | The docs site lives in a separate repository that this worktree does not include. |
+| Surface the dropped clipboard error in the UI | Out of scope but diagnostically useful | Replacing `_ = clipboard.WriteAll(...)` with code that records the error and renders it on the yank result line would have let the reporter self-diagnose. The maintainer did not ask for this, and changing UX behavior on every platform to address a snap-specific limitation is a poor scope match. |
 
 ## Provenance
 
-Not completed. Required commands are blocked by missing checkout/network/snap environment:
+- `git blame snap/snapcraft.yaml`: strict confinement is the original choice for the snap, not a regression.
+- `gh pr list` / search: no parallel work on snap or clipboard.
+- Operator PR history on this repo: only #414 (stdin/TTY detection, orthogonal).
+- Maintainer's thread stance: accepted snap as the cause; no signal they want a code change here.
 
-- `git blame` around yank implementation and snap packaging metadata.
-- GitHub issue/PR search for `snap`, `yank`, `clipboard`.
-- Existing PR idempotency guard.
+## Graph State
 
-Available provenance:
+| Node | Status | Shape | Notes |
+|---|---|---|---|
+| H0 (snap strict confinement blocks clipboard subprocess) | **confirmed** | divergent | Library shells out; snap blocks; errors silently dropped |
+| H1 (switch to classic confinement) | killed | n/a | Requires Snap Store review, not code-only |
+| H2 (add desktop/x11/wayland plugs) | killed | speculative | Doesn't bundle the binaries the library needs |
+| H3 (bundle clipboard binaries in snap) | killed | out of scope | Engineering scope beyond issue ask |
+| H4 (README install warning) | killed | venue-mismatch | README has no install section |
+| H5 (fx.wtf docs warning) | open / wrong-repo | predicted convergent | Correct venue lives in a different repo |
+| H6 (surface dropped clipboard error in UI) | open / out-of-scope | predicted divergent | Real diagnostic gain; not what the maintainer or reporter asked for |
 
-- Cached Sweep triage on 2026-05-09 marked #413 open, low score, docs-only, likely snap environment limitation.
+## Outcome
 
-## Current Halt
+**Tissue-class.** No PR is justified.
 
-Status: blocked before Phase 1 measurement.
+- Root cause is identified and accepted by both reporter and maintainer.
+- The only ask on the thread is documentation, and the docs venue (`fx.wtf`) is not in this repo.
+- All shippable in-repo code changes either need external (Snap Store) review, expand scope past the reporter's ask, or change cross-platform UX to fix a snap-specific limitation.
 
-Reason: perturbation access is required. This environment has neither a checkout nor a runnable snap/native `fx` setup, and shell network access cannot fetch them.
+The substantive observation worth surfacing back to the maintainer in a tissue comment is the discarded error at `main.go:648-657`. That `_ =` is the reason yank looks like a no-op rather than an error: the clipboard subprocess failure is invisible under any installation route that lacks `xclip`/`wl-copy`, not just snap. Whether the maintainer wants to keep that behavior is their call; the data point is useful.
 
-Next resumption step:
+Halt reason: tissue-class. No PR readiness record written.
 
-1. Provide a writable checkout of `antonmedv/fx` or allow the canonical worktree to be created.
-2. Re-run `sweep project-info antonmedv/fx`.
-3. Reproduce yank under snap and native install on the same Ubuntu host.
-4. Classify H1/H2/H3 before making any code or docs change.
+## Reasoning Mode Summary
+
+| Claim | Mode | Confidence |
+|---|---|---|
+| `antonmedv/clipboard` shells out to host binaries on Linux | deduction (library convention + go.mod entry) | 90% |
+| snap strict confinement blocks those subprocess calls | deduction (snap model + snapcraft plug list) | 95% |
+| Yank handler silently drops the clipboard error | deduction (`main.go:645-660`) | 99% |
+| Maintainer wants documentation, not a code fix | induction (read thread) | 90% |
+| README is the wrong venue; docs live at fx.wtf | induction (README is 23 lines, points externally) | 95% |
+
+## Pruning Log
+
+- H1 — killed by external constraint (Snap Store classic-confinement review).
+- H2 — killed by deduction (plugs alone do not provide clipboard binaries on `$PATH`).
+- H3 — killed by scope (not requested, large engineering surface).
+- H4 — killed by venue (no install section in README).
+- H5 — killed by repo boundary (docs site is a different repository).
+- H6 — kept open as a frontier; not part of this issue's ask.

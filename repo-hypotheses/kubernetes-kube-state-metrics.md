@@ -106,3 +106,37 @@ The fix is minimal and safe:
 - Only triggers when discovery returns empty (existing behavior is already broken for this case)
 - Preserves all existing discovery behavior for actual CRDs
 - Uses resource config as-is (same structure that works for CRDs)
+
+---
+
+## Reinvestigate cycle 2026-05-18 — HALT
+
+PR #2953 went red on `ci-go-lint`. Reinvestigation surfaces two structural blockers above the lint surface; lint is the symptom, not the load-bearing gate.
+
+### Frontier observations
+
+| Signal | Source | Trajectory | Implication |
+|---|---|---|---|
+| CLA not signed | `linux-foundation-easycla[bot]` 2026-05-09 | divergent against | merge blocked unconditionally — no code change can clear it |
+| Maintainer prefers strong-type | CatherineF-dev 2026-05-11 ("I prefer strong-type for built-in resources, so the metric name and metric type can be unified across k8s") | divergent against | the generic-fallback fix shape is rejected at the architecture layer |
+| ci-go-lint FAILURE | run 25614706158 | downstream | repairable but immaterial while the two above hold |
+
+### Reasoning
+
+Even if lint were fixed:
+1. easycla blocks the merge button until a CLA-of-record is signed; we have no signal the operator intends to sign for this contribution
+2. The maintainer's stated preference reframes the issue: built-in resources should be unified under strong-typed metric definitions consistent with the rest of kube-state-metrics, not bolted on as a discovery-fallback. The PR's approach (silent passthrough when CRD discovery returns empty) is exactly what CatherineF-dev's comment argues against.
+
+Pursuing lint repair would burn a review-attention slot on a fix the maintainer has signaled they don't want, and which is gated on a license step orthogonal to code quality.
+
+### Decision
+
+Halt. Do not patch lint. Do not push new commits to `fix-csinode-custom-resource-2681`. Route this PR to the operator queue: either (a) the operator signs CLA + reworks toward strong-typed built-in resource support that matches CatherineF-dev's note, or (b) close the PR with a polite reference to the maintainer's preferred direction.
+
+### Reasoning-mode table
+
+| Claim | Mode | Confidence |
+|---|---|---|
+| CLA blocks merge | deduction (bot status read directly) | 99% |
+| Maintainer rejects fix shape | deduction (verbatim comment) | 95% |
+| Lint repair is wasted work under above | abduction (cost/benefit) | 80% |

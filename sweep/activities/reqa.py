@@ -88,11 +88,19 @@ async def reqa_cycle(msg: Message) -> dict:
             non_retryable=True,
         )
 
-    from sweep import observe
+    from sweep import observe, pokayoke
     from sweep.activities.qa import qa_one_entry
     from sweep.activities.worktree import ensure_worktree
     from sweep.activities.infer import infer_test_cmd
     from sweep.activities.respond import kick_respond_card
+
+    skip = pokayoke.reqa_intake(msg)
+    if skip:
+        observe.event("reqa_skipped", repo=msg.repo, pr=msg.pr,
+                      reason=skip.code, detail=skip.detail,
+                      msg_id=msg.msg_id)
+        return {"verdict": "skip", "reason": skip.code,
+                "msg_id": msg.msg_id}
 
     branch = msg.branch
     if not branch:

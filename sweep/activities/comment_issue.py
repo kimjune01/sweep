@@ -192,10 +192,9 @@ async def _run_comment_issue_skill(repo: str, issue: int) -> tuple[str, int]:
     receive its expected context → outputs SKIP with garbage reason).
     Matches skill_runner.py's pattern. Also pop ANTHROPIC_API_KEY so
     the call routes via OAuth/Max plan, not API credits."""
-    import os as _os
+    from sweep.claude_subprocess import env_without_api_key
     ref = f"{repo}#{issue}"
-    env = _os.environ.copy()
-    env.pop("ANTHROPIC_API_KEY", None)
+    env = env_without_api_key()
     proc = subprocess.run(
         ["claude", "--print", "/comment-issue", ref],
         capture_output=True, text=True, timeout=120,

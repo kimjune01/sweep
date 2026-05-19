@@ -80,3 +80,17 @@ No code change to #242 for the test shard failures. Two follow-ups:
 2. Optionally surface the CI coverage misconfiguration as a separate triage candidate.
 
 Frontier closes here unless reviewer feedback arrives.
+
+## Reinvestigation tick — 2026-05-18 (head SHA 2aebb9cf)
+
+Re-entered after CI red. Same fingerprint as prior pass:
+
+- 16 test shards FAIL with per-shard `fail-under=60` against full `src/` (H₂ confirmed again).
+- `report-coverage` SKIPPED (upstream).
+- **DCO now PASSES** — sign-off trailer already on the commit.
+- `lint-and-typecheck` PASSES.
+- No reviews / comments since last pass.
+
+Diagnosis unchanged. Two consecutive iterations produced the same conclusion → **fixed point per halt condition.** No code change to push. The PR is mergeable as-is; the 16 reds are advisory per maintainer precedent (#234 merged through identical failures).
+
+Action: none. Halt.

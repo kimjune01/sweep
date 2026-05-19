@@ -84,3 +84,15 @@ Competing PRs: 0
 - Gemini flagged a separate race condition in the test (relying on `Thread.sleep(100)` to synchronize) but that's orthogonal to #112. File as separate issue if we want to fix it.
 - Maven not installed in environment, couldn't run tests locally. Fix is high-confidence based on code analysis + codex/gemini review.
 - Virtual Thread compatibility (Java 21+) will require relaxing `stack[stack.length - 1] == Thread.run` assertion, but not urgent (Uber likely on JDK 8/11).
+
+## Reinvestigate cycle: 2026-05-18
+
+**Trigger:** attest pipeline routed PR #119 to reinvestigate.
+
+**Observation (H0):** Context pack reports 0 failing checks but flagged "rollup may be stale." Live `gh pr view` confirms: `license/cla`, `license/snyk`, `security/snyk` all **SUCCESS**. `mergeable: MERGEABLE`. Head SHA `ae5a194` (JDK 17+ sleep* assertion fix from 2026-05-12).
+
+**Classification:** Convergent — CI is green at current head. No failing job logs to mine.
+
+**Edge:** None. The reinvestigate trigger is stale w.r.t. the current SHA. Most likely the prior commit (145de0f) failed CI on JDK 17+; the follow-up commit `ae5a194` (`startsWith("sleep")`) resolved it, and the rollup hadn't updated when attest classified.
+
+**Action:** Halt. No code change. PR is awaiting human review (`REVIEW_REQUIRED`), which is the maintainer's gate, not ours.

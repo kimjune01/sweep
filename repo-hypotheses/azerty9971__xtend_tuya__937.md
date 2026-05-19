@@ -54,9 +54,14 @@ The new path uniquely accesses **another integration's** ConfigEntry, where the 
 ## Provenance
 
 - File: `custom_components/xtend_tuya/util.py` lines 77-91.
-- The function was created in the refactor that landed in v4.4.7 (shallow clone shows it under merge `ad56630`; full git history would pin the introducing commit, but the reporter's "from v4.4.7" claim is consistent).
+- `git blame` line 82: commit `a7cda939` ("Changed Tuya link", 2026-05-02) replaced the prior `hasattr(entry, "runtime_data") or entry.runtime_data is None` branch with unconditional `entry.runtime_data` access. The fallback path (`hass.data[domain][entry_id]`) was removed at the same time. The unguarded access is the regression; the fallback removal looks intentional (HA no longer stores runtime there).
+- Manifest version `4.4.7` (current `HEAD` of main). Matches reporter's "from v4.4.7" claim exactly.
 - No existing PR (gh search "runtime_data" → only PR #930, the merged battery fix; no open work on this).
 - No existing issue with the same fingerprint (issue search "runtime_data" → only #937).
+
+## Fix applied (Phase 5)
+
+Edited `custom_components/xtend_tuya/util.py:82` — replaced `runtime_data = entry.runtime_data` with `runtime_data = getattr(entry, "runtime_data", None); if runtime_data is None: return None`. Minimal restoration of the guard removed in `a7cda939`. No tests in repo to update.
 
 ## Fix shape
 

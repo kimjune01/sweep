@@ -31,3 +31,26 @@
 ---
 
 *Dry run — no remote side effects.*
+
+---
+
+## Reinvestigate: PR #5124 (2026-05-18)
+
+### H₀: PR CI broke and needs a patch
+
+**Trigger:** attest verdict `test_fails_on_fix — bash: line 1: pytest: command not found` routed this PR to reinvestigate.
+
+**Perturbation:** read live PR state + attest failure_reason + Docker test env.
+
+**Observations:**
+- `gh pr view 5124` — `mergeable: MERGEABLE`, `reviewDecision: ""`, statusCheckRollup = `license/cla SUCCESS` (only check). No failing CI on GitHub.
+- Worktree clean at head `a57c268f1`, diff is the intended 2-line change (`SSL_VERIFY="False"`) + matching test assertion update.
+- `docker run sweep-tester:latest python3 -m pytest --version` → `No module named pytest`. Container has no pytest installed; aider's `requirements/requirements-dev.txt` carries pytest but isn't installed in the sweep-tester image.
+
+**Classification:** divergent against H₀. The reinvestigate trigger is an attest env defect (sweep-tester image lacks pytest for aider's tooling), not a PR code defect. The fix is logically correct and CI is green upstream.
+
+**Kill condition met:** PR is healthy, nothing to patch.
+
+### Decision
+
+**No code change.** Halt — would only churn a clean PR. The env gap belongs in the substrate (install dev requirements before running aider's pytest, or mark this repo as needing a `test_setup_cmd`), not in the PR. Logged the failure mode here so a future retro can fold it into the attest preflight.

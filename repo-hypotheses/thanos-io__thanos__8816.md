@@ -69,3 +69,14 @@ Force-push is destructive on a published branch. Awaiting operator approval befo
 - If CI after rebase still fails docs check → H₂ partial-kill; investigate the docs job locally.
 - If reviewer responds asking for any change → re-enter at Phase 3.
 - If another PR merges #8506 first → close ours, link in tissue note.
+
+## Re-verification (2026-05-18)
+
+Re-entered for reinvestigate cycle. PR state unchanged from 2026-05-17 snapshot:
+
+- head SHA still `d0e67c28c878` (no new commits since 2026-05-11 15:03 UTC).
+- `mergeable: CONFLICTING`, `mergeStateStatus: DIRTY` — still.
+- Same failing checks: Documentation, Thanos unit tests, 3× Netlify. Same 20+ passing checks including `React UI test on Node 14`.
+- No new reviewer activity since saswatamcode's "LGTM, share screenshot + sign commit" — both addressed.
+
+Diagnosis and proposed action remain valid. No new edges to follow; the only blocker is operator approval for the force-push (per CLAUDE.md: "never force push without explicit user permission").

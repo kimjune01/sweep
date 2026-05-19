@@ -89,14 +89,14 @@ So `impl_id` (= `item_at(0)`, the last block stmt) is the trait impl on the *wra
 - Existing `check_generics` (extern_specs.rs:~285) handles the generic-param structural check. The PR composes on top of it but introduced the regression because it ran on the wrong representation.
 - No prior PRs found via `gh pr list --repo flux-rs/flux --search "extern spec self type"`.
 
-## H₂ — Implementation result (CONFIRMED, local)
+## H₂ — Implementation result (CONFIRMED, local, 2nd push)
 
-**Perturbation:** Refactored `extract_extern_id_from_impl` to return `(extern_impl_id, local_self_ty)`, where `local_self_ty = trait_pred.trait_ref.self_ty()`. Threaded the self_ty into `check_extern_impl_self_ty`, replacing `tcx.type_of(local_id).instantiate_identity()`.
+**Perturbation:** Refactored `extract_extern_id_from_impl` to return `(extern_impl_id, local_self_ty)`, where `local_self_ty = trait_pred.trait_ref.self_ty()`. Threaded the self_ty into `check_extern_impl_self_ty`, dropping the `tcx.type_of(local_id)` lookup that resolved to the `__FluxExternImplStruct...` wrapper.
 
-**Result:**
+**Result (docker, sweep-tester:latest):**
 - `cargo check -p flux-driver` clean.
-- `cargo x test extern_specs` advanced from "extern spec collection rejects 111 sites" → "flux-core finishes extern-spec collection, advances to refinement, fails on missing `fixpoint` binary" (environmental — fixpoint SMT solver not installed locally, unrelated to this PR).
-- The 111 `__FluxExternImplStruct` vs `<concrete>` errors are gone. The symptom that defined H₀ has disappeared.
+- `cargo xtask test extern_specs`: flux-core extern-spec collection now passes — `summary. 60 functions processed: 2 checked; 58 trusted` for flux-core, vs. 111 errors before. The remaining failure is `failed to run fixpoint: No such file or directory` (SMT binary missing in the test container, unrelated to extern-spec collection).
+- All 111 `__FluxExternImplStruct...` vs `<concrete>` errors that defined H₀ are gone.
 
 **Trajectory:** Divergent confirming for the extern-spec collection layer. CI (which has fixpoint) will close R1/R2/R3 properly.
 

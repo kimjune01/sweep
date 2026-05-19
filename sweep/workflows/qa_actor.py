@@ -58,6 +58,7 @@ with workflow.unsafe.imports_passed_through():
         codex_review,
         extract_qa_verdicts,
         gemini_review,
+        read_artifact_texts,
     )
     from sweep.activities.synth_test import synth_test_for_fix
     from sweep.activities.attest import attest_pending_depth, kick_attest_card
@@ -286,8 +287,14 @@ class QaActor:
                 # prose. Malformed JSON from the shim raises non-
                 # retryable → andon, per project decision to trust the
                 # shim and pull the cord on outage.
-                codex_text = Path(codex_att.artifact_path).read_text()
-                claude_text = Path(gemini_last.artifact_path).read_text()
+                texts = await workflow.execute_activity(
+                    read_artifact_texts,
+                    args=[codex_att.artifact_path, gemini_last.artifact_path],
+                    start_to_close_timeout=timedelta(seconds=30),
+                    retry_policy=RetryPolicy(maximum_attempts=2),
+                )
+                codex_text = texts["codex"]
+                claude_text = texts["claude"]
                 shim = await workflow.execute_activity(
                     extract_qa_verdicts,
                     args=[codex_text, claude_text, req.msg_id, req.repo, req.issue],

@@ -197,30 +197,54 @@ def switch_artifact(path: Path) -> dict | None:
     if len(text) > 30_000:
         text = text[:6_000] + "\n\n[... truncated ...]\n\n" + text[-24_000:]
 
-    env = os.environ.copy()
-    env.pop("ANTHROPIC_API_KEY", None)
-    try:
-        proc = subprocess.run(
-            ["claude", "--print", "--model", "claude-sonnet-4-6",
-             "--append-system-prompt", _SYSTEM_PROMPT, text],
-            capture_output=True, text=True, timeout=60, check=False, env=env,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return _materialize({"signal": "human-gated",
-                             "summary": "classify: claude unavailable, "
-                                        "operator review fallback"})
-    if proc.returncode != 0:
-        return _materialize({"signal": "human-gated",
-                             "summary": f"classify: claude rc={proc.returncode}"})
+    from sweep.claude_subprocess import env_without_api_key as _env_no_key
+    env = _env_no_key()
 
-    parsed = _parse_json(proc.stdout or "")
-    if parsed is None:
-        return _materialize({"signal": "human-gated",
-                             "summary": "classify: unparseable verdict, "
-                                        "operator review fallback"})
-    cache[content_hash] = parsed
-    _save_cache(cache)
-    return _materialize(parsed)
+    # Retry once on transient failures (timeout / non-zero rc / unparseable
+    # JSON). FileNotFoundError isn't transient — claude is missing — surface
+    # immediately. Subprocess crashes were silently degrading to
+    # human-gated and noising the operator inbox; a single retry covers
+    # most flake without burning much budget.
+    last_fail: tuple[str, str] | None = None
+    for attempt in (1, 2):
+        try:
+            proc = subprocess.run(
+                ["claude", "--print", "--model", "claude-sonnet-4-6",
+                 "--append-system-prompt", _SYSTEM_PROMPT, text],
+                capture_output=True, text=True, timeout=60, check=False,
+                env=env,
+            )
+        except FileNotFoundError:
+            return _materialize({"signal": "human-gated",
+                                 "summary": "classify: claude unavailable, "
+                                            "operator review fallback"})
+        except subprocess.TimeoutExpired:
+            last_fail = ("timeout", "classify: claude timeout")
+            observe.event("switch_classifier_retry", attempt=attempt,
+                          reason="timeout")
+            continue
+        if proc.returncode != 0:
+            last_fail = ("rc", f"classify: claude rc={proc.returncode}")
+            observe.event("switch_classifier_retry", attempt=attempt,
+                          reason="rc", rc=proc.returncode)
+            continue
+        parsed = _parse_json(proc.stdout or "")
+        if parsed is None:
+            last_fail = ("unparseable", "classify: unparseable verdict, "
+                                         "operator review fallback")
+            observe.event("switch_classifier_retry", attempt=attempt,
+                          reason="unparseable")
+            continue
+        cache[content_hash] = parsed
+        _save_cache(cache)
+        return _materialize(parsed)
+
+    # Both attempts failed. Surface as human-gated with the last failure's
+    # summary so the operator can see whether it was timeout / rc / parse.
+    reason, summary = last_fail or ("unknown", "classify: unknown failure")
+    observe.event("switch_classifier_failed_after_retry",
+                  reason=reason, summary=summary)
+    return _materialize({"signal": "human-gated", "summary": summary})
 
 
 # ---------------------------------------------------------------- kick
@@ -294,9 +318,47 @@ async def switch_cycle(msg: Message) -> dict:
                   artifact_path=str(art_path))
 
     routed_to = await _route(repo, issue, verdict, str(art_path), msg)
+
+    # Supersede legacy human-inbox cards: when switch reaches a
+    # non-human verdict for this (repo, issue), any pre-existing
+    # investigate-decision card in the human inbox is now obsolete.
+    # Ack it so the operator's inbox reflects switch's current call,
+    # not the historical inline-classifier punt. The msg_id pattern
+    # is investigate-decision-<slug>-<issue>-<signal>; we ack across
+    # the signal variants that the legacy code emitted.
+    if not verdict.get("human_gated") and routed_to != "human":
+        _ack_legacy_human_cards(repo, issue)
+
     return {"signal": verdict["signal"], "routed_to": routed_to,
             "competing_pr": verdict.get("competing_pr", ""),
             "summary": verdict.get("summary", "")[:200]}
+
+
+def _ack_legacy_human_cards(repo: str, issue: int) -> None:
+    """Append acks for any investigate-decision human-inbox cards that
+    cover this (repo, issue). Idempotent — appending an ack for a
+    non-existent msg_id is a no-op in inbox_state's set lookup."""
+    import datetime as _dt
+    slug = repo.replace("/", "-")
+    legacy_signals = (
+        "unclassified", "human-gated", "human_gated",
+        "shipped", "no-fix",
+    )
+    ack_file = Path.home() / ".sweep" / "inbox" / "_acks.jsonl"
+    ack_file.parent.mkdir(parents=True, exist_ok=True)
+    now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+    try:
+        with ack_file.open("a") as f:
+            for sig in legacy_signals:
+                msg_id = f"investigate-decision-{slug}-{issue}-{sig}"
+                f.write(json.dumps({
+                    "msg_id": msg_id,
+                    "acked_at": now_iso,
+                    "by": "switch-supersede",
+                }) + "\n")
+    except OSError as e:
+        observe.event("switch_legacy_ack_failed", repo=repo, issue=issue,
+                      error_type=type(e).__name__, error=str(e)[:200])
 
 
 async def _route(repo: str, issue: int, verdict: dict,
@@ -312,8 +374,7 @@ async def _route(repo: str, issue: int, verdict: dict,
     the deliberately-no-action paths so the operator can grep them)."""
     if verdict.get("produced_pr"):
         # Need a branch to feed qa. Mirror the lookup investigate did
-        # inline: worktree → git rev-parse → ls-remote check. If no
-        # branch on remote, emit ghost_branch and fall through to human.
+        # inline: worktree → git rev-parse → ls-remote check.
         try:
             from sweep.activities.worktree import _safe_dir
             wt = _safe_dir(repo)
@@ -336,15 +397,21 @@ async def _route(repo: str, issue: int, verdict: dict,
                     await kick_qa_card(repo, branch,
                                        sender="switch", incoming=incoming)
                     return "qa"
+            # No branch / branch not on origin. Don't fall through to
+            # human — for reclassified historical artifacts, the work
+            # already happened in the past; routing to human would
+            # pollute the inbox with stale-shipped cards. Emit the
+            # ghost_branch event so retro/leakdog can see the gap.
             observe.event("ghost_branch", repo=repo, issue=issue,
                           branch=branch,
-                          reason="classify: branch missing or not on origin")
+                          reason="switch: shipped verdict but no branch "
+                                 "on origin (likely stale reclassification)")
+            return "silent-ghost"
         except Exception as e:
             observe.event("switch_route_failed", repo=repo, issue=issue,
                           target="qa", error_type=type(e).__name__,
                           error=str(e)[:200])
-        # Fall through to human if qa kick can't fire.
-        return await _route_human(repo, issue, verdict, artifact_path)
+            return "silent-route-error"
 
     # no-fix or defer-competing: comment-issue iff should_comment=true,
     # otherwise silent (event already emitted; nothing further to do).

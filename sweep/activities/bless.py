@@ -137,12 +137,21 @@ def _parse_skill_output(stdout: str) -> Optional[dict]:
 async def _run_bless_skill(repo: str, issue: int, draft_id: str) -> tuple[str, int]:
     """Shell /bless <ref> <draft_id>. Timeout: 120s; skill reads a
     handful of GitHub fields + the comment-issue state file, drafts a reply.
-    Generous enough for Sonnet variance."""
+    Generous enough for Sonnet variance.
+
+    --print + pop ANTHROPIC_API_KEY — same shape as every other claude
+    spawn this morning's gemba surfaced. Without --print, claude opens
+    interactive mode on a non-TTY pipe and produces broken output;
+    without the env pop, calls bill the API credit balance instead of
+    Max plan."""
+    import os
     ref = f"{repo}#{issue}"
+    from sweep.claude_subprocess import env_without_api_key as _env_no_key
+    env = _env_no_key()
     proc = subprocess.run(
-        ["claude", "/bless", ref, draft_id],
+        ["claude", "--print", "/bless", ref, draft_id],
         capture_output=True, text=True, timeout=120,
-        check=False,
+        check=False, env=env,
     )
     return proc.stdout, proc.returncode
 

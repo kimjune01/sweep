@@ -112,8 +112,8 @@ async def _run_file_issue_skill(repo: str, issue: int) -> tuple[str, int]:
     comment-issue's runner — including --print and the ANTHROPIC_API_KEY pop
     so calls route via OAuth/Max plan rather than API credits."""
     ref = f"{repo}#{issue}"
-    env = os.environ.copy()
-    env.pop("ANTHROPIC_API_KEY", None)
+    from sweep.claude_subprocess import env_without_api_key as _env_no_key
+    env = _env_no_key()
     proc = subprocess.run(
         ["claude", "--print", "/file-issue", ref],
         capture_output=True, text=True, timeout=180,

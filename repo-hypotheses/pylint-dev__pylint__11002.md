@@ -79,6 +79,31 @@ All six FP shapes from the maintainer-supplied regression file are quieted; the 
 | H₂: astroid loses mutations | deduction (`_unpack_keywords` source) | 95% |
 | H₃: literal-only gate | abduction + induction (six perturbations all converge) | 92% |
 
+## H₄ — CI red on `shallow_copy_environ` (2026-05-18)
+
+CI failed on all 8 jobs on the same single assertion: `shallow_copy_environ.py:36` now emits `no-value-for-parameter` that the .txt didn't list. The line is `copy.copy(**{"y": os.environ})` — a literal dict with one statically-known key that doesn't match `x`. Step 2 sees `y` (unexpected-keyword-arg), step 3's new gate doesn't cover (literal Dict ⇒ neither clause fires) ⇒ FN check correctly notes `x` unassigned ⇒ emits.
+
+- **Mode**: induction (CI failure tail).
+- **Verdict**: not a regression — line 37 right below it (`copy.copy(y=os.environ)`) already expects both `[no-value-for-parameter, unexpected-keyword-arg]`. The .py/.txt at line 36 were inconsistent with their own neighbor. Aligning fixes the CI failure AND tightens the test.
+
+## H₅ — Refined gate landed in commit b22f906 (2026-05-18)
+
+Applied H₃'s `kwargs_might_supply_more = any(not isinstance(kw.value, nodes.Dict) for kw in node.kwargs)` patch. Note `kw.value`, not `kw` — `node.kwargs` yields `Keyword` nodes (filter on `arg is None`), the operand sits on `.value`.
+
+Local perturbation (k/kwargs_unpacking_no_false_positive.py — six primer shapes, empty .txt) passes. shallow_copy_environ.{py,txt} updated to consistent expectation. Functional suite delta: 17 baseline failures → 15 with patch (the 2 retired are shallow_copy_environ and one transitive pass; remaining 15 are pre-existing macOS-local env failures unrelated to this PR).
+
+- **Mode**: induction (test runner).
+- **Frontier**: CI on the new SHA. If the primer-fallout 20 messages all evaporate on the next run, H₃ converges. If any remain, mine the failure shape for a new edge.
+
+## H₆ — CI converges on b22f906 (2026-05-18 reinvestigate)
+
+Reinvestigate fired against stale pack (head SHA `91dc832fdb1a`); current head is `b22f906409a1` with H₅'s refined gate applied. `gh pr checks 11002` reports 39 pass / 5 pending / 0 fail. The 8 ubuntu+macos jobs that were red on the stale SHA all pass on the new SHA, including the `shallow_copy_environ` job that H₄ predicted would flip with the .txt alignment.
+
+- **Trajectory**: convergent — primer-fallout shapes evaporated, functional regression file (k/kwargs_unpacking_no_false_positive.py) holds.
+- **Verdict**: no further code change needed. The reinvestigate trigger was a stale-state artifact; the branch self-healed via the operator's prior commit before this cycle fired.
+- **Mode**: induction (live CI).
+- **Confidence**: 95%.
+
 ## Pruning log
 
 - "Just revert the fix" — rejected, would re-introduce the #8785 FN.

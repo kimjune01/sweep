@@ -138,6 +138,15 @@ async def amend_cycle(msg: Message) -> dict:
         raise ApplicationError(
             "amend: msg.repo and msg.pr required", non_retryable=True,
         )
+
+    from sweep import pokayoke
+    skip = pokayoke.amend_intake(msg)
+    if skip:
+        observe.event("amend_skipped", repo=msg.repo, pr=msg.pr,
+                      reason=skip.code, detail=skip.detail,
+                      msg_id=msg.msg_id)
+        return {"status": "skipped", "reason": skip.code}
+
     payload = msg.payload or {}
     kind = payload.get("kind")
     handler = _HANDLERS.get(kind or "")

@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Temporal-supervised PR pipeline"
 requires-python = ">=3.12"
 dependencies = [
-    "anthropic>=0.102.0",
+    # Anthropic SDK intentionally absent: every LLM call goes through
+    # claude CLI (OAuth/Max plan). The SDK would re-introduce the
+    # API-credit path that bled $100/day on 2026-05-18.
     "pexpect>=4.9.0",
     "psutil>=7.2.2",
     "temporalio>=1.27.2",

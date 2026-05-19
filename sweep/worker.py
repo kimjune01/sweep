@@ -52,6 +52,7 @@ from sweep.activities.retro import retro_cycle, kick_retro_card
 from sweep.activities.respond import kick_respond_card
 from sweep.activities.rope import kick_rope_card, rope_cycle
 from sweep.activities.bless import bless_cycle
+from sweep.activities.bug_reporter import bug_reporter_cycle
 from sweep.activities.immunize import immunize_cycle
 from sweep.activities.comment_issue import comment_issue_cycle, post_cycle
 from sweep.activities.file_issue import file_issue_cycle
@@ -194,6 +195,15 @@ async def _amain() -> None:
             # bless — classifier-router for issue-comment responses.
             # Template-first, default human (LLM off in bootstrap).
             bless_cycle,
+            # bug-reporter — classifies findings against the active PR's
+            # diff. In-scope → compose (future wiring); adjacent → file-issue
+            # (future wiring). Current first version: persists per-finding
+            # decisions to bug-reporter-decisions.jsonl as a durable
+            # artifact and emits bug_reporter_classified events. Downstream
+            # routing wires up as a separate seam-change once the operator
+            # sees real classifications and the failure shapes (andon /
+            # operator overrides) inform the right adapter contract.
+            bug_reporter_cycle,
             # usage probe
             probe_claude_usage,
             # scout (one search per card) + sift (one issue per card).

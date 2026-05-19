@@ -256,6 +256,7 @@ var views = []struct {
 	{"🏭", "cockpit", []string{"cockpit", "--plain"}},
 	{"📥", "inbox", []string{"inbox"}},
 	{"🛣", "lanes", []string{"lanes"}},
+	{"📰", "feed", []string{"feed", "--plain"}},
 	{"🗑", "wasteboard", []string{"waste"}},
 	{"🧪", "hygraph", []string{"hygraph"}},
 }
@@ -507,8 +508,8 @@ func (m model) View() string {
 		itemBox.Render(viewLabel),
 	)
 
-	hint := hintStyle.Render(fmt.Sprintf("%s cycle view   %s restart   %s quit   flags live at %s",
-		keyStyle.Render("c"), keyStyle.Render("r"), keyStyle.Render("q"), controlDirPath))
+	hint := hintStyle.Render(fmt.Sprintf("%s restart   %s quit   flags live at %s",
+		keyStyle.Render("r"), keyStyle.Render("q"), controlDirPath))
 
 	out := bar + "\n" + hint
 	if m.status != "" {
@@ -612,6 +613,19 @@ func main() {
 		p := tea.NewProgram(lm, tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, "sweep-tui --lanes:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "--inbox" {
+		im, err := loadInbox()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "sweep-tui --inbox:", err)
+			os.Exit(1)
+		}
+		p := tea.NewProgram(im, tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "sweep-tui --inbox:", err)
 			os.Exit(1)
 		}
 		return

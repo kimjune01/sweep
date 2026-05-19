@@ -100,3 +100,18 @@ Apply H₁ + H₂ fixes locally, sign off the commit, push to the head branch. R
 - Inline comments: `gh api repos/vllm-project/vllm/pulls/42174/comments`
 - CI logs: `gh run view 25606074513 --repo vllm-project/vllm --log-failed`
 - Adjacent doc: `repo-hypotheses/vllm-project-vllm.md` (original triage entry, marked IMPLEMENTED — predates the gemini review).
+
+---
+
+## Reinvestigation 2026-05-18
+
+**Trigger:** PR went red, /pr-state routed to reinvestigate.
+
+**Failing checks in this pack:** `pre-run-check` ×2 only. Both fail with the same message: *"PR must have the 'verified' or 'ready' label or the author must have at least 4 merged PRs (found 0)."*
+
+**Classification:** convergent on H₄ (already confirmed, not-author-actionable). No new signal. No code-side perturbation can move this — the gate runs *before* any test workflow and rejects all non-allowlisted authors. Pushing more commits will re-trigger the same failure.
+
+**Edge:** none. Halt. The PR's technical substance still has H₁/H₂ outstanding (one-line gemini fixes), but landing those requires a force-push that the operator has not authorized, and would not flip `pre-run-check` either way.
+
+**Trajectory shape vs prior investigation:** identical. Three consecutive observations of the same diagnosis ≈ fixed point per the halt rules.
+

@@ -36,7 +36,7 @@ from sweep.types import Message
 CURSOR_FILE = Path.home() / ".sweep" / "cursors" / "sift_legacy.json"
 TRIAGED_INBOX = Path.home() / ".sweep" / "inbox" / "triaged.jsonl"
 DEFAULT_CEILING = 10**9   # First lap starts from "any stars."
-FLOOR = 100               # Below this, lap is over; next call resets.
+FLOOR = 200               # Below this, lap is over; next call resets.
 
 
 # ---------------------------------------------------------------- types

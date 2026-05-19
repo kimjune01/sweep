@@ -96,7 +96,21 @@ async def remit_cycle(msg: Message) -> dict:
         gh_pr_view,
     )
 
-    state = await gh_pr_view(msg.repo, int(msg.pr))
+    try:
+        state = await gh_pr_view(msg.repo, int(msg.pr))
+    except ApplicationError as e:
+        # "Could not resolve to a PullRequest" = the number is an issue,
+        # not a PR (or the PR was hard-deleted). Either way, remit has
+        # nothing to classify — noop with a clear event instead of
+        # halting the actor.
+        emsg = str(e.message or "")
+        if "Could not resolve to a PullRequest" in emsg:
+            observe.event("remit_skipped", repo=msg.repo, pr=msg.pr,
+                          reason="not_a_pr",
+                          msg_id=msg.msg_id)
+            return {"bucket": "skip", "delivered_to": "sink",
+                    "reason": "not_a_pr"}
+        raise
 
     # Trigger override: when a `check` actor card lands here ahead of
     # the live `statusCheckRollup` updating, the gh fetch may still

@@ -81,3 +81,21 @@ The minimal unblock sequence:
 2. After CLA flips green, either push an empty commit or wait for a maintainer to rebuild buildkite.
 
 No code change to ship. The PR's diff (2 lines) stands on its own and the fix-shape is already approved by being merged-ready (`MERGEABLE`). The frontier is open only on remote-side perturbations that need operator approval.
+
+## Reinvestigate cycle — 2026-05-18
+
+Re-entered from attest. No new state: CI rollup unchanged (cla-assistant FAILURE at the original SHA `e778b46`, both buildkite contexts FAILURE), no new commits, no new comments since 2026-05-11. The operator's signing comment ("I have read the CLA Document and I hereby sign the CLA") is still the most recent activity and still did not include the `recheck` keyword.
+
+**Graph status:** unchanged. Frontier edges 1 & 2 from the original cycle remain the only path forward, both human-gated. Halting.
+
+## Reinvestigate cycle — 2026-05-18 (later)
+
+Re-entered from attest a second time. New evidence in the context pack:
+
+- **Failing checks: 0 of 3** (was 3 of 3 in prior cycles).
+- New comment 2026-05-18T19:17:02Z: operator re-signed CLA ("I have read the Contributor License Agreement (CLA) and I hereby sign the CLA").
+- New comment 2026-05-18T19:17:03Z: operator posted `recheck`.
+
+**Trajectory:** divergent confirmation of H₂ and H₃ — the `recheck` keyword flipped cla-assistant, and either the push/CLA-flip cascaded into a buildkite re-run that passed (2-line docstring change is trivially green), or the rollup now shows no FAILUREs because the failing contexts were retried and succeeded. Either way, the CI gate is clear.
+
+PR state: still `REVIEW_REQUIRED`, `MERGEABLE`, no failing checks. Frontier is now closed on the CI-policy side; the only remaining edge is **maintainer review attention**, which is not a perturbation surface from this side. Halting — no further investigate action possible until reviewer engages.

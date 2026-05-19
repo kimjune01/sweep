@@ -101,8 +101,13 @@ async def infer_test_cmd(worktree: str, repo: str) -> str:
     # recurring rock when claude has a bad second. Second failure is
     # a real signal — propagate as halt.
     async def _try_once():
+        # allow_empty=True: the system prompt explicitly says empty is
+        # legal ("no tests / convention unclear / unreadable inputs").
+        # Without this flag llm_cli treats empty as structural failure
+        # and the actor andons on a perfectly correct LLM answer.
         return await asyncio.to_thread(
-            llm_cli.call, system, user, timeout_s=120,
+            lambda: llm_cli.call(system, user, timeout_s=120,
+                                  allow_empty=True),
         )
 
     last_err: Exception | None = None
@@ -121,18 +126,15 @@ async def infer_test_cmd(worktree: str, repo: str) -> str:
                 f"infer_test_cmd LLM call failed (after retry): {e}",
                 non_retryable=True,
             )
-        # Treat empty stdout the same way — it's the most common
-        # claude-CLI failure mode and the symptom that's been
-        # halting octave#94 repeatedly.
-        if not (out or "").strip():
-            if attempt == 1:
-                await asyncio.sleep(2)
-                continue
-            raise ApplicationError(
-                "infer_test_cmd LLM call failed (after retry): "
-                "claude returned empty stdout twice (auth/rate/binary?)",
-                non_retryable=True,
-            )
+        # Empty stdout is legal per the system prompt ("no tests /
+        # convention unclear / unreadable"). Retry once for transient
+        # flakiness, then accept empty as the model's "I don't know"
+        # answer. We mark the repo and return "" — caller decides
+        # what to do; halting the actor on a perfectly correct LLM
+        # answer was the wrong shape.
+        if not (out or "").strip() and attempt == 1:
+            await asyncio.sleep(2)
+            continue
         break
     cmd = out.strip().splitlines()[0].strip() if out else ""
     # Strip common LLM artifacts.
@@ -142,10 +144,13 @@ async def infer_test_cmd(worktree: str, repo: str) -> str:
     if cmd.endswith("`"):
         cmd = cmd[:-1].strip()
     if not cmd or cmd.upper() == "NONE":
-        raise ApplicationError(
-            f"infer_test_cmd: no test convention detected for {repo}",
-            non_retryable=True,
-        )
+        # Mark the repo as "no test cmd known" so future qa cycles
+        # skip rather than re-burning the LLM call. Caller (attest /
+        # qa) sees the empty return value and short-circuits the
+        # test_attestation step.
+        retro_params.append(repo, key="test_cmd", value="",
+                            reason="inferred empty: no test convention")
+        return ""
     # Cache so subsequent qa cycles skip the LLM round-trip.
     retro_params.append(repo, key="test_cmd", value=cmd, reason="inferred by infer_test_cmd")
     return cmd

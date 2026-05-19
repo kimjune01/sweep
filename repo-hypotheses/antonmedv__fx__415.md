@@ -1,36 +1,10 @@
 # Hypothesis Graph: antonmedv/fx#415
 
 Target: antonmedv/fx issue #415, "Piping any stdout from node.js to fx stdin causes non-functional UI state"
-Date: 2026-05-18
-Mode: standalone investigate, halted before code because perturbation access is missing.
+Date: 2026-05-18 (second pass, full perturbation access)
+Mode: standalone investigate. Halts at tissue-class outcome (no PR).
 
-## Environment
-
-`sweep project-info antonmedv/fx`:
-
-```json
-{
-  "repo": "antonmedv/fx",
-  "worktree": "/Users/junekim/.sweep/worktrees/antonmedv__fx",
-  "worktree_exists": false,
-  "test_env": "docker:sweep-tester:latest",
-  "test_cmd": null,
-  "test_setup_cmd": null
-}
-```
-
-Local constraints:
-
-- Cannot create the canonical worktree: sandbox denies writes under `/Users/junekim/.sweep/worktrees`.
-- Cannot clone into the shared workspace: shell DNS cannot resolve `github.com`.
-- `gh issue view` cannot reach `api.github.com`.
-- No local `fx` binary is installed.
-- `codex exec` exists but cannot initialize in this sandbox (`Operation not permitted`).
-- `gemini` exists, but no local fix diff or full graph can be validated with source-level perturbations yet.
-
-Perturbation access status: blocked for source edits, test execution, and behavioral reproduction. Only cached issue data and web-read source/documentation were available.
-
-## Issue Evidence
+## Issue Recap
 
 Reporter command:
 
@@ -38,211 +12,118 @@ Reporter command:
 node -e 'process.stdout.write(JSON.stringify({"a":1}))' | fx
 ```
 
-Observed behavior from issue #415:
+Observed by reporter on macOS Tahoe and Ubuntu 22 LTS with Homebrew `fx` v39.2.0:
+- TUI renders the JSON
+- Keypresses echo at the bottom of the screen; UI does not respond
+- Workaround: `... > test.json && cat test.json | fx` reportedly works
+- Maintainer (antonmedv) cannot reproduce: "tested on windows and macos. seems works for me."
 
-- TUI displays the JSON.
-- Interactivity is non-functional.
-- Keypresses are rendered at the bottom of the screen and overwrite the status/path area.
-- Reproduced by reporter on macOS Tahoe and Ubuntu 22 LTS with Homebrew `fx` v39.2.0.
-- Workaround reported by user:
+## Environment
 
-```sh
-node -e 'process.stdout.write(JSON.stringify({"a":1}))' > test.json && cat test.json | fx
+`sweep project-info antonmedv/fx` returns `docker:sweep-tester:latest`. Worktree was created at `/Users/junekim/.sweep/worktrees/antonmedv__fx` (master HEAD ef13a31f-ish, fx v39.2.0+ with bubbletea v1.3.6). Local `go build` succeeds.
+
+## Round 2 Experiments (new evidence)
+
+### E1 — Read syscall behavior of node-pipe vs cat-pipe
+
+Built a tiny Go reader that does `os.Stdin.Read(buf)` in a loop and prints `(n, err)`. Tested both producers:
+
+```
+node | reader  → Read#0: n=7 err=<nil>  data="{\"a\":1}"
+                 Read#1: n=0 err=EOF    data=""
+cat  | reader  → Read#0: n=7 err=<nil>  data="{\"a\":1}"
+                 Read#1: n=0 err=EOF    data=""
 ```
 
-This issue was still open on GitHub on 2026-05-18. No linked development branch or PR was shown in the GitHub issue page.
+Identical at the syscall level. Trajectory: **convergent against** the "node-vs-cat is a kernel/pipe-level distinction" framing. Whatever the reporter observed, it is not visible in the io.Reader contract.
 
-## Blind-Blind Merge
+### E2 — Bubble Tea v1.3.6 auto-fallback to /dev/tty
 
-### Hypothesis A
+Read `bubbletea@v1.3.6/tea.go:553-589` and `tty_unix.go`. In `defaultInput` mode, Bubble Tea checks whether `os.Stdin` is a terminal; when it is not, it calls `openInputTTY()` (= `os.Open("/dev/tty")`) and swaps `p.input` to the new TTY file. `initInput` then puts the TTY into raw mode.
 
-Root cause: `fx` consumes JSON from `stdin`, then starts Bubble Tea without changing Bubble Tea's input source. Bubble Tea defaults to reading key events from `stdin`; when `stdin` is still the producer pipe rather than the controlling terminal, keypresses are not delivered to the TUI as `tea.KeyMsg`. The terminal then echoes typed bytes in the visible output area.
+This means fx's current `tea.NewProgram(m, tea.WithAltScreen(), withMouse, tea.WithOutput(os.Stderr))` should already cause Bubble Tea to read keys from `/dev/tty`, not from the piped stdin. `tea.WithInputTTY()` would route through the same `openInputTTY()` call.
 
-Fix shape: in interactive TUI mode after piped input, start Bubble Tea with `tea.WithInputTTY()` so Bubble Tea opens the controlling TTY for key input while keeping `tea.WithOutput(os.Stderr)`.
+Reasoning mode: deduction from library source. Confidence 90%.
 
-Evidence:
+**This kills H1/H3 from the prior pass.** The earlier graph proposed adding `tea.WithInputTTY()`, but in Bubble Tea v1.3.6 that is equivalent to the default path for piped stdin.
 
-- GitHub source for `main.go` shows `src = os.Stdin` for piped input, then interactive mode constructs `tea.NewProgram(m, tea.WithAltScreen(), withMouse, tea.WithOutput(os.Stderr))`.
-- Bubble Tea docs state `WithInput` defaults to stdin and `WithInputTTY()` opens a new TTY for input.
+### E3 — Empirical test: does the fix shape change anything?
 
-Confidence: 70% abduction, capped because no local binary/worktree exists and the Node-vs-cat distinction remains unexplained.
+Built two binaries:
+- `fx-test`: current master (no fix)
+- `fx-fix`: master + `tea.WithInputTTY()` added to `tea.NewProgram`
 
-### Hypothesis B
+Drove both with `expect` and a Python `pty.openpty()` harness:
+- Spawn fx under a real PTY (slave is fx's controlling terminal)
+- fx's stdin = anonymous pipe carrying `JSON.stringify({"a":1})` from node
+- Wait ~2s, send `q`, see whether fx exits
 
-Root cause: `fx` reads piped JSON from `os.Stdin`, then starts Bubble Tea without an explicit input source. Bubble Tea defaults UI input to stdin, but in the pipe case stdin is still the pipe, not the terminal. The TUI renders, but keypresses typed in the terminal are not read by Bubble Tea and appear at the bottom instead.
+Result (both producers, both binaries): fx renders to alt-screen but `q` is not handled. Both binaries hang.
 
-Fix shape: when stdin is a pipe and `fx` enters interactive Bubble Tea mode, create the program with terminal input explicitly, likely by adding `tea.WithInputTTY()` while keeping `tea.WithOutput(os.Stderr)`.
+But: the same hang occurs when fx's stdin is `/dev/tty` (no pipe at all, run via `expect spawn /tmp/fx-fix`). This means the hang is **not** the reported bug; it is the test harness failing to answer termenv's color/cursor OSC queries (`\x1b]11;?\x07` and `\x1b[6n`). Bubble Tea / termenv waits for those responses and the synthetic PTY never delivers them, so the keypress codepath is never exercised in this harness.
 
-Concrete perturbation: patch only Bubble Tea program construction to add `tea.WithInputTTY()`, then rerun the Node-pipe repro and verify keypresses drive the UI.
+Trajectory: **chaotic** for the question "does WithInputTTY fix the bug?" The harness cannot distinguish a fix from a no-fix because it does not reach the input loop. Decompose differently.
 
-Confidence: 70% abduction, with the same unresolved caveat that the reported `cat test.json | fx` workaround needs direct timing/EOF classification.
+Reasoning mode: induction from harness runs. The induction kills the harness, not the hypothesis.
 
-### Where A and B Diverge
+### E4 — Provenance / first-mover check
 
-No material divergence. Both independent passes converge on stdin ownership/input-source misbinding and on `tea.WithInputTTY()` as the minimal fix shape. The shared uncertainty is the Node-vs-cat contrast: it may be timing/EOF/newline-specific, or it may be reporter-environment noise around the same underlying stdin ownership bug.
+- `git blame main.go` on `tea.NewProgram(...)` shows the construction has been stable across releases; no commit removed a prior `WithInputTTY()`.
+- `gh pr list` and `gh issue list` searches surface no parallel work on this issue. Maintainer comment on #415 dismisses the report ("seems works for me").
+- Operator PR history: #414 (merged) was an adjacent stdin-detection fix for /dev/null in launch agents; orthogonal to this issue.
 
-Downstream implication: proceed at higher confidence once a checkout exists, but make the first perturbation classify the producer matrix (`node`, `printf`, `cat`, newline/no-newline) before claiming a fully general fix.
+## Where this leaves things
 
-## Graph State
+What is verified:
+- Bubble Tea v1.3.6 already opens `/dev/tty` for input when stdin is non-TTY.
+- `tea.WithInputTTY()` would route through the same code path; it is not a meaningful change.
+- The node-vs-cat distinction in the reporter's description has no support in the io.Reader contract.
 
-| Node | Status | Shape | Summary |
+What is not verified:
+- The actual bug behavior in a real interactive terminal (macOS Tahoe / Ubuntu 22 LTS Homebrew install). The local harnesses cannot exercise the input loop because of termenv OSC-query hangs.
+- Whether the reporter's environment exposes a different failure mode (terminal emulator, shell, locale, login-shell vs subshell, controlling-tty assignment) that Bubble Tea's `openInputTTY()` does not handle.
+
+What does not survive:
+- Hypothesis "the fix is `tea.WithInputTTY()`" — E2 plus the v1.3.6 source kills it.
+
+## Updated Graph State
+
+| Node | Status | Shape | Notes |
 |---|---|---|---|
-| H0 | partial | divergent from expected TUI behavior | Issue report says JSON renders but keys are echoed instead of handled. Local reproduction blocked. |
-| H1 | partial | convergent source evidence | Bubble Tea likely reads from piped stdin because `tea.NewProgram` has no `WithInputTTY`; blind pushout agreed. |
-| H2 | open | predicted divergent | Node-specific pipe timing may leave stdin in a state where Bubble Tea misses terminal input; cat workaround needs direct repro. |
-| H3 | open | predicted convergent | `tea.WithInputTTY()` in TUI path should restore key handling without changing parser/output behavior. |
-
-## Nodes
-
-### H0: Baseline observation
-
-Hypothesis: `fx` should accept JSON from any stdout pipe and then run an interactive TUI whose keypresses are read from the user's terminal.
-
-Null: Pipe producer identity should not affect post-parse key handling; Node output and `cat` output should behave identically.
-
-Perturbation:
-
-```sh
-node -e 'process.stdout.write(JSON.stringify({"a":1}))' | fx
-```
-
-Trajectory:
-
-- Reported sample 1: macOS Tahoe, Homebrew `fx` v39.2.0, JSON renders, keys echo at bottom.
-- Reported sample 2: Ubuntu 22 LTS, same behavior.
-- Reported contrast: `node ... > test.json && cat test.json | fx` works.
-- Local sample: not run; no `fx` binary and no checkout.
-
-Shape: divergent from expected behavior, but partial because the local environment cannot reproduce.
-
-Kill condition: if a local run of v39.2.0 and current master handles Node-piped input correctly under a real PTY, H0 becomes environment-specific and must split by terminal/shell/install path.
-
-Edge: inspect Bubble Tea input source and stdin/TTY routing in interactive mode.
-
-Reasoning mode: induction from reporter samples, confidence 75%.
-
-### H1: Bubble Tea reads the data pipe as keyboard input
-
-Hypothesis: after parsing piped JSON, `fx` starts Bubble Tea with default input, so Bubble Tea reads from `os.Stdin`, which is the JSON pipe, not `/dev/tty`.
-
-Null: Bubble Tea already reopens `/dev/tty` or `fx` supplies another input reader, so the bug must be in renderer/output routing or terminal mode restoration.
-
-Perturbation:
-
-- Source read: inspect `main.go` TUI setup.
-- Documentation read: inspect Bubble Tea `ProgramOption` docs.
-
-Trajectory:
-
-- Source shows `src = os.Stdin` for piped input.
-- Source shows interactive program options include `tea.WithAltScreen()`, mouse option, and `tea.WithOutput(os.Stderr)`.
-- Source does not show `tea.WithInputTTY()` or `tea.WithInput(...)` in the TUI path.
-- Bubble Tea docs say default input is stdin; `WithInputTTY()` opens a new TTY for input.
-
-Shape: convergent source evidence.
-
-Kill condition: a full checkout reveals generated/build-tagged platform code or wrapper logic not visible in `main.go` that already replaces Bubble Tea input.
-
-Edge: test a minimal patch adding `tea.WithInputTTY()` under piped-input TUI mode.
-
-Reasoning mode: deduction from source plus library docs, confidence 85%; downgraded because source was web-read and not locally checked out.
-
-### H2: Node-vs-cat distinction is timing or pipe-close behavior
-
-Hypothesis: Node writes JSON without a trailing newline and closes quickly; that pipe state interacts with Bubble Tea's stdin reader differently than `cat test.json | fx`, exposing a timing race between parser goroutine and Bubble Tea input initialization.
-
-Null: Node-vs-cat distinction is incidental reporter environment noise; any piped stdin can fail because Bubble Tea's input source is wrong.
-
-Perturbation:
-
-Under a real PTY with a built `fx`, compare:
-
-```sh
-node -e 'process.stdout.write(JSON.stringify({"a":1}))' | ./fx
-printf '{"a":1}' | ./fx
-printf '{"a":1}\n' | ./fx
-cat test.json | ./fx
-```
-
-Inject `q`/arrow key events via a PTY harness and classify whether `tea.KeyMsg` is handled or bytes echo.
-
-Predicted shape: oscillatory if only Node/no-newline fails; divergent if all piped-input cases fail.
-
-Kill condition: all producers behave identically before the fix.
-
-Edge: if oscillatory, split newline/EOF/timing from TTY-input-source hypotheses.
-
-Reasoning mode: abduction, confidence 60%.
-
-### H3: `tea.WithInputTTY()` is the minimal fix
-
-Hypothesis: when `fx` enters interactive TUI mode after reading data from stdin, `tea.WithInputTTY()` makes Bubble Tea read keys from the controlling terminal and fixes the echo/non-functional state.
-
-Null: reopening `/dev/tty` is insufficient because the bug is caused by output renderer target, terminal mode setup, or parser goroutine lifecycle.
-
-Perturbation:
-
-Patch TUI program construction to include `tea.WithInputTTY()` for piped-input interactive mode, then run the H2 PTY matrix and the existing Go test suite in the canonical docker environment:
-
-```sh
-docker run --rm -v "$(sweep project-info antonmedv/fx --field worktree)":/work -w /work sweep-tester:latest go test ./...
-```
-
-Predicted shape: divergent improvement; key events stop echoing and existing tests pass.
-
-Kill condition: patched binary still echoes keys, fails file-mode input, or breaks noninteractive query mode.
-
-Edge: if killed, inspect Bubble Tea output/renderer and terminal mode setup.
-
-Reasoning mode: abduction from library affordance plus deduction from source, confidence 70%.
+| H0 | partial-confirmed | divergent | Reporter symptoms acknowledged; no local repro of the *interactive* behavior |
+| H1 (Bubble Tea reads pipe as input) | **killed** | convergent against | Library source shows auto-fallback to /dev/tty in v1.3.6 |
+| H2 (node vs cat is timing/EOF) | killed | convergent against | E1 shows identical Read trajectory |
+| H3 (WithInputTTY is the fix) | **killed** | convergent against | Bubble Tea routes both defaultInput-with-pipe and ttyInput through the same openInputTTY() |
+| H4 (terminal-emulator / controlling-tty specific) | open | predicted divergent | Would explain "works for me" from maintainer plus reporter's macOS Tahoe + Ubuntu observation |
 
 ## Frontier Edges
 
-| Edge | Experiment | Predicted classification | Priority |
+| Edge | Experiment | Predicted shape | Notes |
 |---|---|---|---|
-| H0 -> H1 | Local source checkout, inspect exact `main.go` and `go.mod` version of Bubble Tea | convergent | high |
-| H1 -> H3 | Patch with `tea.WithInputTTY()` and run PTY key harness | divergent improvement | high |
-| H0 -> H2 | Compare Node/printf/cat producers with and without trailing newline | divergent or oscillatory | high |
-| H3 -> regression | Run `go test ./...` in `sweep-tester` docker image | convergent pass | medium |
-| H3 -> provenance | `git blame main.go` around `tea.NewProgram`; search issues/PRs for `WithInputTTY`, `stdin`, `tty`, `pipe` | convergent risk assessment | medium |
+| H4 | Ask reporter for `TERM`, terminal emulator, shell, and `tty` / `tty -s` output before vs after the node pipe; ask whether `node | fx` from a fresh terminal differs from `node | fx` inside `tmux`/`screen` | divergent if env-specific | Requires reporter cooperation; can be solicited via a tissue comment |
+| harness | Build a PTY harness that responds to OSC 10/11 and DSR queries so that the input loop is actually reached; then test fx + `tea.WithInputTTY()` head-to-head | divergent if there is a difference | Useful research, but unlikely to flip the verdict on the proposed fix because E2 already shows the code paths are equivalent |
 
-## Reasoning Modes
+## Outcome
+
+**Tissue-class.** No code change is justified by the evidence.
+
+- The most-cited candidate fix (`tea.WithInputTTY()`) is a no-op given Bubble Tea v1.3.6's auto-fallback. Shipping it would be cargo-cult, and the maintainer has already declined to engage with the issue.
+- The actual reporter behavior cannot be reproduced in the operator's environment. The maintainer also reports non-reproduction.
+- The clean next step is a tissue comment that reports the diagnostic findings (Read-level parity, Bubble Tea auto-fallback) and requests environment specifics from the reporter. Posting that is the operator's call, not the substrate's.
+
+Halt reason: frontier reduces to "ask the reporter," which is human-attendable. No PR readiness record written.
+
+## Reasoning Mode Summary
 
 | Claim | Mode | Confidence |
 |---|---|---|
-| The reported behavior is real enough to investigate | induction from issue report | 75% |
-| `fx` currently passes no explicit Bubble Tea input option in the visible TUI path | deduction from web-read source | 85% |
-| Bubble Tea defaults input to stdin and has `WithInputTTY()` for reopening TTY input | deduction from official docs | 95% |
-| The likely fix is adding `tea.WithInputTTY()` in interactive piped-input mode | abduction | 70% |
-| The Node-vs-cat contrast is timing/newline-related | abduction | 60% |
+| node-pipe and cat-pipe deliver identical Read traces | induction (run twice with the same harness) | 95% |
+| Bubble Tea v1.3.6 opens /dev/tty for input when stdin is a non-TTY File | deduction from library source | 90% |
+| `tea.WithInputTTY()` would not change behavior here | deduction from library source | 85% |
+| The bug is real but environment-specific in a way the operator cannot reproduce | abduction | 60% |
 
 ## Pruning Log
 
-No hypotheses pruned yet. Required local perturbations are blocked.
-
-## Provenance
-
-Not completed. Required commands are blocked by missing checkout/network:
-
-- `git blame main.go` around the `tea.NewProgram` call.
-- GitHub issue/PR search for related stdin/TTY/Bubble Tea fixes.
-- Existing PR idempotency guard.
-
-Risk assessment from available evidence:
-
-- `tea.WithInputTTY()` is an upstream Bubble Tea API specifically shaped for the suspected failure mode.
-- Scope should remain minimal; antonmedv/fx has high maintainer sensitivity to broad or AI-looking diffs.
-- The fix must not affect noninteractive query mode (`fx .foo`) because that mode correctly uses stdin as data input and exits without TUI.
-
-## Current Halt
-
-Status: blocked before Phase 5.
-
-Reason: perturbation access is required and currently unavailable. There is no writable checkout, no network clone path, no local `fx` binary, and no ability to run codex filtering. The graph is a valid checkpoint, but not a PR-ready diagnosis.
-
-Next resumption step:
-
-1. Provide or create a writable checkout of `antonmedv/fx`.
-2. Re-run `sweep project-info antonmedv/fx` and mirror `test_env`.
-3. Reproduce H0 under a PTY.
-4. Patch H3 and run the same PTY matrix plus targeted `go test ./...`.
+- H1 (prior pass) — killed by E2 (library source review).
+- H2 (prior pass) — killed by E1 (Read trajectory parity).
+- H3 (prior pass) — killed by E2/E3 (code-path equivalence; harness cannot validate but the deduction is independent).

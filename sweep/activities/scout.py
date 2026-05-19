@@ -116,7 +116,10 @@ SCOUT_CURSOR_PATH = Path.home() / ".sweep" / "cursors" / "scout.json"
 # Mechanical search qualifiers shared by both sources. Push every
 # filter we can into the gh query so GitHub does the work instead of
 # producing per-result follow-up costs to discover the same rejection.
-_BASE_QUALIFIERS = ["-linked:pr", "comments:<20"]
+# `stars:>=200` is the operator's minimum-attention threshold — repos
+# below that aren't worth the substrate's tokens. Hard gate at scout
+# so sift never sees the candidates; sift's FLOOR=200 is the backstop.
+_BASE_QUALIFIERS = ["-linked:pr", "comments:<20", "stars:>=200"]
 
 # Default recency window for the global search. The retroactive
 # widen/recover from the old per-pass model is gone; if the operator

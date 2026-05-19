@@ -96,3 +96,23 @@ This PR has three problems, the first of which is fatal:
 - H₀ kill: deduction from code (RNG not rewound on splice) + induction from reporter's own statement (cross-run deterministic) — confidence ~95%.
 - H₁, H₂: induction from CI logs and gh metadata — confidence ~99%.
 - Frontier H₀.a/b/c: abductions — confidence 60-70%, would need experiments to classify.
+
+---
+
+## Reinvestigate 2026-05-18 — substrate re-entry on CI red
+
+Substrate routed this PR back through investigate after attest verdict. Re-pulled failing log tails for runs 25636248686 (AICIrt build) and 25636248690 (Markdown link check).
+
+- AICIrt failure point unchanged: `rustup target add wasm32-wasi` → `error: toolchain 'stable-x86_64-unknown-linux-gnu' does not support target 'wasm32-wasi'`. Step fires before any cargo invocation on PR code. Re-confirms **H₁**.
+- Workflow blob at head SHA (`.github/workflows/aicirt.yml:19`) still reads `rustup target add wasm32-wasi`. Same on main — repo-wide infra rot, not PR-introduced.
+- No new commits on the branch since the prior investigation (last activity is the CLA-bot ack 2026-05-11). H₀ status unchanged: **fix is wrong by the prior diagnosis**.
+
+**No new edges opened.** The CI redness was already classified as environmental, and the diagnosis was already killed. Nothing in the PR's code path can address either. The fix would need to be redesigned (per H₀.a/b/c) before any code-side reinvestigation is informative, and even then CI would be red until the workflow is patched on master.
+
+**Halting with `human-gated`.** Re-entering the worktree to push more commits doesn't change either failure mode. Options for the operator:
+
+1. **Close (or convert to draft) #122** per the prior round's recommendation — the diagnosis is wrong and the repo is dormant.
+2. **Leave it** — the CLA is signed, the patch is small; if the maintainer ever returns they can decide.
+3. **Open a separate one-line CI PR** patching `wasm32-wasi` → `wasm32-wasip1` in `.github/workflows/aicirt.yml`. Independently useful for the repo (every PR is red on this), but a second concurrent PR in a dormant repo, and not in scope of #122.
+
+No code change recommended on the existing branch.

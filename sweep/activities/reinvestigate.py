@@ -88,9 +88,22 @@ async def reinvestigate_cycle(msg: Message) -> dict:
             non_retryable=True,
         )
 
-    from sweep import budget as _budget, observe
+    from sweep import budget as _budget, observe, pokayoke
     from sweep.activities.skill_runner import investigate_cycle
     from sweep.activities.reqa import kick_reqa_card
+
+    skip = pokayoke.reinvestigate_intake(msg)
+    if skip:
+        observe.event("reinvestigate_skipped", repo=msg.repo, pr=msg.pr,
+                      reason=skip.code, detail=skip.detail,
+                      msg_id=msg.msg_id)
+        # Mirror as `reinvestigate_done` so retro skill-stats and other
+        # consumers keyed on the terminal event still bucket the skip
+        # instead of treating it as a silent drop.
+        observe.event("reinvestigate_done", repo=msg.repo, pr=msg.pr,
+                      outcome="skipped", reason=skip.code,
+                      msg_id=msg.msg_id)
+        return {"outcome": "skipped", "reason": skip.code}
 
     # Tag caller so gh-io subprocess attribution lands on reinvestigate's
     # budget, not investigate's. Critical for the budget split: without

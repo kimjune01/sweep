@@ -61,3 +61,20 @@ None found via `gh search prs --repo aquasecurity/trivy --state open "8087"`
 1. Drip queue entry created at `~/.sweep/drip-queue/aquasecurity-trivy.jsonl`
 2. Awaiting push to fork and PR creation
 3. Monitor for CI feedback and maintainer review
+
+---
+
+## Reinvestigate cycle 2026-05-18
+
+**Trigger:** reinvestigate-from-attest, PR #10643.
+
+**State at fetch (gh pr view):**
+- state: OPEN, mergeable: MERGEABLE, reviewDecision: REVIEW_REQUIRED
+- statusCheckRollup: license/cla = SUCCESS (single check, green)
+- CLA: signed.
+
+**Classification:** convergent — no broken CI to patch. The attest rollup that fired this cycle was stale (context pack itself flagged "CI may have recovered or rollup is stale"). PR is healthy and waiting on human review only.
+
+**Edge:** none. No frontier opens from a green PR. Halt — no patch to ship, no investigation to extend.
+
+**Action:** none. The PR is in the maintainer's court.

@@ -31,7 +31,11 @@ The substrate pre-fetches deterministic gh context and writes it to a file. The 
 cat "$INVESTIGATE_CONTEXT"
 ```
 
-This pack always contains: the issue body, recent comments, labels, related open PRs, your prior PR history on this repo, default branch, CI status on the default branch.
+The pack comes in one of two shapes depending on whether this is a fresh investigation or a reinvestigation of an existing PR — read the first heading to know which.
+
+**Investigate (production lane)**: pack heading is `# Investigate context: <repo>#<issue>`. Contains the issue body, recent comments, labels, related open PRs, your prior PR history on this repo, default branch, CI status on the default branch.
+
+**Reinvestigate (engagement lane)**: pack heading is `# Reinvestigate context: <repo>#<pr>`. Contains the PR header (title, head branch + SHA, mergeable, review decision), the failing-check rollup, the **tail of each failing job's CI log** (up to 5 failing jobs, ~500 lines each), recent commits on the branch, and recent PR comments. Your task is to figure out what broke in CI and patch the existing branch; do NOT open a new PR, do NOT re-run gh actions/check-runs lookups (they're in the pack).
 
 **Do not re-fetch what's in the pack.** Skip `gh issue view <num>`, `gh pr list --repo X --search ...`, `gh pr list --author kimjune01 --state all`, and any related-PR lookups. Those gh calls are already paid; their results are in the pack.
 

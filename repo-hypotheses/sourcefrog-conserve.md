@@ -133,3 +133,16 @@ None yet.
 - All ready for /drip → /ship
 - Time: ~3 hours total
 - Pattern: good-first-issue + size:small tags = reliable standing-builders
+
+## Reinvestigate: 2026-05-18 (PR #300)
+
+**Trigger**: attest re-entry routed to reinvestigate lane.
+**Context pack**: 0 failing checks (none configured on `fix-115-show-source-tree-size`), no comments, no reviews, `MERGEABLE`, HEAD `053fe296` matches worktree.
+**Attest adversary outputs**: both codex and gemini wrappers returned `<stub: ... not implemented>` — no real verdict drove the re-entry, no kill condition to mine.
+**Perturbation surface**: empty. CI never ran (`gh pr checks 300` → "no checks reported"); maintainer hasn't engaged.
+
+**Trajectory shape**: null perturbation → no classifiable trajectory. Not convergent, not divergent — there's no signal.
+
+**Edge**: none. PR waits on maintainer attention; substrate action is to leave it in /drip's open-PR set and let pr-state pick it up when state changes. No code change, no new node.
+
+**Halt**: frontier closed for this cycle. Re-enter only on (a) maintainer comment, (b) CI configured + red, or (c) real attest verdict (non-stub).

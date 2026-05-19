@@ -97,12 +97,18 @@ def _probe_blocking(timeout_s: int) -> str:
     empty without a matching `expect` — the bug that produced the
     persistent "no percent fields recognized" flakes.
     """
+    import os
     import pexpect
 
+    # Pop ANTHROPIC_API_KEY so the probe uses OAuth/Max plan auth
+    # (consistent with every other claude spawn). Otherwise the probe
+    # itself charges the API credit balance every time it runs.
+    from sweep.claude_subprocess import env_without_api_key as _env_no_key
+    env = _env_no_key()
     # Larger window — /usage panel needs vertical room or it collapses
     # into the autocomplete tooltip rather than rendering the dialog.
     child = pexpect.spawn("claude", encoding="utf-8", timeout=timeout_s,
-                          dimensions=(80, 220))
+                          dimensions=(80, 220), env=env)
     chunks: list[str] = []
 
     def _drain(seconds: float) -> None:

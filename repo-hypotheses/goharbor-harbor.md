@@ -49,3 +49,21 @@
 - DCO sign-off required on all commits.
 - Convention: `fix(scope): description` commit format, PR must reference issue with `Fixes #N`.
 - This is a first contribution. Bug fix, minimal diff, clear provenance. Follows the bug-fixes-merge heuristic.
+
+## Reinvestigate cycle 2026-05-18 (PR #23223)
+
+**Failing checks**: `Check release-note label set` (FAILURE), `codecov/project` (FAILURE).
+
+**H_ci_label**: CI fails because the PR carries no `release-note/*` label.
+- Perturbation: read failing job log -- `mheap/github-action-required-labels@v5` with `labels: release-note/.*`, `Found: ` (empty).
+- Trajectory: divergent confirmation. The action is a label gate, not a code gate.
+- Kill condition: try to add `release-note/update` via `gh pr edit`. Result: `GraphQL: kimjune01 does not have the correct permissions to execute AddLabelsToLabelable`.
+- **Confirmed**: external contributors cannot self-apply labels on goharbor/harbor. Only a maintainer with triage rights can satisfy this check.
+
+**H_ci_codecov**: `codecov/project` listed FAILURE.
+- Perturbation: read codecov comment -- "All modified and coverable lines are covered by tests. Project coverage is 66.03%."
+- Trajectory: convergent benign. Project-level threshold drift, not a fix-side regression. Unblocks when maintainer overrides or merges other coverage-raising PRs.
+
+**Edge**: no code change available. Both failures are maintainer-side gates (label assignment, codecov project threshold). Status quo: @chlins already pinged @bupd for review on 2026-05-11. Halt -- nothing to push.
+
+**Reasoning mode**: deduction (CI log read directly) + induction (gh edit attempt refuted by API).

@@ -108,7 +108,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     from sweep.cli._common import (
         RESPOND_ACTOR_ID, INVESTIGATE_ACTOR_ID, LEAKDOG_DAEMON_ID,
         NOTIFICATION_POLLER_ID, SIFT_ACTOR_ID, QA_ACTOR_ID,
-        BLESS_ACTOR_ID, IMMUNIZE_ACTOR_ID, SCOUT_ACTOR_ID, SWEEP_TASK_QUEUE,
+        BLESS_ACTOR_ID, BUG_REPORTER_ACTOR_ID, IMMUNIZE_ACTOR_ID, SCOUT_ACTOR_ID, SWEEP_TASK_QUEUE,
         COMMENT_ISSUE_ACTOR_ID, TRIAGE_ACTOR_ID, USAGE_POLLER_ID, POST_ACTOR_ID,
         FILE_ISSUE_ACTOR_ID, SWITCH_ACTOR_ID,
         REMIT_ACTOR_ID, SUBMIT_ACTOR_ID, COMPOSE_ACTOR_ID, ROPE_ACTOR_ID,
@@ -168,6 +168,7 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
         (SWITCH_ACTOR_ID,       SkillActor.run,     ("switch_cycle",)),
         (IMMUNIZE_ACTOR_ID,     SkillActor.run,     ("immunize_cycle",)),
         (BLESS_ACTOR_ID,        SkillActor.run,     ("bless_cycle",)),
+        (BUG_REPORTER_ACTOR_ID, SkillActor.run,     ("bug_reporter_cycle",)),
         # Usage probing folded into metronome (5min cadence). Keeping
         # UsagePoller spawn commented for one cycle in case the new
         # metronome target needs a backout window; delete after.
@@ -261,6 +262,9 @@ async def _ensure_actors(timeout_s: float = 15.0) -> tuple[list[str], list[str]]
     drained = await _drain_inbox(client, "bless", SkillActor.deliver, BLESS_ACTOR_ID)
     if drained:
         anomalies.append(f"{BLESS_ACTOR_ID}: drained {drained} pending")
+    drained = await _drain_inbox(client, "bug-reporter", SkillActor.deliver, BUG_REPORTER_ACTOR_ID)
+    if drained:
+        anomalies.append(f"{BUG_REPORTER_ACTOR_ID}: drained {drained} pending")
     return started, anomalies
 
 

@@ -1,19 +1,64 @@
 #!/usr/bin/env python3
-"""gh shim: record the call against sweep's per-actor budget, then
-exec the real gh transparently.
+"""gh shim: per-actor budget recording + cache lookup, then exec the
+real gh.
 
-Closes the subprocess budget blindspot: LLM-spawned skills shell out
-to `gh` directly, bypassing our Python `gh_io` wrapper. This shim
-sits earliest on PATH (prepended by skill_runner) so every such call
-gets stamped with the SWEEP_BUDGET_CALLER actor name.
+Two responsibilities:
 
-Stdlib only, no decoration — runs once per gh call (~80/min under
-load), so startup time matters. Never raises on I/O failure: budget
-accounting must not break the gh call itself.
+1. Budget attribution. LLM-spawned skills shell out to `gh` directly,
+   bypassing our Python `gh_io` wrapper; the shim sits earliest on PATH
+   (prepended by skill_runner) so every such call gets stamped with the
+   SWEEP_BUDGET_CALLER actor name into ~/.sweep/budget/<caller>.jsonl.
+
+2. Caching. The same sqlite DB gh_io uses (~/.sweep/cache/gh.db) is
+   read/written here so a repeat `gh issue view 123 --repo X` from any
+   LLM subprocess gets the cached response instead of paying another
+   network round-trip + rate-limit charge. Default TTL 300s. Cache
+   keyed by argv hash; entries written here use endpoint="shim" so
+   they don't collide with gh_io's per-endpoint rows.
+
+Mutation commands skip the cache (read after write must not return
+stale): pr edit/close/create/comment/merge/review/checkout, issue
+create/close/edit/comment/lock/unlock, repo create/edit/delete,
+secret/auth/config/extension, gh api with -X POST/PUT/PATCH/DELETE.
+
+Stdlib only. Fail-open everywhere: any error in cache logic falls
+through to a normal exec so budget accounting + caching never break
+the gh call itself.
 """
 import datetime
+import hashlib
+import json
 import os
+import sqlite3
+import subprocess
 import sys
+
+
+CACHE_DB = os.path.join(
+    os.path.expanduser("~"), ".sweep", "cache", "gh.db",
+)
+CACHE_TTL_S = 300  # 5 min default; matches the "lean on cache" policy
+CACHE_MAX_RESPONSE_BYTES = 1_000_000  # don't cache huge log dumps
+
+# Commands that mutate remote state. The shim never caches these and
+# never serves cached responses for them.
+_MUTATING_SUBCOMMANDS = {
+    ("pr", "edit"), ("pr", "close"), ("pr", "create"), ("pr", "comment"),
+    ("pr", "merge"), ("pr", "review"), ("pr", "checkout"), ("pr", "reopen"),
+    ("pr", "ready"), ("pr", "lock"), ("pr", "unlock"),
+    ("issue", "create"), ("issue", "close"), ("issue", "edit"),
+    ("issue", "comment"), ("issue", "lock"), ("issue", "unlock"),
+    ("issue", "reopen"), ("issue", "transfer"), ("issue", "pin"),
+    ("repo", "create"), ("repo", "edit"), ("repo", "delete"),
+    ("repo", "rename"), ("repo", "sync"), ("repo", "archive"),
+    ("repo", "fork"),
+    ("release", "create"), ("release", "edit"), ("release", "delete"),
+    ("release", "upload"),
+    ("workflow", "run"), ("workflow", "enable"), ("workflow", "disable"),
+    ("run", "rerun"), ("run", "cancel"), ("run", "delete"),
+    ("secret",), ("variable",), ("auth",), ("config",), ("extension",),
+    ("codespace",), ("ssh-key",), ("gpg-key",), ("alias",),
+}
 
 
 def _record(caller):
@@ -23,7 +68,6 @@ def _record(caller):
         )
         os.makedirs(budget_dir, exist_ok=True)
         path = os.path.join(budget_dir, caller + ".jsonl")
-        # UTC ISO-8601 with offset, matching sweep.budget.record().
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with open(path, "a") as f:
             f.write(now_iso + "\n")
@@ -32,8 +76,6 @@ def _record(caller):
 
 
 def _find_real_gh():
-    """Walk PATH and return the first `gh` whose realpath differs from
-    this shim's realpath. Returns None if no other gh is found."""
     self_real = os.path.realpath(__file__)
     for entry in os.environ.get("PATH", "").split(os.pathsep):
         if not entry:
@@ -49,18 +91,145 @@ def _find_real_gh():
     return None
 
 
+def _is_mutating(argv):
+    """True if argv is a mutation command that must skip the cache."""
+    if not argv:
+        return False
+    # gh api with explicit -X <verb> for non-GET methods.
+    if argv[0] == "api":
+        for i, a in enumerate(argv):
+            if a in ("-X", "--method"):
+                if i + 1 < len(argv) and argv[i + 1].upper() in (
+                    "POST", "PUT", "PATCH", "DELETE",
+                ):
+                    return True
+    # Match (subcommand,) or (subcommand, action).
+    if (argv[0],) in _MUTATING_SUBCOMMANDS:
+        return True
+    if len(argv) >= 2 and (argv[0], argv[1]) in _MUTATING_SUBCOMMANDS:
+        return True
+    return False
+
+
+def _cache_key(argv):
+    """Hash full argv. Different invocations differ; same invocation
+    hits the same row across Python and shim callers (both use sha256
+    over the json-serialized args, with "shim|" prefix to keep the
+    namespaces separate from gh_io's per-endpoint rows)."""
+    payload = "shim|" + json.dumps(argv, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _cache_get(argv):
+    """Return cached response string if fresh; None otherwise."""
+    try:
+        if not os.path.isfile(CACHE_DB):
+            return None
+        key = _cache_key(argv)
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        conn = sqlite3.connect(CACHE_DB, timeout=2)
+        try:
+            row = conn.execute(
+                "SELECT response FROM gh_cache "
+                "WHERE key = ? AND expires_at > ?",
+                (key, now),
+            ).fetchone()
+        finally:
+            conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+def _cache_put(argv, response, ttl_s=CACHE_TTL_S):
+    """Write the response to cache. Silently no-ops on any error."""
+    if len(response.encode("utf-8", errors="ignore")) > CACHE_MAX_RESPONSE_BYTES:
+        return  # too big to cache; skip
+    try:
+        os.makedirs(os.path.dirname(CACHE_DB), exist_ok=True)
+        key = _cache_key(argv)
+        fetched = datetime.datetime.now(datetime.timezone.utc)
+        expires = fetched + datetime.timedelta(seconds=ttl_s)
+        conn = sqlite3.connect(CACHE_DB, timeout=2)
+        try:
+            # Same schema as gh_io; idempotent ensure.
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS gh_cache (
+                    key         TEXT PRIMARY KEY,
+                    endpoint    TEXT NOT NULL,
+                    args        TEXT NOT NULL,
+                    response    TEXT NOT NULL,
+                    fetched_at  TEXT NOT NULL,
+                    ttl_seconds INTEGER NOT NULL,
+                    expires_at  TEXT NOT NULL
+                )"""
+            )
+            conn.execute(
+                """INSERT OR REPLACE INTO gh_cache
+                   (key, endpoint, args, response, fetched_at,
+                    ttl_seconds, expires_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (key, "shim", json.dumps(argv), response,
+                 fetched.isoformat(), ttl_s, expires.isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
 def main():
     caller = os.environ.get("SWEEP_BUDGET_CALLER", "unknown")
     _record(caller)
+    argv = sys.argv[1:]
+
+    # Mutations: skip cache entirely; exec straight through. Same shape
+    # as the original shim — os.execv replaces the process.
+    if _is_mutating(argv):
+        real_gh = _find_real_gh()
+        if real_gh is None:
+            sys.stderr.write("gh shim: real gh not found on PATH\n")
+            sys.exit(127)
+        try:
+            os.execv(real_gh, [real_gh] + argv)
+        except OSError as e:
+            sys.stderr.write("gh shim: execv failed: " + str(e) + "\n")
+            sys.exit(127)
+        return
+
+    # Read path: cache lookup first.
+    cached = _cache_get(argv)
+    if cached is not None:
+        sys.stdout.write(cached)
+        sys.stdout.flush()
+        sys.exit(0)
+
+    # Miss: run real gh, capture stdout, store, print.
     real_gh = _find_real_gh()
     if real_gh is None:
         sys.stderr.write("gh shim: real gh not found on PATH\n")
         sys.exit(127)
     try:
-        os.execv(real_gh, [real_gh] + sys.argv[1:])
+        proc = subprocess.run(
+            [real_gh] + argv,
+            stdout=subprocess.PIPE, stderr=sys.stderr,
+            check=False,
+        )
     except OSError as e:
-        sys.stderr.write("gh shim: execv failed: " + str(e) + "\n")
+        sys.stderr.write("gh shim: subprocess failed: " + str(e) + "\n")
         sys.exit(127)
+
+    response = proc.stdout.decode("utf-8", errors="replace")
+    sys.stdout.write(response)
+    sys.stdout.flush()
+
+    # Only cache on success — error responses are usually small but the
+    # state (rate-limit, transient 5xx) may flip on a retry.
+    if proc.returncode == 0:
+        _cache_put(argv, response)
+
+    sys.exit(proc.returncode)
 
 
 if __name__ == "__main__":

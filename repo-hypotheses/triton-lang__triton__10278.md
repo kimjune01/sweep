@@ -44,7 +44,7 @@ Status: **CI failing — compile error**
 | H₁ | confirmed | divergent | deduction |
 | H₂ | confirmed | convergent | deduction |
 | H₃ | confirmed | convergent | abduction + corroboration |
-| H₄ | open frontier | (predicted convergent) | — |
+| H₄ | confirmed | convergent | induction (CI 2026-05-18, 10/10 green) |
 
 ## Fix applied
 
@@ -55,6 +55,9 @@ Status: **CI failing — compile error**
 - H₀ killed by CI logs (deterministic same-line compile failure across all platforms).
 
 ## Next steps
-- Push fix commit to `fix-warp-specialization-heuristics`.
-- Watch CI; if green, H₄ resolves convergent and PR is shippable.
-- If lit tests still fail, re-enter at H₄ with the failing test as new H₀.
+- Push fix commit to `fix-warp-specialization-heuristics`. **Done** — f0a6d85.
+- Watch CI; if green, H₄ resolves convergent and PR is shippable. **Done** — 10/10 SUCCESS on 2026-05-18 (a100, h100, gb200, gfx90a, gfx942, gfx950, proton-amd, macos, pre-commit, runner-preparation).
+- PR state: MERGEABLE, REVIEW_REQUIRED. Awaiting maintainer review; no further substrate action.
+
+## Halt
+Frontier closed; all nodes classified. CI confirms behavioral fix is regression-free across all hardware lanes. Standalone halt — no action open.

@@ -93,8 +93,8 @@ async def call(
         import asyncio as _asyncio
         import os as _os
         import subprocess as _subprocess
-        env = dict(_os.environ)
-        env.pop("ANTHROPIC_API_KEY", None)  # force OAuth → Max plan
+        from sweep.claude_subprocess import env_without_api_key
+        env = env_without_api_key()  # OAuth → Max plan
         t0 = time.time()
         try:
             proc = await _asyncio.to_thread(

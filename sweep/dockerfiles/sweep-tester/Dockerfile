@@ -78,6 +78,19 @@ RUN ARCH=$(dpkg --print-architecture) \
     && npm install -g "pnpm@${PNPM_VERSION}" \
     && pnpm --version
 
+# Julia via juliaup so we can pin specific channels (1.10/1.11/1.12)
+# without rebuilding the image. Default channel is the current stable;
+# repos pinned to a different version (e.g. Enzyme.jl on 1.12) can
+# add it inside their setup_cmd via `juliaup add 1.12 && juliaup default 1.12`.
+ENV JULIAUP_HOME=/usr/local/juliaup
+ENV PATH=/usr/local/juliaup/bin:$PATH
+RUN curl -fsSL https://install.julialang.org \
+        | sh -s -- --yes --default-channel release \
+            --path /usr/local/juliaup --add-to-path no \
+    && juliaup add 1.12 \
+    && juliaup default 1.12 \
+    && julia --version
+
 # gh CLI — useful inside the container if a test_cmd ever needs it
 # (rare, but reqa/respond may eventually want a ground-truth gh).
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

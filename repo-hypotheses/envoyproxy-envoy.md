@@ -108,6 +108,30 @@ H1 (systemTime safety) remains correct as written but becomes moot under H4.
 
 DCO is already passing (2026-05-13T22:41 SUCCESS); the earlier graph note is stale.
 
+## H5 — Integration test constructs cookie `expires` with `steady_clock`, mismatched against systemTime source after fix (CI red, 2026-05-18)
+
+**Verdict: CONFIRMED via CI log.**
+
+`Envoy/Prechecks` → `Release (x64)` job 76144761503 fails on `//test/extensions/filters/http/stateful_session:stateful_session_integration_test`. Specific failures (lines from test/extensions/filters/http/stateful_session/stateful_session_integration_test.cc at 7510fc1):
+- L456: `upstream_index.value() == 3, expected 1` — cookie's host binding was ignored.
+- L466: `set-cookie` header is non-empty when test expects empty — server re-issued cookie because it considered the inbound one expired.
+- Same shape repeats at L498/508, L621/631/662, L700.
+
+**Mechanism.** The integration test, at lines 437/479/519/602/643/684/931/1069/1117/1246/1428, builds the cookie's `expires` field as:
+
+```cpp
+cookie.set_expires(std::chrono::duration_cast<std::chrono::seconds>(
+                       std::chrono::steady_clock::now().time_since_epoch()).count() + 120);
+```
+
+Before the PR, `cookie.h` validated with `time_source_.monotonicTime().time_since_epoch()` — also `steady_clock`. Same epoch on the same process → cookie not expired → test passed.
+
+After the PR, `cookie.h` validates with `time_source_.systemTime().time_since_epoch()` — `system_clock`, seconds since 1970 (~1.7e9). Test cookie's `expires` is `steady_clock` since boot (small) + 120. So `now (~1.7e9) > expiry (~boot+120)` is always true → cookie considered expired → server picks a random host and emits `Set-Cookie`. Exactly what the failure mode shows.
+
+**Fix.** Mechanical 1:1 replacement of `std::chrono::steady_clock::now()` → `std::chrono::system_clock::now()` at all 11 sites in `test/extensions/filters/http/stateful_session/stateful_session_integration_test.cc`. The PR already made the analogous change in `cookie_test.cc` (`setMonotonicTime` → `setSystemTime`) but missed the integration test.
+
+**Trajectory: divergent / confirmed.** Symmetric failure across every test case that pre-builds a cookie. No alternative explanation fits (other stateful_session tests that don't pre-build cookies — `NormalStatefulSessionHeader` at L1591 — pass).
+
 ## Provenance
 
 - Repo: ~/Documents/envoy, branch `sweep-triage-1778364683`, base `upstream/main`
