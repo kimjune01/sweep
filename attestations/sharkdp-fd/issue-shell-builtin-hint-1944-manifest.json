@@ -1,0 +1,18 @@
+{
+  "kind": "test_attestation",
+  "name": "issue-shell-builtin-hint-1944",
+  "test_cmd": "cargo test --locked",
+  "expected_test_name": "shell-builtin-hint-1944",
+  "head_sha": "10f0c97b0be6060bef80cfc4f1b22c5a4bf60165",
+  "host": "darwin-arm64",
+  "test_env": "docker:sweep-tester:latest",
+  "elapsed_seconds": 31.787415742874146,
+  "after": {
+    "bytes": 14321,
+    "sha256": "0ede7fe160240c5d70a95dcd32dd7218a0041ab20872f3f75abc2a11c4a64710"
+  },
+  "before": {
+    "bytes": 16165,
+    "sha256": "0872b2cdcc5b51134153551cc053cedc28fc55077e9e246eb75843fe011f09ac"
+  }
+}
