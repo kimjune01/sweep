@@ -52,6 +52,7 @@ from sweep.cli.drip import drip_app
 from sweep.cli.inbox import inbox_app
 from sweep.cli.observe import observe_app
 from sweep.cli.sift import sift_app
+from sweep.cli.supervisor import supervisor_app
 from sweep.cli.qa import qa_app
 from sweep.cli.retro import retro_app
 from sweep.cli.slop_offer import slop_offer_app
@@ -68,6 +69,7 @@ app = typer.Typer(
 app.add_typer(andon_app, name="andon")
 app.add_typer(qa_app, name="qa")
 app.add_typer(sift_app, name="sift")
+app.add_typer(supervisor_app, name="supervisor")
 app.add_typer(inbox_app, name="inbox")
 app.add_typer(attest_app, name="attest")
 app.add_typer(autofix_app, name="autofix")
